@@ -1267,8 +1267,9 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
 
 function DashboardScreen({ dashboardSnapshot }) {
   const [range, setRange] = useState("Month");
-  const performanceSeries = dashboardSnapshot.performanceSeries;
-  const sessionMix = dashboardSnapshot.sessionMix;
+  const activeSnapshot = dashboardSnapshot.byRange[range] || dashboardSnapshot.byRange.Month;
+  const performanceSeries = activeSnapshot.performanceSeries;
+  const sessionMix = activeSnapshot.sessionMix;
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -1286,18 +1287,18 @@ function DashboardScreen({ dashboardSnapshot }) {
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={["Week", "Month", "Quarter", "Year"]} value={range} onChange={setRange} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetricRowCard label="Account Balance" value={dashboardSnapshot.accountBalance} />
-        <MetricRowCard label="Win Rate" value={dashboardSnapshot.winRate} tone={dashboardSnapshot.winRateTone} />
+        <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
+        <MetricRowCard label="Win Rate" value={activeSnapshot.winRate} tone={activeSnapshot.winRateTone} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetricRowCard label="Instrument" value={dashboardSnapshot.instrument} />
-        <MetricRowCard label="Contracts" value={dashboardSnapshot.contracts} />
+        <MetricRowCard label="Instrument" value={activeSnapshot.instrument} />
+        <MetricRowCard label="Contracts" value={activeSnapshot.contracts} />
       </div>
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TinyLabel>Performance Path</TinyLabel>
-            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardSnapshot.performanceTitle}</div>
+            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{activeSnapshot.performanceTitle}</div>
           </div>
           <div className="text-right">
             <TinyLabel>Range</TinyLabel>
@@ -1321,7 +1322,7 @@ function DashboardScreen({ dashboardSnapshot }) {
           </div>
           <div className="text-right">
             <TinyLabel>Mode</TinyLabel>
-            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{dashboardSnapshot.modeLabel}</div>
+            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{activeSnapshot.modeLabel}</div>
           </div>
         </div>
         <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10))] p-3">
@@ -1335,7 +1336,7 @@ function DashboardScreen({ dashboardSnapshot }) {
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Read-only Summary</TinyLabel>
         <div className="mt-4 space-y-3">
-          {[dashboardSnapshot.modeOutcome, dashboardSnapshot.frequencySummary, dashboardSnapshot.contractSummary].map((note) => (
+          {[activeSnapshot.modeOutcome, activeSnapshot.frequencySummary, activeSnapshot.contractSummary].map((note) => (
             <div key={note} className="rounded-[20px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
               {note}
             </div>
@@ -1481,31 +1482,52 @@ export default function App() {
       for (let i = 0; i < intervals; i += 1) endingBalance *= 1 + effectiveGrowth;
     }
 
-    const modeOutcome = projectionMode
-      ? `Projected Goal: ${projectionGoalValue > 0 ? formatCompactCurrency(projectionGoalValue) : "—"}`
-      : `Ending Balance: ${endingBalance > 0 ? formatCompactCurrency(endingBalance) : "—"}`;
-    const performanceSeed = projectionMode ? projectionGoalValue || startingBalance : endingBalance || manualStartingBalance || accountBalanceNumber;
-    const seriesBase = Math.max(1, performanceSeed / Math.max(1, accountBalanceNumber || manualStartingBalance || 1));
-    const performanceSeries = Array.from({ length: 7 }, (_, index) => Math.max(12, Math.min(98, Math.round(26 + seriesBase * 11 + index * 7))));
-    const sessionMix = Array.from({ length: 7 }, (_, index) => {
-      const center = 46 + Math.min(36, activeContracts * 3);
-      return Math.max(18, Math.min(92, center + (index % 2 === 0 ? -10 : 8) + index));
-    });
+    const modeLabel = projectionMode ? "Forecast" : "Compound";
+    const performanceTitle = projectionMode ? "Projection curve overview" : "Compounding curve overview";
+    const contractsLabel = isManualContracts ? `${manualContracts || 0} manual` : `${autoSuggestedContracts} suggested`;
+    const rangeDaysMap = { Week: 7, Month: 30, Quarter: 90, Year: 365 };
+    const rangeSeriesPoints = { Week: 7, Month: 8, Quarter: 9, Year: 12 };
 
-    return {
-      accountBalance: formatCurrency(accountBalanceNumber),
-      instrument,
-      winRate: formatPercent(winRate),
-      winRateTone: winRate >= 55 ? "positive" : "default",
-      contracts: isManualContracts ? `${manualContracts || 0} manual` : `${autoSuggestedContracts} suggested`,
-      modeLabel: projectionMode ? "Forecast" : "Compound",
-      performanceTitle: projectionMode ? "Projection curve overview" : "Compounding curve overview",
-      modeOutcome,
-      frequencySummary: `${frequencyValue} ${compoundState.tradeFrequency} • ${durationValue || 0} ${compoundState.durationUnit}`,
-      contractSummary: `Position sizing: ${activeContracts} contract${activeContracts === 1 ? "" : "s"} on ${instrument}.`,
-      performanceSeries,
-      sessionMix,
-    };
+    const byRange = Object.entries(rangeDaysMap).reduce((acc, [rangeKey, days]) => {
+      const rangeIntervals = Math.max(0, Math.floor(days * frequencyPerDay));
+      const growthFactor = effectiveGrowth > 0 && rangeIntervals > 0 ? (1 + effectiveGrowth) ** rangeIntervals : 1;
+      const baseBalance = projectionMode ? accountBalanceNumber : manualStartingBalance || accountBalanceNumber;
+      const modeledBalance = Math.max(0, baseBalance * growthFactor);
+      const modeledOutcome = projectionMode
+        ? `Projected Goal: ${modeledBalance > 0 ? formatCompactCurrency(modeledBalance) : "—"}`
+        : `Ending Balance: ${modeledBalance > 0 ? formatCompactCurrency(modeledBalance) : "—"}`;
+
+      const seriesLength = rangeSeriesPoints[rangeKey] || 7;
+      const seriesGrowthStep = Math.max(0, growthFactor - 1) / Math.max(1, seriesLength - 1);
+      const performanceSeries = Array.from({ length: seriesLength }, (_, index) => {
+        const curve = 1 + seriesGrowthStep * index;
+        return Math.max(12, Math.min(98, Math.round(26 + curve * 18 + index * 3)));
+      });
+      const sessionMix = Array.from({ length: seriesLength }, (_, index) => {
+        const center = 46 + Math.min(36, activeContracts * 3);
+        return Math.max(18, Math.min(92, center + (index % 2 === 0 ? -10 : 8) + index));
+      });
+
+      acc[rangeKey] = {
+        accountBalance: formatCurrency(modeledBalance),
+        // Dashboard data does not include time-stamped trade logs yet, so these metrics remain constant across ranges.
+        winRate: formatPercent(winRate),
+        winRateTone: winRate >= 55 ? "positive" : "default",
+        instrument,
+        contracts: contractsLabel,
+        modeLabel,
+        performanceTitle,
+        modeOutcome: modeledOutcome,
+        frequencySummary: `${frequencyValue} ${compoundState.tradeFrequency} • ${rangeKey}`,
+        contractSummary: `Position sizing: ${activeContracts} contract${activeContracts === 1 ? "" : "s"} on ${instrument}.`,
+        performanceSeries,
+        sessionMix,
+      };
+
+      return acc;
+    }, {});
+
+    return { byRange };
   }, [positionState, compoundState]);
 
   useEffect(() => {
