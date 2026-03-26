@@ -1347,6 +1347,94 @@ function DashboardScreen({ dashboardSnapshot }) {
   );
 }
 
+function JournalScreen({ positionState, compoundState }) {
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const instrument = selectedInstrument.key;
+  const entry = parseNumberString(positionState.entry || "0");
+  const stop = parseNumberString(positionState.stop || "0");
+  const target = parseNumberString(positionState.target || "0");
+  const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
+  const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
+  const kellyMode = positionState.kelly || "Off";
+  const riskPoints = Math.max(0, Math.abs(entry - stop));
+  const rewardPoints = Math.max(0, Math.abs(target - entry));
+  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+  const riskPerContract = riskPoints * (selectedInstrument.pointValue || 1);
+  const projectedRisk = riskPerContract * contracts;
+  const projectedReturn = rewardPoints * (selectedInstrument.pointValue || 1) * contracts;
+
+  const frequencyValue = Math.max(1, parseNumberString(compoundState.tradeFrequencyValue || "1"));
+  const tradeFrequency = compoundState.tradeFrequency || "Per Day";
+  const durationValue = Math.max(1, parseNumberString(compoundState.durationInput || "1"));
+  const durationUnit = compoundState.durationUnit || "Months";
+  const projectionMode = compoundState.projectionMode ? "Forecast" : "Compound";
+  const projectionWinRate = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
+  const projectionGain = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
+
+  const projectedTrades = useMemo(() => {
+    if (tradeFrequency === "Per Day") return frequencyValue * durationValue;
+    if (tradeFrequency === "Per Week") {
+      const weeks = durationUnit === "Days" ? durationValue / 7 : durationUnit === "Weeks" ? durationValue : durationValue * 4;
+      return Math.max(1, Math.round(weeks * frequencyValue));
+    }
+    const months = durationUnit === "Days" ? durationValue / 30 : durationUnit === "Weeks" ? durationValue / 4 : durationValue;
+    return Math.max(1, Math.round(months * frequencyValue));
+  }, [tradeFrequency, frequencyValue, durationValue, durationUnit]);
+
+  const outlookTone = projectedReturn >= projectedRisk ? "text-emerald-600/90" : "text-rose-500/90";
+  const outcomeContext = `${projectionMode}: ${frequencyValue} ${tradeFrequency} for ${durationValue} ${durationUnit.toLowerCase()}`;
+
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader right={<TopIconPill icon={BookOpen} />} />
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Journal</TinyLabel>
+        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Trade setup snapshot</div>
+        <div className="mt-1 text-[13px] text-slate-500">Read-only entries generated from current Position + Compound state.</div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Current Entry</TinyLabel>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Instrument</div>
+            <div className="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-slate-700">{instrument}</div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Contracts</div>
+            <div className="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-slate-700">{contracts}</div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Entry / Stop / Target</div>
+            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">
+              {`${entry.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${stop.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${target.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Win Rate / Kelly</div>
+            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{`${formatPercent(winRate)} • ${kellyMode}`}</div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Projected Outcome Context</TinyLabel>
+        <div className="mt-3 space-y-2">
+          <div className={cn("text-[16px] font-semibold tracking-[-0.02em]", outlookTone)}>
+            {`Projected R:R ${rewardRiskRatio > 0 ? `${rewardRiskRatio.toFixed(1)}R` : "—"} • ${formatCurrency(projectedReturn)} vs ${formatCurrency(projectedRisk)}`}
+          </div>
+          <div className="text-[13px] text-slate-600">{outcomeContext}</div>
+          <div className="text-[13px] text-slate-500">{`Compound assumptions: ${formatPercent(projectionWinRate)} win rate, ${formatPercent(projectionGain)} gain input, ~${projectedTrades} modeled trades.`}</div>
+          {/* Heuristic note: there is no persisted historical trade log yet, so journal rows are synthesized from current app state and modeled projection assumptions only. */}
+          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
+            Entries are read-only and reflect the current setup, not executed historical fills.
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
 function PlaceholderScreen({ title }) {
   return (
     <div className="space-y-4 pb-4">
@@ -1558,7 +1646,7 @@ export default function App() {
     ) : activeTab === "dashboard" ? (
       <DashboardScreen dashboardSnapshot={dashboardSnapshot} />
     ) : activeTab === "journal" ? (
-      <PlaceholderScreen title="Journal" />
+      <JournalScreen positionState={positionState} compoundState={compoundState} />
     ) : (
       <PlaceholderScreen title="Share" />
     );
