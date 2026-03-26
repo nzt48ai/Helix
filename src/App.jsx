@@ -331,7 +331,11 @@ function ProjectionChart({
     if (!inspectorEnabled || points.length < 2) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect || rect.width <= 0) return;
-    const clientX = typeof event.clientX === "number" ? event.clientX : null;
+    const touchClientX =
+      event.touches && event.touches.length > 0 && typeof event.touches[0]?.clientX === "number"
+        ? event.touches[0].clientX
+        : null;
+    const clientX = typeof event.clientX === "number" ? event.clientX : touchClientX;
     if (clientX === null) return;
     const relativeX = ((clientX - rect.left) / rect.width) * width;
     const clampedX = Math.max(0, Math.min(width, relativeX));
@@ -350,7 +354,14 @@ function ProjectionChart({
         </div>
       </div>
       <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3">
-        <div className="relative" onMouseMove={inspectorEnabled ? handlePointerMove : undefined} onMouseLeave={() => setActiveIndex(null)}>
+        <div
+          className="relative"
+          onMouseMove={inspectorEnabled ? handlePointerMove : undefined}
+          onMouseLeave={() => setActiveIndex(null)}
+          onTouchStart={inspectorEnabled ? handlePointerMove : undefined}
+          onTouchMove={inspectorEnabled ? handlePointerMove : undefined}
+          onTouchEnd={() => setActiveIndex(null)}
+        >
           <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
             {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
               <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.22)" strokeWidth="1" />
@@ -1396,7 +1407,12 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
-  const [activeTab, setActiveTab] = useState("position");
+  const resolveTabFromHash = () => {
+    if (typeof window === "undefined") return "position";
+    const hashValue = window.location.hash.replace("#", "").trim();
+    return NAV_ITEMS.some((item) => item.key === hashValue) ? hashValue : "position";
+  };
+  const [activeTab, setActiveTab] = useState(resolveTabFromHash);
   const [positionState, setPositionState] = useState({
     accountBalance: "25,000",
     propMode: false,
@@ -1421,6 +1437,26 @@ export default function App() {
     durationInput: "6",
     durationUnit: "Months",
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const syncTabFromHash = () => {
+      const nextTab = resolveTabFromHash();
+      setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+    };
+
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextHash = `#${activeTab}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
+    }
+  }, [activeTab]);
 
   const screen =
     activeTab === "position" ? (
