@@ -1265,10 +1265,10 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
   );
 }
 
-function DashboardScreen() {
+function DashboardScreen({ dashboardSnapshot }) {
   const [range, setRange] = useState("Month");
-  const performanceSeries = [42, 58, 51, 76, 72, 88, 96];
-  const sessionMix = [36, 62, 44, 82, 56, 72, 48];
+  const performanceSeries = dashboardSnapshot.performanceSeries;
+  const sessionMix = dashboardSnapshot.sessionMix;
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -1286,18 +1286,18 @@ function DashboardScreen() {
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={["Week", "Month", "Quarter", "Year"]} value={range} onChange={setRange} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetricRowCard label="Net P&L" value="+$12.4K" tone="positive" />
-        <MetricRowCard label="Win Rate" value="58%" />
+        <MetricRowCard label="Account Balance" value={dashboardSnapshot.accountBalance} />
+        <MetricRowCard label="Win Rate" value={dashboardSnapshot.winRate} tone={dashboardSnapshot.winRateTone} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetricRowCard label="Avg Day" value="+$410" tone="positive" />
-        <MetricRowCard label="Max DD" value="-6.8%" tone="negative" />
+        <MetricRowCard label="Instrument" value={dashboardSnapshot.instrument} />
+        <MetricRowCard label="Contracts" value={dashboardSnapshot.contracts} />
       </div>
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TinyLabel>Performance Path</TinyLabel>
-            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Equity curve overview</div>
+            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardSnapshot.performanceTitle}</div>
           </div>
           <div className="text-right">
             <TinyLabel>Range</TinyLabel>
@@ -1317,11 +1317,11 @@ function DashboardScreen() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TinyLabel>Session Mix</TinyLabel>
-            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Distribution by session</div>
+            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Position sizing cadence</div>
           </div>
           <div className="text-right">
-            <TinyLabel>Focus</TinyLabel>
-            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">Execution</div>
+            <TinyLabel>Mode</TinyLabel>
+            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{dashboardSnapshot.modeLabel}</div>
           </div>
         </div>
         <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10))] p-3">
@@ -1333,13 +1333,9 @@ function DashboardScreen() {
         </div>
       </GlassCard>
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Weekly Review</TinyLabel>
+        <TinyLabel>Read-only Summary</TinyLabel>
         <div className="mt-4 space-y-3">
-          {[
-            "Best performance came from patient opens and first pullback entries.",
-            "Most giveback occurred during midday overtrading.",
-            "Execution quality improved when risk stayed fixed after two losses.",
-          ].map((note) => (
+          {[dashboardSnapshot.modeOutcome, dashboardSnapshot.frequencySummary, dashboardSnapshot.contractSummary].map((note) => (
             <div key={note} className="rounded-[20px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
               {note}
             </div>
@@ -1438,6 +1434,80 @@ export default function App() {
     durationUnit: "Months",
   });
 
+  const dashboardSnapshot = useMemo(() => {
+    const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
+    const instrument = positionState.instrument || "MNQ";
+    const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
+    const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === instrument) || POSITION_INSTRUMENTS[2];
+    const entryPrice = parseNumberString(positionState.entry || "0");
+    const stopPrice = parseNumberString(positionState.stop || "0");
+    const targetPrice = parseNumberString(positionState.target || "0");
+    const rewardPoints = Math.max(0, Math.abs(targetPrice - entryPrice));
+    const riskPoints = Math.max(0, Math.abs(entryPrice - stopPrice));
+    const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+    const winProbability = winRate / 100;
+    const lossProbability = 1 - winProbability;
+    const rawKellyFraction = rewardRiskRatio > 0 ? winProbability - lossProbability / rewardRiskRatio : 0;
+    const clampedKellyFraction = Math.max(0, Math.min(1, Number.isFinite(rawKellyFraction) ? rawKellyFraction : 0));
+    const kellyMultiplier = positionState.kelly === "Full" ? 1 : positionState.kelly === "½" ? 0.5 : positionState.kelly === "¼" ? 0.25 : 0;
+    const riskBudget = accountBalanceNumber * clampedKellyFraction * kellyMultiplier;
+    const riskPerContract = riskPoints * (selectedInstrument.pointValue || 1);
+    const autoSuggestedContracts = riskPerContract > 0 ? Math.max(0, Math.floor(riskBudget / riskPerContract)) : 0;
+    const manualContracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
+    const isManualContracts = positionState.kelly === "Off";
+    const activeContracts = isManualContracts ? manualContracts : autoSuggestedContracts;
+
+    const projectionMode = compoundState.projectionMode;
+    const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
+    const projectionDollarGoal = Math.max(0, parseNumberString(compoundState.projectionGoalDollarInput || "0"));
+    const projectionPercentGoal = Math.max(0, parseNumberString(compoundState.projectionGoalPercentInput || "0"));
+    const projectionGoalValue = compoundState.projectionGoalDisplayType === "%"
+      ? startingBalance * (1 + projectionPercentGoal / 100)
+      : projectionDollarGoal;
+    const manualStartingBalance = Math.max(0, parseNumberString(compoundState.manualStartingBalanceInput || "0"));
+    const frequencyValue = Math.max(1, parseNumberString(compoundState.tradeFrequencyValue || "1"));
+    const durationValue = Math.max(0, parseNumberString(compoundState.durationInput || "0"));
+    const gainRate = Math.max(0, parseNumberString(compoundState.gainInput || "0")) / 100;
+    const parsedWinRateInput = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
+    const winRateModifier = parsedWinRateInput > 0 ? 0.5 + parsedWinRateInput / 200 : 1;
+    const effectiveGrowth = gainRate * winRateModifier;
+    const durationInDays =
+      compoundState.durationUnit === "Days" ? durationValue : compoundState.durationUnit === "Weeks" ? durationValue * 7 : durationValue * 30;
+    const frequencyPerDay =
+      compoundState.tradeFrequency === "Per Day" ? frequencyValue : compoundState.tradeFrequency === "Per Week" ? frequencyValue / 7 : frequencyValue / 30;
+    const intervals = Math.max(0, Math.floor(durationInDays * frequencyPerDay));
+    let endingBalance = manualStartingBalance || 0;
+    if (endingBalance > 0 && intervals > 0 && effectiveGrowth > 0) {
+      for (let i = 0; i < intervals; i += 1) endingBalance *= 1 + effectiveGrowth;
+    }
+
+    const modeOutcome = projectionMode
+      ? `Projected Goal: ${projectionGoalValue > 0 ? formatCompactCurrency(projectionGoalValue) : "—"}`
+      : `Ending Balance: ${endingBalance > 0 ? formatCompactCurrency(endingBalance) : "—"}`;
+    const performanceSeed = projectionMode ? projectionGoalValue || startingBalance : endingBalance || manualStartingBalance || accountBalanceNumber;
+    const seriesBase = Math.max(1, performanceSeed / Math.max(1, accountBalanceNumber || manualStartingBalance || 1));
+    const performanceSeries = Array.from({ length: 7 }, (_, index) => Math.max(12, Math.min(98, Math.round(26 + seriesBase * 11 + index * 7))));
+    const sessionMix = Array.from({ length: 7 }, (_, index) => {
+      const center = 46 + Math.min(36, activeContracts * 3);
+      return Math.max(18, Math.min(92, center + (index % 2 === 0 ? -10 : 8) + index));
+    });
+
+    return {
+      accountBalance: formatCurrency(accountBalanceNumber),
+      instrument,
+      winRate: formatPercent(winRate),
+      winRateTone: winRate >= 55 ? "positive" : "default",
+      contracts: isManualContracts ? `${manualContracts || 0} manual` : `${autoSuggestedContracts} suggested`,
+      modeLabel: projectionMode ? "Forecast" : "Compound",
+      performanceTitle: projectionMode ? "Projection curve overview" : "Compounding curve overview",
+      modeOutcome,
+      frequencySummary: `${frequencyValue} ${compoundState.tradeFrequency} • ${durationValue || 0} ${compoundState.durationUnit}`,
+      contractSummary: `Position sizing: ${activeContracts} contract${activeContracts === 1 ? "" : "s"} on ${instrument}.`,
+      performanceSeries,
+      sessionMix,
+    };
+  }, [positionState, compoundState]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
@@ -1464,7 +1534,7 @@ export default function App() {
     ) : activeTab === "compound" ? (
       <CompoundScreen positionState={positionState} compoundState={compoundState} setCompoundState={setCompoundState} />
     ) : activeTab === "dashboard" ? (
-      <DashboardScreen />
+      <DashboardScreen dashboardSnapshot={dashboardSnapshot} />
     ) : activeTab === "journal" ? (
       <PlaceholderScreen title="Journal" />
     ) : (
