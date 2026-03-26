@@ -1,0 +1,1475 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  BookOpen,
+  Calculator,
+  ChartColumn,
+  LineChart,
+  Plus,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+
+function cn(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
+
+const NAV_ITEMS = [
+  { key: "position", label: "Position", icon: Calculator },
+  { key: "compound", label: "Compound", icon: TrendingUp },
+  { key: "share", label: "Share", icon: Plus },
+  { key: "dashboard", label: "Dashboard", icon: ChartColumn },
+  { key: "journal", label: "Journal", icon: BookOpen },
+];
+
+const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
+const POSITION_INSTRUMENTS = [
+  { key: "NQ", pointValue: 20, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
+  { key: "ES", pointValue: 50, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
+  { key: "MNQ", pointValue: 2, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
+  { key: "MES", pointValue: 5, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
+];
+const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
+
+function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
+  return digits || fallback;
+}
+
+function formatNumberString(value) {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 12);
+  return digits ? Number(digits).toLocaleString("en-US") : "";
+}
+
+function parseNumberString(value) {
+  const parsed = Number(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function formatAbbreviatedNumber(value, { suffix = "", prefix = "", threshold = 99999 } = {}) {
+  const safeValue = Number(value);
+  if (!Number.isFinite(safeValue)) return `${prefix}0${suffix}`;
+
+  const absolute = Math.abs(safeValue);
+  const units = [
+    { threshold: 1e15, suffix: "Q" },
+    { threshold: 1e12, suffix: "T" },
+    { threshold: 1e9, suffix: "B" },
+    { threshold: 1e6, suffix: "M" },
+    { threshold: 1e3, suffix: "K" },
+  ];
+
+  const unit = units.find((item) => absolute >= item.threshold);
+  if (!unit || absolute <= threshold) {
+    const formattedBase = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(safeValue);
+    return `${prefix}${formattedBase}${suffix}`;
+  }
+
+  const scaled = safeValue / unit.threshold;
+  const scaledAbs = Math.abs(scaled);
+  const decimals = scaledAbs >= 100 ? 0 : scaledAbs >= 10 ? 1 : 2;
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  }).format(scaled);
+
+  return `${prefix}${formatted}${unit.suffix}${suffix}`;
+}
+
+function formatCompactCurrency(value) {
+  const safeValue = Number(value);
+  if (!Number.isFinite(safeValue)) return formatCurrency(0);
+  const absolute = Math.abs(safeValue);
+  if (absolute <= 99999) return formatCurrency(safeValue);
+  return formatAbbreviatedNumber(safeValue, { prefix: "$", threshold: 99999 });
+}
+
+function formatPercent(value, maximumFractionDigits = 0) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(safeValue)}%`;
+}
+
+function formatCompactPercent(value, maximumFractionDigits = 1) {
+  const safeValue = Number(value);
+  if (!Number.isFinite(safeValue)) return formatPercent(0, maximumFractionDigits);
+  const absolute = Math.abs(safeValue);
+  if (absolute <= 99999) return formatPercent(safeValue, maximumFractionDigits);
+  return formatAbbreviatedNumber(safeValue, { suffix: "%", threshold: 99999 });
+}
+
+function GlassCard({ children, className = "", padded = true, highlight = false }) {
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] shadow-[0_16px_44px_rgba(139,157,193,0.16),0_4px_16px_rgba(166,180,209,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-[18px]",
+        highlight && "bg-[linear-gradient(180deg,rgba(233,241,255,0.68),rgba(255,255,255,0.26))]",
+        padded && "p-5",
+        className
+      )}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_36%)]" />
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+function TinyLabel({ children, className = "" }) {
+  return <div className={cn("text-[9px] font-medium uppercase tracking-[0.28em] text-slate-500/90", className)}>{children}</div>;
+}
+
+function ScreenHeader({ right }) {
+  return (
+    <div className="relative mb-6 flex items-center justify-center">
+      <div className="text-center text-[12px] font-semibold uppercase tracking-[0.28em] text-slate-700">HELIX</div>
+      {right ? <div className="absolute right-0">{right}</div> : null}
+    </div>
+  );
+}
+
+function TopIconPill({ icon: Icon }) {
+  return (
+    <div className="rounded-[18px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.22))] p-3 text-slate-500 shadow-[0_10px_24px_rgba(144,162,195,0.12),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-xl">
+      <Icon size={16} />
+    </div>
+  );
+}
+
+function SegmentedControl({ items, value, onChange }) {
+  const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
+
+  return (
+    <GlassCard
+      className="relative overflow-hidden rounded-[32px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.12))] p-[4px] shadow-[0_4px_10px_rgba(120,140,190,0.05),0_1px_4px_rgba(166,180,209,0.03),inset_0_1px_0_rgba(255,255,255,0.84)]"
+      padded={false}
+    >
+      <div className="relative grid gap-1.5" style={{ gridTemplateColumns: `repeat(${normalizedItems.length}, minmax(0, 1fr))` }}>
+        {normalizedItems.map((item) => {
+          const active = item.value === value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChange(item.value)}
+              className={cn(
+                "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
+                active ? "text-blue-600" : "text-slate-500"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-0 rounded-full transition-all duration-200",
+                  active
+                    ? "bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
+                    : "bg-transparent"
+                )}
+              />
+              <span className="relative z-10">{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </GlassCard>
+  );
+}
+
+function BalanceHeroCard({
+  label,
+  value,
+  onChange,
+  toggleLabel,
+  toggleRightLabel,
+  toggleState = false,
+  onToggle,
+  prefix = "$",
+  suffix = "",
+  fixedFontSize,
+}) {
+  const reduceMotion = useReducedMotion();
+  const digitsLength = String(value ?? "").replace(/\D/g, "").length;
+  const fontSize = fixedFontSize ?? (digitsLength > 11 ? 30 : digitsLength > 9 ? 36 : digitsLength > 7 ? 44 : 52);
+
+  return (
+    <GlassCard
+      className="overflow-hidden rounded-[36px] px-7 pb-6 pt-6 ring-1 ring-white/35 shadow-[0_18px_42px_rgba(120,140,190,0.18),0_4px_14px_rgba(150,165,200,0.10),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-1px_0_rgba(210,220,240,0.55)]"
+      highlight
+    >
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className={cn(
+            "absolute inset-0",
+            toggleState
+              ? "bg-[radial-gradient(circle_at_50%_28%,rgba(99,102,241,0.16),rgba(99,102,241,0.08)_32%,transparent_60%)]"
+              : "bg-[radial-gradient(circle_at_50%_28%,rgba(148,163,184,0.12),rgba(148,163,184,0.06)_32%,transparent_60%)]"
+          )}
+        />
+        <div className="absolute inset-0 opacity-[0.04] mix-blend-overlay bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.22)_0%,transparent_58%),radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.14)_0%,transparent_42%),radial-gradient(circle_at_80%_70%,rgba(148,163,184,0.08)_0%,transparent_38%)]" />
+        <div className="pointer-events-none absolute inset-x-6 top-0 h-14 rounded-b-[32px] bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.06),transparent)] blur-[1px]" />
+      </div>
+
+      <div className="relative text-center">
+        <TinyLabel className="justify-center">{label}</TinyLabel>
+        <div className="mt-3 flex min-h-[74px] items-center justify-center overflow-visible px-2">
+          <motion.div
+            key={`${prefix}-${suffix}`}
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="inline-flex items-center justify-center"
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              value={`${prefix}${value}${suffix}`}
+              onChange={(e) => onChange?.(e.target.value)}
+              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
+              className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
+              aria-label={label}
+            />
+          </motion.div>
+        </div>
+
+        {onToggle ? (
+          <div className="mt-3 flex justify-center">
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-[3px] text-[9px] font-medium uppercase tracking-[0.22em] text-slate-500/80">
+              <motion.button
+                type="button"
+                onClick={onToggle}
+                whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                className="inline-flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70"
+                aria-pressed={toggleState}
+              >
+                <span className={cn("transition-colors", toggleState ? "text-slate-500/80" : "text-slate-700")}>{toggleLabel === "Prop" ? toggleLabel : toggleLabel || "$"}</span>
+                <span
+                  className={cn(
+                    "relative h-[14px] w-[30px] rounded-full transition-all",
+                    toggleState
+                      ? "bg-[linear-gradient(180deg,rgba(105,145,236,0.95),rgba(95,131,219,0.92))]"
+                      : "bg-slate-300/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_0_0_1px_rgba(148,163,184,0.25)]"
+                  )}
+                >
+                  <motion.span
+                    className="absolute left-[1px] top-[1px] h-[12px] w-[12px] rounded-full bg-[linear-gradient(180deg,#ffffff,#eef2ff)] shadow-[0_1px_4px_rgba(108,125,156,0.25)]"
+                    animate={{ x: toggleState ? 16 : 0 }}
+                    transition={reduceMotion ? { duration: 0 } : SPRING}
+                  />
+                </span>
+                {toggleLabel === "Prop" ? null : <span className={cn("transition-colors", toggleState ? "text-slate-700" : "text-slate-500/80")}>{toggleRightLabel || "%"}</span>}
+              </motion.button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </GlassCard>
+  );
+}
+
+function ProjectionChart({
+  points,
+  bandUpper,
+  bandLower,
+  projectionMode,
+  milestones = [],
+  inspectorEnabled = false,
+  inspectorGoalValue = null,
+  inspectorTradeUnitLabel = "",
+  inspectorPositionSizes = [],
+}) {
+  const width = 320;
+  const height = 150;
+  const [activeIndex, setActiveIndex] = useState(null);
+  const allValues = [...points, ...(bandUpper || []), ...(bandLower || [])];
+  const max = Math.max(...allValues, 1);
+  const min = Math.min(...allValues, 0);
+  const yFor = (value) => height - ((value - min) / Math.max(max - min, 1)) * height;
+  const pathFor = (series) =>
+    series
+      .map((value, i) => {
+        const x = series.length <= 1 ? 0 : (i / (series.length - 1)) * width;
+        return `${i === 0 ? "M" : "L"}${x},${yFor(value)}`;
+      })
+      .join(" ");
+
+  const bandPath =
+    projectionMode && bandUpper && bandLower
+      ? `${pathFor(bandUpper)} ${bandLower
+          .slice()
+          .reverse()
+          .map((value, i) => {
+            const index = bandLower.length - 1 - i;
+            const x = bandLower.length <= 1 ? 0 : (index / (bandLower.length - 1)) * width;
+            return `L${x},${yFor(value)}`;
+          })
+          .join(" ")} Z`
+      : "";
+
+  const activePoint =
+    inspectorEnabled && activeIndex !== null && activeIndex >= 0 && activeIndex < points.length
+      ? {
+          index: activeIndex,
+          value: points[activeIndex],
+          x: points.length <= 1 ? 0 : (activeIndex / (points.length - 1)) * width,
+          y: yFor(points[activeIndex]),
+        }
+      : null;
+
+  const activeMilestone = activePoint ? milestones.find((milestone) => Math.abs(milestone.x - activePoint.x) <= 12) : null;
+  const activeRemaining = activePoint && inspectorGoalValue && Number.isFinite(inspectorGoalValue) ? Math.max(0, inspectorGoalValue - activePoint.value) : null;
+  const activePositionSize = activePoint && inspectorPositionSizes[activePoint.index] ? inspectorPositionSizes[activePoint.index] : null;
+
+  const handlePointerMove = (event) => {
+    if (!inspectorEnabled || points.length < 2) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const clientX = typeof event.clientX === "number" ? event.clientX : null;
+    if (clientX === null) return;
+    const relativeX = ((clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(0, Math.min(width, relativeX));
+    const index = Math.round((clampedX / width) * (points.length - 1));
+    setActiveIndex(Math.max(0, Math.min(points.length - 1, index)));
+  };
+
+  return (
+    <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <TinyLabel>{projectionMode ? "Projection" : "Growth Chart"}</TinyLabel>
+          <div className="mt-1 text-[17px] font-semibold tracking-[-0.03em] text-slate-700 sm:text-[18px]">
+            {projectionMode ? "Projected balance path" : "Compounded growth path"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3">
+        <div className="relative" onMouseMove={inspectorEnabled ? handlePointerMove : undefined} onMouseLeave={() => setActiveIndex(null)}>
+          <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
+            {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
+              <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.22)" strokeWidth="1" />
+            ))}
+            {projectionMode && bandPath ? <path d={bandPath} fill="rgba(96,165,250,0.16)" /> : null}
+            {projectionMode && bandLower ? <path d={pathFor(bandLower)} fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth="1.5" strokeDasharray="4 4" /> : null}
+            {projectionMode && bandUpper ? <path d={pathFor(bandUpper)} fill="none" stroke="rgba(96,165,250,0.45)" strokeWidth="1.5" strokeDasharray="4 4" /> : null}
+            <path d={pathFor(points)} fill="none" stroke="rgba(59,130,246,0.96)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            {activePoint ? (
+              <g>
+                <line x1={activePoint.x} x2={activePoint.x} y1="0" y2={height} stroke="rgba(59,130,246,0.25)" strokeWidth="1.5" strokeDasharray="4 4" />
+                <circle cx={activePoint.x} cy={activePoint.y} r="4.5" fill="rgba(59,130,246,0.98)" stroke="rgba(255,255,255,0.96)" strokeWidth="2" />
+              </g>
+            ) : null}
+            {milestones.map((milestone) => {
+              const x = Math.max(0, Math.min(width, milestone.x));
+              const y = Math.max(0, Math.min(height, yFor(milestone.value)));
+              return (
+                <g key={milestone.key}>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={milestone.isGoal ? 4.5 : 3.5}
+                    fill={milestone.isGoal ? "rgba(37,99,235,0.98)" : "rgba(255,255,255,0.98)"}
+                    stroke={milestone.isGoal ? "rgba(191,219,254,1)" : "rgba(96,165,250,0.9)"}
+                    strokeWidth="2"
+                  />
+                  {milestone.label ? (
+                    <text x={x} y={Math.max(12, y - 10)} textAnchor="middle" fontSize="8" fontWeight="600" fill="rgba(71,85,105,0.88)">
+                      {milestone.label}
+                    </text>
+                  ) : null}
+                </g>
+              );
+            })}
+          </svg>
+          {activePoint ? (
+            <div
+              className="pointer-events-none absolute top-2 z-10 max-w-[162px] rounded-[18px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.84))] px-3 py-2 text-[11px] text-slate-600 shadow-[0_10px_24px_rgba(118,138,183,0.14),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-[18px]"
+              style={{ left: `${Math.max(8, Math.min(width - 144, activePoint.x - 58))}px` }}
+            >
+              <div className="font-semibold tracking-[-0.01em] text-slate-700">{inspectorTradeUnitLabel ? `${inspectorTradeUnitLabel} ${activePoint.index + 1}` : `Period ${activePoint.index + 1}`}</div>
+              <div className="mt-1">Balance: {formatCurrency(activePoint.value)}</div>
+              {activePositionSize ? <div>Position Size: {activePositionSize}</div> : null}
+              {activeRemaining !== null ? <div>Distance to Goal: {formatCurrency(activeRemaining)}</div> : null}
+              {activeMilestone?.label ? <div className="mt-1 text-blue-600/90">{activeMilestone.isGoal ? "Goal milestone" : activeMilestone.label}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
+function MetricRowCard({ label, value, tone = "default" }) {
+  return (
+    <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[18px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
+      <TinyLabel className="text-center text-slate-500/80">{label}</TinyLabel>
+      <div
+        className={cn(
+          "mt-2.5 text-center text-[16px] font-semibold tracking-[-0.04em]",
+          tone === "positive" && "text-emerald-500/90",
+          tone === "negative" && "text-rose-500/85",
+          tone === "default" && "text-slate-600"
+        )}
+      >
+        {value}
+      </div>
+    </GlassCard>
+  );
+}
+
+function CompoundFieldGroup({ label, rightLabel, children, className = "" }) {
+  return (
+    <div className={cn("space-y-2 self-start", className)}>
+      <div className="flex min-h-[10px] items-center justify-between gap-2 px-1">
+        <TinyLabel>{label}</TinyLabel>
+        {rightLabel ? <TinyLabel>{rightLabel}</TinyLabel> : <span className="min-h-[10px]" />}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CompoundInputShell({ children, className = "" }) {
+  return (
+    <div className="group relative">
+      <div className="pointer-events-none absolute -inset-[1px] rounded-[23px] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.52),transparent_62%),linear-gradient(180deg,rgba(126,164,255,0.20),rgba(255,255,255,0.04))] opacity-100 blur-[7px] transition-all duration-200 group-focus-within:blur-[11px]" />
+      <div className="pointer-events-none absolute inset-0 rounded-[22px] bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.12))] opacity-90 transition-opacity duration-200 group-focus-within:opacity-100" />
+      <GlassCard
+        className={cn(
+          "relative flex h-[52px] min-h-[52px] items-center rounded-[22px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.76),rgba(248,251,255,0.50))] px-4 shadow-[0_14px_30px_rgba(139,157,193,0.12),0_3px_10px_rgba(166,180,209,0.07),0_0_0_1px_rgba(255,255,255,0.56),0_0_18px_rgba(126,164,255,0.10),inset_0_1px_0_rgba(255,255,255,0.99),inset_0_-1px_0_rgba(214,223,242,0.38)] ring-1 ring-slate-200/55 transition-all duration-200 group-focus-within:border-blue-200/90 group-focus-within:ring-[rgba(96,165,250,0.58)] group-focus-within:shadow-[0_18px_36px_rgba(120,150,210,0.20),0_8px_18px_rgba(120,150,210,0.12),0_0_0_1px_rgba(191,219,254,0.46),0_0_24px_rgba(96,165,250,0.16),inset_0_1px_0_rgba(255,255,255,0.99),inset_0_-1px_0_rgba(191,219,254,0.18)] sm:px-[18px]",
+          className
+        )}
+        padded={false}
+      >
+        <div className="flex h-[52px] min-h-[52px] w-full items-center">{children}</div>
+      </GlassCard>
+      <div className="pointer-events-none absolute inset-0 rounded-[22px] ring-2 ring-blue-300/12 transition-all duration-200 group-focus-within:ring-blue-300/38" />
+    </div>
+  );
+}
+
+function PositionScreen({ positionState, setPositionState }) {
+  const reduceMotion = useReducedMotion();
+  const previousKellyManualRef = useRef(false);
+  const lastManualContractsRef = useRef("1");
+  const instrument = positionState.instrument || "MNQ";
+  const entry = positionState.entry || "21,500.00";
+  const stop = positionState.stop || "21,470.00";
+  const target = positionState.target || "21,560.00";
+  const winRate = positionState.winRate ?? 55;
+  const kelly = positionState.kelly || "½";
+
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === instrument) || POSITION_INSTRUMENTS[2];
+  const pointValue = selectedInstrument.pointValue || 1;
+  const instrumentDefaults = selectedInstrument.defaults || POSITION_INSTRUMENTS[2].defaults;
+  const fallbackValue = "—";
+  const accountBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
+  const entryPrice = parseNumberString(entry);
+  const stopPrice = parseNumberString(stop);
+  const targetPrice = parseNumberString(target);
+  const riskPoints = Math.max(0, Math.abs(entryPrice - stopPrice));
+  const rewardPoints = Math.max(0, Math.abs(targetPrice - entryPrice));
+  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+  const riskPerContract = riskPoints * pointValue;
+
+  const winProbability = Math.max(0, Math.min(1, winRate / 100));
+  const lossProbability = 1 - winProbability;
+  const rawKellyFraction = rewardRiskRatio > 0 ? winProbability - lossProbability / rewardRiskRatio : 0;
+  const clampedKellyFraction = Math.max(0, Math.min(1, Number.isFinite(rawKellyFraction) ? rawKellyFraction : 0));
+  const kellyPercent = clampedKellyFraction * 100;
+
+  const isKellyManual = kelly === "Off";
+  const kellyModeMultiplier = kelly === "Full" ? 1 : kelly === "½" ? 0.5 : kelly === "¼" ? 0.25 : 0;
+  const appliedKellyFraction = isKellyManual ? 0 : Math.max(0, clampedKellyFraction * kellyModeMultiplier);
+  const riskBudget = accountBalance > 0 ? accountBalance * appliedKellyFraction : 0;
+
+  const sizingReady = accountBalance > 0 && entryPrice > 0 && stopPrice > 0 && riskPerContract > 0;
+  const rawSuggestedContracts = sizingReady && Number.isFinite(riskBudget) ? Math.floor(riskBudget / riskPerContract) : 0;
+  const autoSuggestedContracts = Number.isFinite(rawSuggestedContracts) ? Math.max(0, rawSuggestedContracts) : 0;
+  const manualContractsInput = positionState.contracts ?? "";
+  const manualContractCount = Math.max(0, parseNumberString(manualContractsInput || "0"));
+  const activeContractCount = isKellyManual ? manualContractCount : autoSuggestedContracts;
+  const suggestedContractsDisplay = isKellyManual ? manualContractsInput : String(activeContractCount);
+
+  const potentialRisk = activeContractCount * riskPerContract;
+  const potentialReturn = activeContractCount * rewardPoints * pointValue;
+
+  useEffect(() => {
+    const enteringManualMode = isKellyManual && !previousKellyManualRef.current;
+    if (enteringManualMode) {
+      const nextManualContracts = lastManualContractsRef.current && parseNumberString(lastManualContractsRef.current) > 0 ? lastManualContractsRef.current : "1";
+      if ((positionState.contracts || "") !== nextManualContracts) {
+        setPositionState((prev) => ({ ...prev, contracts: nextManualContracts }));
+      }
+    }
+    if (!isKellyManual) {
+      const nextContracts = String(autoSuggestedContracts);
+      if ((positionState.contracts || "") !== nextContracts) {
+        setPositionState((prev) => ({ ...prev, contracts: nextContracts }));
+      }
+    }
+    previousKellyManualRef.current = isKellyManual;
+  }, [isKellyManual, autoSuggestedContracts, positionState.contracts, setPositionState]);
+
+  useEffect(() => {
+    setPositionState((prev) => {
+      const nextEntry = instrumentDefaults.entry;
+      const nextStop = instrumentDefaults.stop;
+      const nextTarget = instrumentDefaults.target;
+      if (prev.entry === nextEntry && prev.stop === nextStop && prev.target === nextTarget) return prev;
+      return { ...prev, entry: nextEntry, stop: nextStop, target: nextTarget };
+    });
+  }, [instrument, instrumentDefaults.entry, instrumentDefaults.stop, instrumentDefaults.target, setPositionState]);
+
+  const setField = (key, value) => setPositionState((prev) => ({ ...prev, [key]: value }));
+
+  const handleManualContractsChange = (raw) => {
+    const rawDigits = keepDigitsOnly(raw, 3, "");
+    const nextValue = rawDigits.length > 1 ? rawDigits.replace(/^0+/, "") || "" : rawDigits;
+    if (nextValue !== "") lastManualContractsRef.current = nextValue;
+    setField("contracts", nextValue);
+  };
+
+  const formatPriceInput = (raw, decimals) => {
+    const clean = String(raw).replace(/,/g, "");
+    let whole = "";
+    let frac = "";
+    let seenDot = false;
+    for (const ch of clean) {
+      if (ch >= "0" && ch <= "9") {
+        if (!seenDot && whole.length < 7) whole += ch;
+        else if (seenDot && frac.length < (decimals || 2)) frac += ch;
+      } else if (ch === "." && !seenDot) {
+        seenDot = true;
+      }
+    }
+    const formattedWhole = whole ? Number(whole).toLocaleString("en-US") : "";
+    return seenDot ? `${formattedWhole}.${frac}` : formattedWhole;
+  };
+
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader />
+      <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={(value) => setField("instrument", value)} />
+      <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
+
+      <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
+        <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
+          <TinyLabel className="text-center text-slate-500/80">Entry</TinyLabel>
+          <input type="text" inputMode="decimal" value={entry} onChange={(e) => setField("entry", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-slate-600 outline-none" />
+        </GlassCard>
+        <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
+          <TinyLabel className="text-center text-slate-500/80">Stop</TinyLabel>
+          <input type="text" inputMode="decimal" value={stop} onChange={(e) => setField("stop", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-rose-500/85 outline-none" />
+        </GlassCard>
+        <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
+          <TinyLabel className="text-center text-slate-500/80">Target</TinyLabel>
+          <input type="text" inputMode="decimal" value={target} onChange={(e) => setField("target", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90 outline-none" />
+        </GlassCard>
+      </div>
+
+      <GlassCard className="rounded-[24px] px-5 py-2.5">
+        <div className="flex items-center gap-3">
+          <div className="min-w-[42px]"><TinyLabel className="whitespace-nowrap">WIN %</TinyLabel></div>
+          <div className="relative flex-1 overflow-hidden rounded-full">
+            <div className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.22)_45%,rgba(255,255,255,0)_100%)] opacity-60 blur-[0.5px]" style={{ width: "36px", transform: `translateX(calc(${winRate}% - 18px))`, transition: "transform 120ms cubic-bezier(0.22,1,0.36,1)" }} />
+            <input type="range" min="0" max="100" step="1" value={winRate} onChange={(e) => setField("winRate", Number(e.target.value))} className="slider-premium w-full cursor-pointer appearance-none bg-transparent" aria-label="Win Rate" />
+          </div>
+          <div className="min-w-[44px] text-right text-[17px] font-semibold tracking-[-0.04em] text-slate-700">
+            <motion.div key={`win-rate-${winRate}`} initial={reduceMotion ? false : { opacity: 0.55, y: 2, scale: 0.992, filter: "blur(0.8px)" }} animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }} transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 28, mass: 0.42 }}>
+              {winRate}%
+            </motion.div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <TinyLabel>Kelly</TinyLabel>
+          <div className="text-[9px] font-medium uppercase tracking-[0.28em] text-slate-500/90 text-right">{rewardRiskRatio > 0 ? formatPercent(kellyPercent, 1) : fallbackValue}</div>
+        </div>
+        <SegmentedControl items={KELLY_OPTIONS} value={kelly} onChange={(value) => setField("kelly", value)} />
+      </div>
+
+      <GlassCard className="rounded-[30px] px-5 pb-5 pt-6 sm:px-6 sm:pt-7" highlight>
+        <TinyLabel className="text-center">{isKellyManual ? "Manual Position" : "Suggested Position"}</TinyLabel>
+        <div className="mt-4 text-center">
+          <div className="flex min-h-[88px] items-center justify-center px-2 overflow-visible">
+            <motion.div key={isKellyManual ? "manual-contracts-input" : suggestedContractsDisplay} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion ? { duration: 0 } : SPRING} className="w-full">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={suggestedContractsDisplay}
+                onChange={isKellyManual ? (e) => handleManualContractsChange(e.target.value) : undefined}
+                readOnly={!isKellyManual}
+                className="w-full bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[78px] font-semibold leading-[0.92] tracking-[-0.075em] text-transparent outline-none"
+              />
+            </motion.div>
+          </div>
+          <div className="mt-1.5 text-[16px] font-medium tracking-[-0.02em] text-slate-500">contracts</div>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-2.5">
+          <MetricRowCard label="Risk" value={formatCurrency(potentialRisk)} tone="negative" />
+          <MetricRowCard label="Return" value={formatCurrency(potentialReturn)} tone="positive" />
+          <MetricRowCard label="R" value={`${rewardRiskRatio.toFixed(1)}R`} />
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+function CompoundScreen({ positionState, compoundState, setCompoundState }) {
+  const reduceMotion = useReducedMotion();
+  const projectionMode = compoundState.projectionMode;
+  const projectionGoalDisplayType = compoundState.projectionGoalDisplayType;
+  const projectionGoalDollarInput = compoundState.projectionGoalDollarInput;
+  const projectionGoalPercentInput = compoundState.projectionGoalPercentInput;
+  const projectionGoalDisplayInput = projectionGoalDisplayType === "%" ? projectionGoalPercentInput : projectionGoalDollarInput;
+  const manualStartingBalanceInput = compoundState.manualStartingBalanceInput;
+  const tradeFrequencyValue = compoundState.tradeFrequencyValue;
+  const tradeFrequency = compoundState.tradeFrequency;
+  const gainInput = compoundState.gainInput;
+  const winRateInput = compoundState.winRateInput;
+  const durationInput = compoundState.durationInput;
+  const durationUnit = compoundState.durationUnit;
+
+  const setProjectionMode = (value) => setCompoundState((prev) => ({ ...prev, projectionMode: value }));
+  const setProjectionGoalDisplayType = (value) =>
+    setCompoundState((prev) => ({
+      ...prev,
+      projectionGoalDisplayType: typeof value === "function" ? value(prev.projectionGoalDisplayType) : value,
+    }));
+  const setProjectionGoalDisplayInput = (value) =>
+    setCompoundState((prev) => ({
+      ...prev,
+      [prev.projectionGoalDisplayType === "%" ? "projectionGoalPercentInput" : "projectionGoalDollarInput"]: value,
+    }));
+  const setManualStartingBalanceInput = (value) => setCompoundState((prev) => ({ ...prev, manualStartingBalanceInput: value }));
+  const setTradeFrequencyValue = (value) => setCompoundState((prev) => ({ ...prev, tradeFrequencyValue: value }));
+  const setTradeFrequency = (value) => setCompoundState((prev) => ({ ...prev, tradeFrequency: value }));
+  const setGainInput = (value) => setCompoundState((prev) => ({ ...prev, gainInput: value }));
+  const setWinRateInput = (value) => setCompoundState((prev) => ({ ...prev, winRateInput: value }));
+  const setDurationInput = (value) => setCompoundState((prev) => ({ ...prev, durationInput: value }));
+  const setDurationUnit = (value) => setCompoundState((prev) => ({ ...prev, durationUnit: value }));
+
+  const modeItems = [
+    { value: "On", label: "Forecast" },
+    { value: "Off", label: "Compound" },
+  ];
+  const frequencyItems = [
+    { value: "Per Day", label: "Day" },
+    { value: "Per Week", label: "Week" },
+    { value: "Per Month", label: "Month" },
+  ];
+  const durationItems = ["Days", "Weeks", "Months"];
+  const fallbackValue = "—";
+
+  const sanitizeEditableIntegerInput = (raw, maxDigits = 3) => {
+    const digits = String(raw ?? "").replace(/[^0-9]/g, "").slice(0, maxDigits);
+    if (!digits) return "";
+    return digits.length > 1 ? digits.replace(/^0+/, "") || "" : digits;
+  };
+
+  const sanitizePercentInput = (raw, maxDigits = 3) => {
+    const clean = String(raw ?? "").replace(/[^0-9.]/g, "");
+    const numeric = parseNumberString(clean);
+    if (!clean.trim()) return "";
+    return String(Math.max(0, Math.min(999, numeric))).slice(0, maxDigits);
+  };
+
+  const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "25,000"));
+  const manualStartingBalance = Math.max(0, parseNumberString(manualStartingBalanceInput || "0"));
+  const minimumDollarGoal = startingBalance > 0 ? startingBalance + 1 : 1;
+  const rawDollarGoalNumeric = Math.max(0, parseNumberString(projectionGoalDollarInput || "0"));
+  const rawPercentGoalNumeric = Math.max(0, parseNumberString(projectionGoalPercentInput || "0"));
+  const activeGoalNumeric = projectionGoalDisplayType === "%" ? rawPercentGoalNumeric : rawDollarGoalNumeric;
+  const projectionDollarGoalWarningActive =
+    projectionGoalDisplayType === "$" &&
+    String(projectionGoalDollarInput || "").trim() !== "" &&
+    rawDollarGoalNumeric > 0 &&
+    rawDollarGoalNumeric < minimumDollarGoal;
+  const parsedTradeFrequencyValue = Math.max(0, parseNumberString(tradeFrequencyValue || "0"));
+  const safeTradeFrequencyValue = Math.max(1, parsedTradeFrequencyValue || 1);
+  const parsedGainPercent = Math.max(0, parseNumberString(gainInput || "0"));
+  const parsedWinRatePercent = Math.max(0, Math.min(100, parseNumberString(winRateInput || "0")));
+  const parsedDurationValue = Math.max(0, parseNumberString(durationInput || "0"));
+
+  const projectionUsesPercent = projectionGoalDisplayType === "%";
+  const projectionGoalHasValue = activeGoalNumeric > 0;
+  const projectionFrequencyHasValue = parsedTradeFrequencyValue > 0;
+  const hasSafeGain = parsedGainPercent > 0;
+  const hasSafeWinRate = parsedWinRatePercent > 0;
+
+  const resolveForecastTargetBalance = (goalMode, dollarGoal, percentGoal, startBalance, minimumValidDollarGoal) => {
+    if (!Number.isFinite(startBalance) || startBalance <= 0) return null;
+    if (goalMode === "%") {
+      if (!Number.isFinite(percentGoal) || percentGoal <= 0) return null;
+      const resolvedPercentTarget = startBalance * (1 + percentGoal / 100);
+      return Number.isFinite(resolvedPercentTarget) ? resolvedPercentTarget : null;
+    }
+    if (!Number.isFinite(dollarGoal) || dollarGoal < minimumValidDollarGoal) return null;
+    return dollarGoal;
+  };
+
+  const effectiveGrowthPercentPerPeriod = hasSafeGain
+    ? Math.max(0.1, parsedGainPercent * (hasSafeWinRate ? 0.5 + parsedWinRatePercent / 200 : 1) * safeTradeFrequencyValue)
+    : 0;
+
+  const projectionTargetBalance = resolveForecastTargetBalance(
+    projectionGoalDisplayType,
+    rawDollarGoalNumeric,
+    rawPercentGoalNumeric,
+    startingBalance,
+    minimumDollarGoal
+  );
+
+  const baseContracts = Math.max(1, parseNumberString(positionState.contracts || "1"));
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const hasSafeScalingInputs = startingBalance > 0 && baseContracts > 0 && !!selectedInstrument;
+  const balancePerContractTier = hasSafeScalingInputs ? Math.max(1, startingBalance / baseContracts) : null;
+
+  const scaledProjectionData = useMemo(() => {
+    if (!projectionTargetBalance || startingBalance <= 0 || effectiveGrowthPercentPerPeriod <= 0) {
+      return { points: [], periodsEstimate: null, sizingMilestones: [] };
+    }
+    const points = [startingBalance];
+    const sizingMilestones = [];
+    let balance = startingBalance;
+    let lastContracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
+    const maxPeriods = 180;
+
+    for (let period = 1; period <= maxPeriods; period += 1) {
+      const contracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
+      const cappedContracts = Math.max(1, Math.min(contracts, baseContracts * 24));
+      const sizeMultiplier = hasSafeScalingInputs ? Math.max(1, cappedContracts / Math.max(1, baseContracts)) : 1;
+      const periodGrowthRate = Math.max(0.001, (effectiveGrowthPercentPerPeriod / 100) * sizeMultiplier);
+      const nextBalance = Math.max(0, balance * (1 + periodGrowthRate));
+      const safeNextBalance = Number.isFinite(nextBalance) ? nextBalance : balance;
+      points.push(safeNextBalance);
+      if (cappedContracts > lastContracts) {
+        sizingMilestones.push({ key: `size-${period}-${cappedContracts}`, period, value: safeNextBalance, label: `${cappedContracts} ctr` });
+        lastContracts = cappedContracts;
+      }
+      balance = safeNextBalance;
+      if (balance >= projectionTargetBalance) {
+        return { points, periodsEstimate: period, sizingMilestones };
+      }
+    }
+    return { points, periodsEstimate: null, sizingMilestones };
+  }, [projectionTargetBalance, startingBalance, effectiveGrowthPercentPerPeriod, hasSafeScalingInputs, balancePerContractTier, baseContracts]);
+
+  const projectionChartPoints = scaledProjectionData.points.length >= 2 ? scaledProjectionData.points : [];
+  const projectionChartReady = projectionChartPoints.length >= 2;
+  const projectionPeriodsEstimate = scaledProjectionData.periodsEstimate;
+  const projectionTradeUnitLabel = tradeFrequency === "Per Day" ? "Day" : tradeFrequency === "Per Week" ? "Week" : "Month";
+  const projectionUnitLabel = tradeFrequency === "Per Day"
+    ? projectionPeriodsEstimate === 1
+      ? "day"
+      : "days"
+    : tradeFrequency === "Per Week"
+      ? projectionPeriodsEstimate === 1
+        ? "week"
+        : "weeks"
+      : projectionPeriodsEstimate === 1
+        ? "month"
+        : "months";
+  const projectionEstimatePrimary = projectionPeriodsEstimate
+    ? `${projectionPeriodsEstimate} ${projectionUnitLabel}`
+    : projectionDollarGoalWarningActive
+      ? "Goal above start"
+      : "Enter valid goal and frequency";
+
+  const projectionDrawdownMetrics = useMemo(() => {
+    const safeGain = Math.max(0, parsedGainPercent || 0);
+    const safeWinRate = hasSafeWinRate ? parsedWinRatePercent : 50;
+    const safePeriods = projectionPeriodsEstimate && Number.isFinite(projectionPeriodsEstimate) ? Math.max(1, projectionPeriodsEstimate) : 0;
+    const safeTradeCount = Math.max(1, safeTradeFrequencyValue || 1);
+    if (!projectionTargetBalance || !projectionGoalHasValue || !projectionFrequencyHasValue || safeGain <= 0) {
+      return { expected: fallbackValue, worst: fallbackValue, streak: fallbackValue };
+    }
+    const lossFactor = Math.max(0.2, (100 - safeWinRate) / 100);
+    const expectedDrawdown = Math.min(85, Math.max(3, Math.round(safeGain * (1.2 + lossFactor * 2.2) + safeTradeCount * 0.6)));
+    const worstCaseDrawdown = Math.min(95, Math.max(expectedDrawdown + 4, Math.round(expectedDrawdown * 1.65 + Math.min(12, safePeriods * 0.18))));
+    const averageLosingStreak = Math.min(18, Math.max(1, Math.round((100 - safeWinRate) / 12 + safeTradeCount / 2 + Math.min(4, safePeriods / 10))));
+    return {
+      expected: formatPercent(expectedDrawdown),
+      worst: formatPercent(worstCaseDrawdown),
+      streak: `${averageLosingStreak} trades`,
+    };
+  }, [parsedGainPercent, parsedWinRatePercent, hasSafeWinRate, projectionPeriodsEstimate, safeTradeFrequencyValue, projectionGoalHasValue, projectionFrequencyHasValue, projectionTargetBalance]);
+
+  const projectionConfidenceSpread = useMemo(() => {
+    if (!projectionChartReady) return 0;
+    const baseSpread = 0.06;
+    const gainModifier = hasSafeGain ? Math.min(0.1, parsedGainPercent / 200) : 0.04;
+    const winRateModifier = hasSafeWinRate ? Math.max(0, (55 - parsedWinRatePercent) / 500) : 0.02;
+    const drawdownModifier = projectionDrawdownMetrics.expected !== fallbackValue ? Math.min(0.08, parseNumberString(projectionDrawdownMetrics.expected) / 400) : 0.02;
+    return Math.min(0.22, Math.max(0.05, baseSpread + gainModifier + winRateModifier + drawdownModifier));
+  }, [projectionChartReady, hasSafeGain, parsedGainPercent, hasSafeWinRate, parsedWinRatePercent, projectionDrawdownMetrics.expected]);
+
+  const projectionBandUpper = useMemo(() => {
+    if (!projectionChartReady) return null;
+    return projectionChartPoints.map((value, index) => {
+      const progress = projectionChartPoints.length <= 1 ? 0 : index / (projectionChartPoints.length - 1);
+      const spread = 1 + projectionConfidenceSpread * (0.4 + progress * 0.8);
+      const upper = value * spread;
+      return Number.isFinite(upper) ? upper : value;
+    });
+  }, [projectionChartReady, projectionChartPoints, projectionConfidenceSpread]);
+
+  const projectionBandLower = useMemo(() => {
+    if (!projectionChartReady) return null;
+    return projectionChartPoints.map((value, index) => {
+      const progress = projectionChartPoints.length <= 1 ? 0 : index / (projectionChartPoints.length - 1);
+      const spread = 1 - projectionConfidenceSpread * (0.45 + progress * 0.9);
+      const lower = Math.max(0, value * spread);
+      return Number.isFinite(lower) ? lower : value;
+    });
+  }, [projectionChartReady, projectionChartPoints, projectionConfidenceSpread]);
+
+  const projectionPositionSizeSeries = useMemo(() => {
+    if (projectionChartPoints.length < 2) return [];
+    return projectionChartPoints.map((value) => {
+      if (!hasSafeScalingInputs || !balancePerContractTier) return `${baseContracts} ctr`;
+      const contracts = Math.max(1, Math.min(Math.floor(value / balancePerContractTier), baseContracts * 24));
+      return `${contracts} ctr`;
+    });
+  }, [projectionChartPoints, hasSafeScalingInputs, balancePerContractTier, baseContracts]);
+
+  const projectionMilestones = useMemo(() => {
+    if (!projectionChartReady || !projectionTargetBalance || startingBalance <= 0) return [];
+    const safeTarget = Math.max(startingBalance, projectionTargetBalance);
+    const sizeMilestones = scaledProjectionData.sizingMilestones.map((milestone) => ({
+      key: milestone.key,
+      x: projectionChartPoints.length <= 1 ? 0 : (milestone.period / Math.max(1, projectionChartPoints.length - 1)) * 320,
+      value: milestone.value,
+      label: milestone.label,
+      isGoal: false,
+    }));
+    if (sizeMilestones.length > 0) {
+      return [
+        { key: "start-balance", x: 0, value: startingBalance, label: "Start", isGoal: false },
+        ...sizeMilestones.slice(0, 4),
+        { key: "goal-balance", x: 320, value: safeTarget, label: "Goal", isGoal: true },
+      ];
+    }
+    const span = safeTarget - startingBalance;
+    if (span <= 0) return [];
+    const compactCurrency = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+      notation: "compact",
+    });
+    return [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => ({
+      key: `milestone-${index}`,
+      x: ratio * 320,
+      value: startingBalance + span * ratio,
+      label: index === 0 ? "Start" : index === 4 ? "Goal" : compactCurrency.format(startingBalance + span * ratio),
+      isGoal: index === 4,
+    }));
+  }, [projectionChartReady, projectionTargetBalance, startingBalance, scaledProjectionData.sizingMilestones, projectionChartPoints.length]);
+
+  const projectionEstimatedGoalDate = useMemo(() => {
+    if (!projectionPeriodsEstimate || !Number.isFinite(projectionPeriodsEstimate)) return null;
+    const periods = Math.max(1, Math.round(projectionPeriodsEstimate));
+    const baseDate = new Date();
+    const formatFullGoalDate = (date) => {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+      return date.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+    };
+
+    if (tradeFrequency === "Per Day") {
+      const date = new Date(baseDate);
+      let added = 0;
+      while (added < periods) {
+        date.setDate(date.getDate() + 1);
+        const day = date.getDay();
+        if (day !== 0 && day !== 6) added += 1;
+      }
+      return formatFullGoalDate(date);
+    }
+
+    if (tradeFrequency === "Per Week") {
+      const date = new Date(baseDate);
+      date.setDate(date.getDate() + periods * 7);
+      return formatFullGoalDate(date);
+    }
+
+    const date = new Date(baseDate);
+    date.setMonth(date.getMonth() + periods);
+    return formatFullGoalDate(date);
+  }, [projectionPeriodsEstimate, tradeFrequency]);
+
+  const projectionEstimatedGoalDateLabel = projectionEstimatedGoalDate ? `Estimated Goal Date: ${projectionEstimatedGoalDate}` : "Goal date unavailable";
+  const projectionGoalSummaryValue = projectionUsesPercent ? formatPercent(rawPercentGoalNumeric) : formatCurrency(rawDollarGoalNumeric);
+
+  const normalCompoundingIntervals = useMemo(() => {
+    const durationValue = Math.max(0, parsedDurationValue);
+    const frequencyValue = Math.max(0, parsedTradeFrequencyValue);
+    if (durationValue <= 0 || frequencyValue <= 0) return 0;
+    const durationInDays = durationUnit === "Days" ? durationValue : durationUnit === "Weeks" ? durationValue * 7 : durationValue * 30;
+    const frequencyPerDay = tradeFrequency === "Per Day" ? frequencyValue : tradeFrequency === "Per Week" ? frequencyValue / 7 : frequencyValue / 30;
+    const intervals = durationInDays * frequencyPerDay;
+    return Number.isFinite(intervals) ? Math.max(0, Math.floor(intervals)) : 0;
+  }, [parsedDurationValue, durationUnit, parsedTradeFrequencyValue, tradeFrequency]);
+
+  const normalEffectiveGrowthRate = useMemo(() => {
+    const gainRate = Math.max(0, parsedGainPercent) / 100;
+    if (gainRate <= 0) return 0;
+    const hasValidWinRate = Number.isFinite(parsedWinRatePercent) && parsedWinRatePercent > 0 && parsedWinRatePercent <= 100;
+    const winRateModifier = hasValidWinRate ? 0.5 + parsedWinRatePercent / 200 : 1;
+    return gainRate * winRateModifier;
+  }, [parsedGainPercent, parsedWinRatePercent]);
+
+  const normalLine = useMemo(() => {
+    if (manualStartingBalance <= 0 || normalCompoundingIntervals <= 0 || normalEffectiveGrowthRate <= 0) {
+      return manualStartingBalance > 0 ? [manualStartingBalance] : [0];
+    }
+    const arr = [manualStartingBalance];
+    for (let i = 1; i <= normalCompoundingIntervals; i += 1) {
+      const prev = arr[i - 1];
+      const nextValue = prev * (1 + normalEffectiveGrowthRate);
+      arr.push(Number.isFinite(nextValue) ? nextValue : prev);
+    }
+    return arr;
+  }, [manualStartingBalance, normalCompoundingIntervals, normalEffectiveGrowthRate]);
+
+  const normalEndingBalance = normalLine[normalLine.length - 1] || manualStartingBalance || 0;
+  const normalProfit = normalEndingBalance - (manualStartingBalance || 0);
+  const normalReturnPercent = manualStartingBalance > 0 ? ((normalEndingBalance - manualStartingBalance) / manualStartingBalance) * 100 : 0;
+  const normalChartReady = normalLine.length >= 2 && normalEndingBalance > 0;
+  const normalFlowSummary = parsedDurationValue > 0 && safeTradeFrequencyValue > 0
+    ? `${safeTradeFrequencyValue} ${tradeFrequency} • ${parsedDurationValue} ${durationUnit}`
+    : "Manual compound calculator";
+
+  const supportingStats = projectionMode
+    ? [
+        { label: "Goal", value: projectionGoalHasValue ? projectionGoalSummaryValue : fallbackValue, tone: "positive" },
+        { label: "Start", value: startingBalance > 0 ? formatCurrency(startingBalance) : fallbackValue },
+        { label: "Periods", value: projectionPeriodsEstimate ? String(projectionPeriodsEstimate) : fallbackValue },
+      ]
+    : [
+        { label: "Profit", value: formatCompactCurrency(normalProfit), tone: normalProfit >= 0 ? "positive" : "negative" },
+        { label: "Return", value: formatCompactPercent(normalReturnPercent, 1), tone: normalReturnPercent >= 0 ? "positive" : "negative" },
+        { label: "Duration", value: parsedDurationValue > 0 ? `${parsedDurationValue} ${durationUnit}` : fallbackValue },
+      ];
+
+  return (
+    <div className="space-y-4 pb-4 sm:space-y-5">
+      <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
+      <div className="px-1">
+        <SegmentedControl items={modeItems} value={projectionMode ? "On" : "Off"} onChange={(value) => setProjectionMode(value === "On")} />
+      </div>
+
+      {projectionMode ? (
+        <>
+          <div className="space-y-3 sm:space-y-4">
+            <BalanceHeroCard
+              label="Goal"
+              fixedFontSize={52}
+              value={projectionGoalDisplayInput}
+              onChange={(raw) => {
+                const cleaned = String(raw ?? "").replace(/[$%]/g, "");
+                if (projectionGoalDisplayType === "%") {
+                  setProjectionGoalDisplayInput(sanitizePercentInput(cleaned));
+                  return;
+                }
+                if (!cleaned.trim()) {
+                  setProjectionGoalDisplayInput("");
+                  return;
+                }
+                setProjectionGoalDisplayInput(formatNumberString(cleaned));
+              }}
+              toggleLabel="$"
+              toggleRightLabel="%"
+              toggleState={projectionGoalDisplayType === "%"}
+              onToggle={() => setProjectionGoalDisplayType((prev) => (prev === "$" ? "%" : "$"))}
+              prefix={projectionGoalDisplayType === "$" && projectionGoalDisplayInput !== "" ? "$" : ""}
+              suffix={projectionGoalDisplayType === "%" && projectionGoalDisplayInput !== "" ? "%" : ""}
+            />
+
+            {projectionDollarGoalWarningActive ? (
+              <GlassCard className="rounded-[24px] border-amber-200/55 bg-[linear-gradient(180deg,rgba(255,248,236,0.72),rgba(255,255,255,0.28))] px-4 py-3 sm:px-5" padded={false}>
+                <div className="px-4 py-3">
+                  <TinyLabel className="text-amber-700/80">Goal Guidance</TinyLabel>
+                  <div className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-slate-700">Set a balance target above your starting balance.</div>
+                  <div className="mt-1 text-[12px] font-medium tracking-[-0.01em] text-slate-500/90">Minimum target: {formatCurrency(minimumDollarGoal)}</div>
+                </div>
+              </GlassCard>
+            ) : null}
+
+            <div className="px-1">
+              <div className="flex w-full items-center justify-between gap-3 rounded-[20px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.16))] px-4 py-3 shadow-[0_8px_18px_rgba(145,160,190,0.08),inset_0_1px_0_rgba(255,255,255,0.78)] backdrop-blur-[14px]">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/90 shadow-[0_0_0_4px_rgba(74,222,128,0.12)]" />
+                  <span className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-500/80">Start</span>
+                </div>
+                <div className="min-w-0 flex-1 text-center text-[15px] font-semibold tracking-[-0.03em] text-slate-700">
+                  {startingBalance > 0 ? formatCurrency(startingBalance) : fallbackValue}
+                </div>
+                <div className="shrink-0 text-[9px] font-medium uppercase tracking-[0.18em] text-slate-400/80">Account</div>
+              </div>
+            </div>
+
+            <GlassCard className="rounded-[30px] p-4 sm:p-5">
+              <CompoundFieldGroup label="Trade Frequency" className="space-y-2.5">
+                <div className="grid grid-cols-1 items-start gap-3.5 sm:grid-cols-[88px_minmax(0,1fr)] sm:gap-4">
+                  <CompoundInputShell className="px-3 sm:px-3.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={tradeFrequencyValue}
+                      onChange={(e) => setTradeFrequencyValue(sanitizeEditableIntegerInput(e.target.value, 3))}
+                      className="h-full min-h-[52px] w-full bg-transparent px-1 text-center text-[20px] font-semibold leading-none tracking-[-0.04em] text-slate-700 outline-none placeholder:text-slate-400/70"
+                    />
+                  </CompoundInputShell>
+                  <div className="min-w-0 self-start">
+                    <SegmentedControl items={frequencyItems} value={tradeFrequency} onChange={setTradeFrequency} />
+                  </div>
+                </div>
+              </CompoundFieldGroup>
+            </GlassCard>
+          </div>
+
+          <GlassCard className="overflow-visible rounded-[32px] px-5 pb-4.5 pt-5.5 sm:px-6 sm:pb-5 sm:pt-6" highlight>
+            <TinyLabel className="text-center">Expected Time to Hit Goal</TinyLabel>
+            <div className="mt-3 min-w-0 overflow-visible text-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  className="min-w-0 overflow-visible"
+                  key={projectionEstimatePrimary}
+                  initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.985 }}
+                  animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 1.015 }}
+                  transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 235, damping: 24, mass: 0.74 }}
+                >
+                  <div className="mx-auto flex w-full min-w-0 max-w-none items-center justify-center px-1 sm:px-2">
+                    <span className="block w-full min-w-0 overflow-visible whitespace-nowrap bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[42px] font-semibold leading-[1.02] tracking-[-0.05em] text-transparent sm:text-[54px]">
+                      {projectionEstimatePrimary}
+                    </span>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-white/42 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),rgba(255,255,255,0.08))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] sm:px-5 sm:py-5">
+              <div className="text-center text-[11px] font-medium tracking-[-0.01em] text-slate-500/82">{projectionEstimatedGoalDateLabel}</div>
+              <div className="mt-5 flex justify-center">
+                <div className="grid w-full max-w-[320px] grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-4">
+                  <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-4 py-5 shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]" padded={false}>
+                    <div className="flex min-h-[70px] flex-col items-center justify-center px-1 text-center">
+                      <TinyLabel className="text-center text-slate-500/78">Goal</TinyLabel>
+                      <div className="mt-3 text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90">{projectionGoalHasValue ? projectionGoalSummaryValue : fallbackValue}</div>
+                    </div>
+                  </GlassCard>
+                  <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-4 py-5 shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]" padded={false}>
+                    <div className="flex min-h-[70px] flex-col items-center justify-center px-1 text-center">
+                      <TinyLabel className="text-center text-slate-500/78">Start</TinyLabel>
+                      <div className="mt-3 text-[16px] font-semibold tracking-[-0.04em] text-slate-600">{startingBalance > 0 ? formatCurrency(startingBalance) : fallbackValue}</div>
+                    </div>
+                  </GlassCard>
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+
+          {projectionChartReady ? (
+            <ProjectionChart
+              points={projectionChartPoints}
+              bandUpper={projectionBandUpper}
+              bandLower={projectionBandLower}
+              projectionMode
+              milestones={projectionMilestones}
+              inspectorEnabled={projectionChartReady}
+              inspectorGoalValue={projectionTargetBalance}
+              inspectorTradeUnitLabel={projectionTradeUnitLabel}
+              inspectorPositionSizes={projectionPositionSizeSeries}
+            />
+          ) : (
+            <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <TinyLabel>Projection</TinyLabel>
+                  <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Projected balance path</div>
+                </div>
+              </div>
+              <div className="mt-4 flex h-[186px] items-center justify-center overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3 text-center text-[13px] font-medium text-slate-500">
+                Enter valid goal to preview projection
+              </div>
+            </GlassCard>
+          )}
+
+          <GlassCard className="rounded-[28px] p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <TinyLabel>Drawdown Analysis</TinyLabel>
+                <div className="mt-1 text-[16px] font-semibold tracking-[-0.03em] text-slate-700">Baseline downside profile</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <MetricRowCard label="Expected Max DD" value={projectionDrawdownMetrics.expected} tone="negative" />
+              <MetricRowCard label="Worst Case DD" value={projectionDrawdownMetrics.worst} tone="negative" />
+              <MetricRowCard label="Avg Losing Streak" value={projectionDrawdownMetrics.streak} />
+            </div>
+          </GlassCard>
+        </>
+      ) : (
+        <>
+          <BalanceHeroCard label="Starting Balance" fixedFontSize={52} value={manualStartingBalanceInput} onChange={(raw) => setManualStartingBalanceInput(formatNumberString(raw))} prefix="$" suffix="" />
+
+          <GlassCard className="rounded-[30px] p-4 sm:p-5">
+            <CompoundFieldGroup label="Trade Frequency">
+              <div className="grid grid-cols-1 items-start gap-3.5 sm:grid-cols-[88px_minmax(0,1fr)] sm:gap-4">
+                <CompoundInputShell className="px-3 sm:px-3.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={tradeFrequencyValue}
+                    onChange={(e) => setTradeFrequencyValue(sanitizeEditableIntegerInput(e.target.value, 3))}
+                    className="h-full min-h-[52px] w-full bg-transparent px-1 text-center text-[20px] font-semibold leading-none tracking-[-0.04em] text-slate-700 outline-none placeholder:text-slate-400/70"
+                  />
+                </CompoundInputShell>
+                <div className="min-w-0 self-start">
+                  <SegmentedControl items={frequencyItems} value={tradeFrequency} onChange={setTradeFrequency} />
+                </div>
+              </div>
+            </CompoundFieldGroup>
+          </GlassCard>
+
+          <GlassCard className="rounded-[30px] p-4 sm:p-5">
+            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 sm:gap-4">
+              <CompoundFieldGroup label="Gain %">
+                <CompoundInputShell>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={gainInput}
+                    onChange={(e) => setGainInput(sanitizePercentInput(e.target.value))}
+                    className="h-full min-h-[52px] w-full bg-transparent px-1 text-center text-[20px] font-semibold leading-none tracking-[-0.04em] text-slate-700 outline-none placeholder:text-slate-400/70"
+                  />
+                </CompoundInputShell>
+              </CompoundFieldGroup>
+              <CompoundFieldGroup
+                label={
+                  <div className="flex items-center gap-2.5">
+                    <span>Win %</span>
+                    <span className="text-[10px] font-medium tracking-[0.02em] text-slate-400/90 normal-case">Optional</span>
+                  </div>
+                }
+              >
+                <CompoundInputShell>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={winRateInput}
+                    onChange={(e) => setWinRateInput(sanitizePercentInput(e.target.value))}
+                    className="h-full min-h-[52px] w-full bg-transparent px-1 text-center text-[20px] font-semibold leading-none tracking-[-0.04em] text-slate-700 outline-none placeholder:text-slate-400/70"
+                  />
+                </CompoundInputShell>
+              </CompoundFieldGroup>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="rounded-[30px] p-4 sm:p-5">
+            <CompoundFieldGroup label="Duration" className="space-y-2.5" rightLabel={parsedDurationValue > 0 ? `${parsedDurationValue} ${durationUnit}` : fallbackValue}>
+              <div className="grid grid-cols-1 items-start gap-3.5 sm:grid-cols-[88px_minmax(0,1fr)] sm:gap-4">
+                <CompoundInputShell className="px-3 sm:px-3.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={durationInput}
+                    onChange={(e) => setDurationInput(sanitizeEditableIntegerInput(e.target.value, 3))}
+                    className="h-full min-h-[52px] w-full bg-transparent px-1 text-center text-[20px] font-semibold leading-none tracking-[-0.04em] text-slate-700 outline-none placeholder:text-slate-400/70"
+                  />
+                </CompoundInputShell>
+                <div className="min-w-0 self-start">
+                  <SegmentedControl items={durationItems} value={durationUnit} onChange={setDurationUnit} />
+                </div>
+              </div>
+            </CompoundFieldGroup>
+          </GlassCard>
+
+          <GlassCard className="rounded-[30px] px-5 pb-5 pt-6 sm:px-6 sm:pt-7" highlight>
+            <TinyLabel className="text-center">Ending Balance</TinyLabel>
+            <div className="mt-4 min-w-0 text-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key="normal-result"
+                  className="min-w-0 overflow-visible"
+                  initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.985 }}
+                  animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 1.015 }}
+                  transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <div className="mx-auto flex w-full min-w-0 max-w-none items-center justify-center px-1 sm:px-2">
+                    <span className="block w-full min-w-0 overflow-visible whitespace-nowrap bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[42px] font-semibold leading-[1.02] tracking-[-0.05em] text-transparent sm:text-[52px]">
+                      {Number.isFinite(normalEndingBalance) && normalEndingBalance > 0 ? formatCompactCurrency(normalEndingBalance) : fallbackValue}
+                    </span>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+              <div className="mt-1.5 text-[16px] font-medium tracking-[-0.02em] text-slate-500">
+                {normalCompoundingIntervals > 0 ? `${normalCompoundingIntervals} compounding intervals` : "Enter valid inputs"}
+              </div>
+              <div className="mt-2 text-[12px] font-medium tracking-[-0.01em] text-slate-500/85">{normalFlowSummary}</div>
+            </div>
+          </GlassCard>
+
+          {normalChartReady ? (
+            <ProjectionChart points={normalLine} bandUpper={null} bandLower={null} projectionMode={false} milestones={[]} inspectorEnabled={false} inspectorGoalValue={null} />
+          ) : (
+            <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <TinyLabel>Growth Chart</TinyLabel>
+                  <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Compounded growth path</div>
+                </div>
+              </div>
+              <div className="mt-4 flex h-[186px] items-center justify-center overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3 text-center text-[13px] font-medium text-slate-500">
+                Enter starting balance, gain, frequency, and duration
+              </div>
+            </GlassCard>
+          )}
+        </>
+      )}
+
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        {supportingStats.map((item) => (
+          <MetricRowCard key={item.label} label={item.label} value={item.value} tone={item.tone || "default"} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardScreen() {
+  const [range, setRange] = useState("Month");
+  const performanceSeries = [42, 58, 51, 76, 72, 88, 96];
+  const sessionMix = [36, 62, 44, 82, 56, 72, 48];
+  const width = 320;
+  const lineHeight = 132;
+  const lineMax = Math.max(...performanceSeries, 100);
+  const lineMin = Math.min(...performanceSeries, 0);
+  const linePath = performanceSeries
+    .map((value, index) => {
+      const x = performanceSeries.length <= 1 ? 0 : (index / (performanceSeries.length - 1)) * width;
+      const y = lineHeight - ((value - lineMin) / Math.max(lineMax - lineMin, 1)) * lineHeight;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader right={<TopIconPill icon={LineChart} />} />
+      <SegmentedControl items={["Week", "Month", "Quarter", "Year"]} value={range} onChange={setRange} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <MetricRowCard label="Net P&L" value="+$12.4K" tone="positive" />
+        <MetricRowCard label="Win Rate" value="58%" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <MetricRowCard label="Avg Day" value="+$410" tone="positive" />
+        <MetricRowCard label="Max DD" value="-6.8%" tone="negative" />
+      </div>
+      <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <TinyLabel>Performance Path</TinyLabel>
+            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Equity curve overview</div>
+          </div>
+          <div className="text-right">
+            <TinyLabel>Range</TinyLabel>
+            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{range}</div>
+          </div>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3">
+          <svg width="100%" viewBox={`0 0 ${width} ${lineHeight}`}>
+            {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
+              <line key={ratio} x1="0" x2={width} y1={lineHeight * ratio} y2={lineHeight * ratio} stroke="rgba(148,163,184,0.22)" strokeWidth="1" />
+            ))}
+            <path d={linePath} fill="none" stroke="rgba(59,130,246,0.96)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </GlassCard>
+      <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <TinyLabel>Session Mix</TinyLabel>
+            <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Distribution by session</div>
+          </div>
+          <div className="text-right">
+            <TinyLabel>Focus</TinyLabel>
+            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">Execution</div>
+          </div>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10))] p-3">
+          <div className="flex h-[120px] items-end justify-between gap-2">
+            {sessionMix.map((height, index) => (
+              <div key={index} className="flex-1 rounded-t-[12px] bg-[linear-gradient(180deg,rgba(136,173,255,0.72),rgba(255,255,255,0.22))]" style={{ height: `${height}%` }} />
+            ))}
+          </div>
+        </div>
+      </GlassCard>
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Weekly Review</TinyLabel>
+        <div className="mt-4 space-y-3">
+          {[
+            "Best performance came from patient opens and first pullback entries.",
+            "Most giveback occurred during midday overtrading.",
+            "Execution quality improved when risk stayed fixed after two losses.",
+          ].map((note) => (
+            <div key={note} className="rounded-[20px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+              {note}
+            </div>
+          ))}
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+function PlaceholderScreen({ title }) {
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader right={<TopIconPill icon={LineChart} />} />
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>{title}</TinyLabel>
+        <div className="mt-3 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Preserved tab shell</div>
+        <div className="mt-2 text-[14px] text-slate-500">This tab remains intact while the compound module is rebuilt.</div>
+      </GlassCard>
+    </div>
+  );
+}
+
+function BottomNav({ activeTab, onTabChange }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <div className="absolute inset-x-4 bottom-4 z-20">
+      <GlassCard className="rounded-full border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(245,248,255,0.58))] p-1.5 shadow-[0_22px_44px_rgba(118,138,183,0.18),0_8px_18px_rgba(118,138,183,0.10),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(214,223,242,0.72)] backdrop-blur-[30px] [backdrop-filter:saturate(1.45)_blur(30px)]" padded={false}>
+        <div className="pointer-events-none absolute inset-0 rounded-full opacity-[0.55] [backdrop-filter:saturate(1.65)_blur(38px)]" />
+        <div className="pointer-events-none absolute inset-[1px] rounded-full bg-[linear-gradient(180deg,rgba(250,252,255,0.22),rgba(250,252,255,0.10)_50%,rgba(246,249,255,0.16))] [backdrop-filter:saturate(1.28)_blur(18px)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10)_42%,rgba(255,255,255,0.06))]" />
+        <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.95),transparent)] opacity-95" />
+        <div className="relative grid grid-cols-5 gap-1.5">
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+            const active = activeTab === key;
+            return (
+              <motion.button
+                key={key}
+                whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                onClick={() => onTabChange(key)}
+                type="button"
+                className={cn(
+                  "relative z-10 flex min-h-[42px] flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
+                  active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute inset-[1px] rounded-[14px] transition-all duration-200",
+                    active
+                      ? "bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
+                      : "bg-transparent"
+                  )}
+                />
+                <Icon className="relative z-10" size={17} strokeWidth={2.1} />
+                <span className={cn("relative z-10 mt-1 flex min-h-[10px] w-full items-center justify-center text-center font-semibold leading-[1] tracking-[-0.01em] opacity-[0.96]", key === "share" ? "text-[10px]" : "text-[8px]")}>{label}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+export default function App() {
+  const reduceMotion = useReducedMotion();
+  const [activeTab, setActiveTab] = useState("position");
+  const [positionState, setPositionState] = useState({
+    accountBalance: "25,000",
+    propMode: false,
+    instrument: "MNQ",
+    entry: "21,500.00",
+    stop: "21,470.00",
+    target: "21,560.00",
+    winRate: 55,
+    kelly: "½",
+    contracts: "7",
+  });
+  const [compoundState, setCompoundState] = useState({
+    projectionMode: true,
+    projectionGoalDisplayType: "$",
+    projectionGoalDollarInput: "50,000",
+    projectionGoalPercentInput: "100",
+    manualStartingBalanceInput: "25,000",
+    tradeFrequencyValue: "1",
+    tradeFrequency: "Per Day",
+    gainInput: "8",
+    winRateInput: "55",
+    durationInput: "6",
+    durationUnit: "Months",
+  });
+
+  const screen =
+    activeTab === "position" ? (
+      <PositionScreen positionState={positionState} setPositionState={setPositionState} />
+    ) : activeTab === "compound" ? (
+      <CompoundScreen positionState={positionState} compoundState={compoundState} setCompoundState={setCompoundState} />
+    ) : activeTab === "dashboard" ? (
+      <DashboardScreen />
+    ) : activeTab === "journal" ? (
+      <PlaceholderScreen title="Journal" />
+    ) : (
+      <PlaceholderScreen title="Share" />
+    );
+
+  return (
+    <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(204,221,255,0.96),_rgba(236,241,250,0.98)_38%,_rgba(243,241,237,0.98)_76%)] text-slate-700">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-10%] top-[6%] h-[420px] w-[420px] rounded-full bg-blue-200/24 blur-3xl" />
+        <div className="absolute bottom-[-16%] right-[-8%] h-[380px] w-[380px] rounded-full bg-amber-100/22 blur-3xl" />
+      </div>
+      <div className="mx-auto flex min-h-screen max-w-[430px] items-center justify-center px-3 py-4 sm:px-4">
+        <div className="relative h-[812px] w-full overflow-hidden rounded-[40px] border border-blue-100/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.18))] shadow-[0_24px_90px_rgba(126,148,188,0.28),0_10px_30px_rgba(172,188,220,0.14),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-[26px]">
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))]" />
+          <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(110,152,255,0.18),transparent_70%)]" />
+          <div className="absolute left-1/2 top-2 h-1.5 w-28 -translate-x-1/2 rounded-full bg-slate-300/45" />
+          <main className="relative h-full overflow-y-auto px-4 pb-28 pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={activeTab}
+                initial={reduceMotion ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(3px)" }}
+                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {screen}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        </div>
+      </div>
+
+      <style>{`
+        .slider-premium::-webkit-slider-runnable-track { height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(96,137,232,0.92), rgba(147,189,255,0.72)); }
+        .slider-premium::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; margin-top: -6px; width: 22px; height: 22px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,1), rgba(238,244,255,0.96)); border: 1px solid rgba(190,205,240,0.95); }
+        .slider-premium::-moz-range-track { height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(96,137,232,0.92), rgba(147,189,255,0.72)); }
+        .slider-premium::-moz-range-thumb { width: 22px; height: 22px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,1), rgba(238,244,255,0.96)); border: 1px solid rgba(190,205,240,0.95); }
+        @keyframes balanceShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      `}</style>
+    </div>
+  );
+}
