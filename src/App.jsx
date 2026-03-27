@@ -1696,7 +1696,7 @@ function BottomNav({ activeTab, onTabChange }) {
         <div className="relative grid grid-cols-5 gap-1.5">
           <motion.span
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-[1px] top-[1px] z-0 rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
+            className="pointer-events-none absolute bottom-[2px] top-[2px] z-0 rounded-full bg-[linear-gradient(180deg,rgba(244,248,255,0.98)_0%,rgba(232,240,255,0.94)_46%,rgba(222,233,255,0.9)_100%)] shadow-[0_11px_24px_rgba(96,135,233,0.2),0_1px_2px_rgba(96,135,233,0.1),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(162,189,248,0.52),0_0_14px_rgba(120,150,255,0.14)] ring-1 ring-blue-200/90"
             initial={false}
             animate={indicatorStyle}
             transition={SPRING}
@@ -1712,7 +1712,7 @@ function BottomNav({ activeTab, onTabChange }) {
                 type="button"
                 className={cn(
                   "relative z-10 flex min-h-[42px] touch-manipulation flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
-                  active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
+                  active ? "text-blue-600" : "text-slate-400/58 hover:text-slate-500/80"
                 )}
               >
                 <Icon className="relative z-10" size={17} strokeWidth={2.1} />
