@@ -37,6 +37,7 @@ const NAV_ITEMS = [
 ];
 
 const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
+const BOTTOM_NAV_SPRING = { type: "spring", stiffness: 460, damping: 36, mass: 0.68, restDelta: 0.001 };
 const POSITION_INSTRUMENTS = [
   { key: "NQ", pointValue: 20, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
   { key: "ES", pointValue: 50, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
@@ -184,7 +185,7 @@ function SegmentedControl({ items, value, onChange }) {
                 <motion.span
                   layoutId={`segmented-pill-${segmentedId}`}
                   initial={false}
-                  transition={SPRING}
+                  transition={reduceMotion ? { duration: 0 } : BOTTOM_NAV_SPRING}
                   className="absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
                 />
               ) : null}
@@ -1576,6 +1577,7 @@ function JournalScreen({ positionState, compoundState, onResetPreferences }) {
 
 function BottomNav({ activeTab, onTabChange }) {
   const reduceMotion = useReducedMotion();
+  const navId = useId();
   return (
     <div className="absolute inset-x-4 bottom-4 z-20">
       <GlassCard className="rounded-full border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(245,248,255,0.58))] p-1.5 shadow-[0_22px_44px_rgba(118,138,183,0.18),0_8px_18px_rgba(118,138,183,0.10),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(214,223,242,0.72)] backdrop-blur-[30px] [backdrop-filter:saturate(1.45)_blur(30px)]" padded={false}>
@@ -1593,15 +1595,15 @@ function BottomNav({ activeTab, onTabChange }) {
                 onClick={() => onTabChange(key)}
                 type="button"
                 className={cn(
-                  "relative z-10 flex min-h-[42px] flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
+                  "relative z-10 flex min-h-[42px] flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-[color] duration-150 ease-out focus:outline-none",
                   active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
                 )}
               >
                 {active ? (
                   <motion.span
-                    layoutId="bottom-nav-pill"
+                    layoutId={`bottom-nav-pill-${navId}`}
                     initial={false}
-                    transition={SPRING}
+                    transition={reduceMotion ? { duration: 0 } : BOTTOM_NAV_SPRING}
                     className="absolute inset-[1px] rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
                   />
                 ) : null}
