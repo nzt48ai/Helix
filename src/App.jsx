@@ -1687,7 +1687,7 @@ function BottomNav({ activeTab, onTabChange }) {
   );
 
   return (
-    <div className="absolute inset-x-4 bottom-4 z-20">
+    <div className="absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-20">
       <GlassCard className="rounded-full border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(245,248,255,0.58))] p-1.5 shadow-[0_22px_44px_rgba(118,138,183,0.18),0_8px_18px_rgba(118,138,183,0.10),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(214,223,242,0.72)] backdrop-blur-[30px] [backdrop-filter:saturate(1.45)_blur(30px)]" padded={false}>
         <div className="pointer-events-none absolute inset-0 rounded-full opacity-[0.55] [backdrop-filter:saturate(1.65)_blur(38px)]" />
         <div className="pointer-events-none absolute inset-[1px] rounded-full bg-[linear-gradient(180deg,rgba(250,252,255,0.22),rgba(250,252,255,0.10)_50%,rgba(246,249,255,0.16))] [backdrop-filter:saturate(1.28)_blur(18px)]" />
@@ -1953,11 +1953,11 @@ export default function App() {
         <div className="absolute bottom-[-16%] right-[-8%] h-[380px] w-[380px] rounded-full bg-amber-100/22 blur-3xl" />
       </div>
       <div className="mx-auto flex min-h-screen max-w-[430px] items-center justify-center px-3 py-4 sm:px-4">
-        <div className="relative h-[812px] w-full overflow-hidden rounded-[40px] border border-blue-100/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.18))] shadow-[0_24px_90px_rgba(126,148,188,0.28),0_10px_30px_rgba(172,188,220,0.14),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-[26px]">
+        <div className="relative h-[calc(100dvh-2rem)] max-h-[812px] w-full overflow-hidden rounded-[40px] border border-blue-100/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.18))] shadow-[0_24px_90px_rgba(126,148,188,0.28),0_10px_30px_rgba(172,188,220,0.14),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-[26px]">
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))]" />
           <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(110,152,255,0.18),transparent_70%)]" />
           <div className="absolute left-1/2 top-2 h-1.5 w-28 -translate-x-1/2 rounded-full bg-slate-300/45" />
-          <main className="relative h-full overflow-y-auto px-4 pb-28 pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <main className="relative h-full overflow-y-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={activeTab}
