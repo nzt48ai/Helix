@@ -1765,6 +1765,28 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         <div className="mt-1 text-[13px] text-slate-500">Controls stay in Share tab UI. Exported image only includes card container bounds.</div>
         <div className="mt-4 space-y-3">
           <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
+          <div className="mx-auto w-full max-w-[420px] shrink-0">
+            <SharePortraitCard
+              shareType={shareType}
+              selectedInstrumentKey={selectedInstrument.key}
+              contextLine={contextLine}
+              entryValue={entry}
+              stopValue={stop}
+              targetValue={target}
+              visualPanelHeight={visualPanelHeight}
+              replayPathLabel={replayPathLabel}
+              rewardRiskRatio={rewardRiskRatio}
+              isJournalCard={isJournalCard}
+              isReplayCard={isReplayCard}
+              replayPathCurve={replayPathCurve}
+              GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
+              heroMetric={heroMetric}
+              compoundModeLabel={compoundModeLabel}
+              frequencySummary={frequencySummary}
+              secondaryMetrics={secondaryMetrics}
+              footerLabel={footerLabel}
+            />
+          </div>
           <SegmentedControl
             items={[
               { value: "dollar", label: "$" },
@@ -1785,28 +1807,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         </div>
       </GlassCard>
 
-      <div className="mx-auto w-full max-w-[420px] shrink-0">
-        <SharePortraitCard
-          shareType={shareType}
-          selectedInstrumentKey={selectedInstrument.key}
-          contextLine={contextLine}
-          entryValue={entry}
-          stopValue={stop}
-          targetValue={target}
-          visualPanelHeight={visualPanelHeight}
-          replayPathLabel={replayPathLabel}
-          rewardRiskRatio={rewardRiskRatio}
-          isJournalCard={isJournalCard}
-          isReplayCard={isReplayCard}
-          replayPathCurve={replayPathCurve}
-          GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
-          heroMetric={heroMetric}
-          compoundModeLabel={compoundModeLabel}
-          frequencySummary={frequencySummary}
-          secondaryMetrics={secondaryMetrics}
-          footerLabel={footerLabel}
-        />
-      </div>
 
       <div className="pointer-events-none fixed -left-[99999px] top-0 h-0 w-0 overflow-hidden" aria-hidden="true">
         <div ref={shareCardExportRef} style={{ width: `${SHARE_CARD_EXPORT_WIDTH}px`, height: `${SHARE_CARD_EXPORT_HEIGHT}px` }}>
