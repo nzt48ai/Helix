@@ -1347,6 +1347,112 @@ function DashboardScreen({ dashboardSnapshot }) {
   );
 }
 
+function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const entry = parseNumberString(positionState.entry || "0");
+  const stop = parseNumberString(positionState.stop || "0");
+  const target = parseNumberString(positionState.target || "0");
+  const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
+  const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
+  const kellyMode = positionState.kelly || "Off";
+  const riskPoints = Math.max(0, Math.abs(entry - stop));
+  const rewardPoints = Math.max(0, Math.abs(target - entry));
+  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+  const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
+  const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
+
+  const dashboardMonthSnapshot = dashboardSnapshot.byRange.Month || dashboardSnapshot.byRange.Week;
+  const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
+  const frequencySummary = `${compoundState.tradeFrequencyValue || "1"} ${compoundState.tradeFrequency || "Per Day"} • ${compoundState.durationInput || "1"} ${(compoundState.durationUnit || "Months").toLowerCase()}`;
+
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Share</TinyLabel>
+        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Current setup export</div>
+        <div className="mt-1 text-[13px] text-slate-500">Read-only summary cards designed for clean screenshot sharing.</div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Setup Summary</TinyLabel>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Instrument</div>
+            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">{selectedInstrument.key}</div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Contracts</div>
+            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">{contracts}</div>
+          </div>
+          <div className="col-span-2 rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Entry / Stop / Target</div>
+            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">
+              {`${entry.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${stop.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${target.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Win Rate</div>
+            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{formatPercent(winRate)}</div>
+          </div>
+          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Kelly</div>
+            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{kellyMode}</div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5" highlight>
+        <TinyLabel>Performance Share Card</TinyLabel>
+        {/* Synthesized share card values below are compacted from current dashboardSnapshot and position/compound state. */}
+        <div className="mt-3 rounded-[24px] border border-blue-100/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.36),rgba(255,255,255,0.16))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Helix Snapshot</div>
+              <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardMonthSnapshot.modeLabel}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Account</div>
+              <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardMonthSnapshot.accountBalance}</div>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
+              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">R:R</div>
+              <div className="mt-1 text-[13px] font-semibold text-slate-700">{rewardRiskRatio > 0 ? `${rewardRiskRatio.toFixed(1)}R` : "—"}</div>
+            </div>
+            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
+              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">Risk</div>
+              <div className="mt-1 text-[13px] font-semibold text-slate-700">{formatCompactCurrency(projectedRisk)}</div>
+            </div>
+            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
+              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">Reward</div>
+              <div className="mt-1 text-[13px] font-semibold text-slate-700">{formatCompactCurrency(projectedReward)}</div>
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Journal Share Summary</TinyLabel>
+        {/* Journal summary lines are synthesized from active state because no persisted trade history exists yet. */}
+        <div className="mt-3 space-y-2">
+          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
+            {`Setup: ${selectedInstrument.key} • ${contracts} contract${contracts === 1 ? "" : "s"} • ${formatPercent(winRate)} win rate • Kelly ${kellyMode}.`}
+          </div>
+          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
+            {`Model: ${compoundModeLabel} • ${frequencySummary}.`}
+          </div>
+          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
+            {`Dashboard snapshot: ${dashboardMonthSnapshot.modeOutcome}.`}
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
 function JournalScreen({ positionState, compoundState }) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
   const instrument = selectedInstrument.key;
@@ -1430,19 +1536,6 @@ function JournalScreen({ positionState, compoundState }) {
             Entries are read-only and reflect the current setup, not executed historical fills.
           </div>
         </div>
-      </GlassCard>
-    </div>
-  );
-}
-
-function PlaceholderScreen({ title }) {
-  return (
-    <div className="space-y-4 pb-4">
-      <ScreenHeader right={<TopIconPill icon={LineChart} />} />
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>{title}</TinyLabel>
-        <div className="mt-3 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Preserved tab shell</div>
-        <div className="mt-2 text-[14px] text-slate-500">This tab remains intact while the compound module is rebuilt.</div>
       </GlassCard>
     </div>
   );
@@ -1648,7 +1741,7 @@ export default function App() {
     ) : activeTab === "journal" ? (
       <JournalScreen positionState={positionState} compoundState={compoundState} />
     ) : (
-      <PlaceholderScreen title="Share" />
+      <ShareScreen positionState={positionState} compoundState={compoundState} dashboardSnapshot={dashboardSnapshot} />
     );
 
   return (
