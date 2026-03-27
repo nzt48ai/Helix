@@ -136,6 +136,9 @@ function formatSecondsLabel(seconds) {
   return `${safeSeconds.toFixed(1)}s`;
 }
 
+const SHARE_CARD_EXPORT_WIDTH = 420;
+const SHARE_CARD_EXPORT_HEIGHT = Math.round((SHARE_CARD_EXPORT_WIDTH * 16) / 9);
+
 async function exportElementAsPng(node, fileName = "helix-share-card.png") {
   if (!node || typeof window === "undefined" || typeof document === "undefined") return false;
   const rect = node.getBoundingClientRect();
@@ -187,6 +190,142 @@ function GlassCard({ children, className = "", padded = true, highlight = false 
     >
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_36%)]" />
       <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+function SharePortraitCard({
+  shareType,
+  selectedInstrumentKey,
+  contextLine,
+  entryValue,
+  stopValue,
+  targetValue,
+  visualPanelHeight,
+  replayPathLabel,
+  rewardRiskRatio,
+  isJournalCard,
+  isReplayCard,
+  replayPathCurve,
+  GIF_PREVIEW_DURATION_SECONDS,
+  heroMetric,
+  compoundModeLabel,
+  frequencySummary,
+  secondaryMetrics,
+  footerLabel,
+}) {
+  return (
+    <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
+      <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700">
+        <div className="flex items-center justify-between gap-3">
+          <div className="shrink-0 inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+            {shareType}
+          </div>
+          <div className="min-w-0 flex-1 text-center text-[30px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
+          <div className="shrink-0 inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-cyan-700">
+            LONG
+          </div>
+        </div>
+
+        <div className="mt-3 text-[18px] text-slate-500">{contextLine}</div>
+
+        <div className="mt-6 grid w-full grid-cols-3 gap-4">
+          {[
+            { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
+            { label: "STOP", value: stopValue, tone: "text-rose-400" },
+            { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0 rounded-[20px] border border-white/55 bg-white/46 p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.54)] flex flex-col items-center justify-center">
+              <div className="text-[13px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
+              <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[22px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+                {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.38))] p-4" style={{ height: `${visualPanelHeight}px` }}>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="min-w-0 truncate text-[14px] uppercase tracking-[0.16em] text-slate-500">
+              {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
+            </div>
+            <div className="shrink-0 whitespace-nowrap text-[22px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
+          </div>
+          <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
+            {[20, 50, 80].map((line) => (
+              <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(148,163,184,0.32)" strokeDasharray="2 3" />
+            ))}
+            {isJournalCard ? (
+              <motion.path
+                d="M 8 74 C 20 70, 24 66, 34 58 C 48 46, 57 50, 68 40 C 78 31, 86 28, 92 24"
+                fill="none"
+                stroke="rgba(96,165,250,1)"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+              />
+            ) : (
+              <>
+                <path d="M 8 74 L 92 74" fill="none" stroke="rgba(148,163,184,0.5)" />
+                <path d="M 8 20 L 92 20" fill="none" stroke="rgba(52,211,153,0.45)" strokeDasharray="4 3" />
+                <path d="M 8 86 L 92 86" fill="none" stroke="rgba(251,113,133,0.45)" strokeDasharray="4 3" />
+                <motion.path
+                  d={isReplayCard ? replayPathCurve : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
+                  fill="none"
+                  stroke="rgba(129,140,248,1)"
+                  strokeWidth="2.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
+                />
+                {isReplayCard ? (
+                  <motion.circle
+                    cx="8"
+                    cy="74"
+                    r="2.5"
+                    fill="rgba(191,219,254,1)"
+                    animate={{ cx: [8, 30, 62, 92], cy: [74, 62, 48, 26] }}
+                    transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                  />
+                ) : null}
+              </>
+            )}
+          </svg>
+        </div>
+
+        <div className="mt-6 min-w-0 text-center">
+          <div
+            className={cn(
+              "overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(56px,13vw,88px)] font-semibold leading-[1] tracking-[-0.04em] tabular-nums",
+              shareType === "REPLAY" ? "text-cyan-700" : "text-slate-700"
+            )}
+          >
+            {heroMetric}
+          </div>
+          <div className="mt-3 text-[16px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
+        </div>
+
+        <div
+          className={cn(
+            "mt-4 grid gap-4",
+            secondaryMetrics.length === 3 ? "grid-cols-3" : secondaryMetrics.length === 2 ? "grid-cols-2" : "grid-cols-2"
+          )}
+        >
+          {secondaryMetrics.map((metric) => (
+            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] border border-white/50 bg-white/42 p-4">
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
+              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[24px] font-semibold tabular-nums">{metric.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-auto pt-4 text-center text-[14px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+      </div>
     </div>
   );
 }
@@ -1609,7 +1748,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     GIF_PREVIEW_DURATION_SECONDS,
   ]);
 
-  const visualPanelHeight = shareType === "JOURNAL" ? 460 : 520;
+  const visualPanelHeight = shareType === "JOURNAL" ? 280 : 320;
   const isReplayCard = shareType === "REPLAY";
   const isJournalCard = shareType === "JOURNAL";
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
@@ -1646,106 +1785,51 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         </div>
       </GlassCard>
 
-      <div ref={shareCardExportRef} className="mx-auto w-full max-w-[420px] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
-        <div className="aspect-[9/16] w-full">
-          <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-[6.667%] pb-[3.75%] pt-[4.58%] text-slate-700">
-            <div className="flex h-[56px] items-center justify-between">
-              <div className="inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                {shareType}
-              </div>
-              <div className="ml-4 text-[34px] font-semibold tracking-[-0.03em] tabular-nums text-slate-700">{selectedInstrument.key}</div>
-              <div className="ml-auto inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-cyan-700">
-                LONG
-              </div>
-            </div>
+      <div className="mx-auto w-full max-w-[420px] shrink-0">
+        <SharePortraitCard
+          shareType={shareType}
+          selectedInstrumentKey={selectedInstrument.key}
+          contextLine={contextLine}
+          entryValue={entry}
+          stopValue={stop}
+          targetValue={target}
+          visualPanelHeight={visualPanelHeight}
+          replayPathLabel={replayPathLabel}
+          rewardRiskRatio={rewardRiskRatio}
+          isJournalCard={isJournalCard}
+          isReplayCard={isReplayCard}
+          replayPathCurve={replayPathCurve}
+          GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
+          heroMetric={heroMetric}
+          compoundModeLabel={compoundModeLabel}
+          frequencySummary={frequencySummary}
+          secondaryMetrics={secondaryMetrics}
+          footerLabel={footerLabel}
+        />
+      </div>
 
-            <div className="mt-6 text-[22px] text-slate-500">{contextLine}</div>
-
-            <div className="mt-8 grid grid-cols-3 gap-5">
-              {[
-                { label: "ENTRY", value: entry, tone: "text-slate-700" },
-                { label: "STOP", value: stop, tone: "text-rose-300" },
-                { label: "TARGET", value: target, tone: "text-emerald-300" },
-              ].map((item) => (
-                <div key={item.label} className="h-[120px] rounded-[22px] border border-white/55 bg-white/46 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.54)]">
-                  <div className="text-[20px] uppercase tracking-[0.22em] text-slate-500">{item.label}</div>
-                  <div className={cn("mt-3 text-[34px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
-                    {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 overflow-hidden rounded-[26px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.38))] p-6" style={{ height: `${visualPanelHeight}px` }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div className="text-[20px] uppercase tracking-[0.2em] text-slate-500">
-                  {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
-                </div>
-                <div className="text-[28px] font-semibold text-cyan-700 tabular-nums">{rewardRiskRatio.toFixed(1)}R</div>
-              </div>
-              <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
-                {[20, 50, 80].map((line) => (
-                  <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(148,163,184,0.32)" strokeDasharray="2 3" />
-                ))}
-                {isJournalCard ? (
-                  <motion.path
-                    d="M 8 74 C 20 70, 24 66, 34 58 C 48 46, 57 50, 68 40 C 78 31, 86 28, 92 24"
-                    fill="none"
-                    stroke="rgba(96,165,250,1)"
-                    strokeWidth="2.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
-                  />
-                ) : (
-                  <>
-                    <path d="M 8 74 L 92 74" fill="none" stroke="rgba(148,163,184,0.5)" />
-                    <path d="M 8 20 L 92 20" fill="none" stroke="rgba(52,211,153,0.45)" strokeDasharray="4 3" />
-                    <path d="M 8 86 L 92 86" fill="none" stroke="rgba(251,113,133,0.45)" strokeDasharray="4 3" />
-                    <motion.path
-                      d={isReplayCard ? replayPathCurve : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
-                      fill="none"
-                      stroke="rgba(129,140,248,1)"
-                      strokeWidth="2.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      initial={{ pathLength: 0 }}
-                      animate={{ pathLength: 1 }}
-                      transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
-                    />
-                    {isReplayCard ? (
-                      <motion.circle
-                        cx="8"
-                        cy="74"
-                        r="2.5"
-                        fill="rgba(191,219,254,1)"
-                        animate={{ cx: [8, 30, 62, 92], cy: [74, 62, 48, 26] }}
-                        transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
-                      />
-                    ) : null}
-                  </>
-                )}
-              </svg>
-            </div>
-
-            <div className="mt-8 text-center">
-              <div className={cn("text-[94px] font-semibold leading-none tracking-[-0.04em] tabular-nums", shareType === "REPLAY" ? "text-cyan-700" : "text-slate-700")}>{heroMetric}</div>
-              <div className="mt-2 text-[22px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
-            </div>
-
-            <div className={cn("mt-6 grid gap-4", secondaryMetrics.length === 2 ? "grid-cols-2" : secondaryMetrics.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
-              {secondaryMetrics.map((metric) => (
-                <div key={metric.label} className="rounded-[20px] border border-white/50 bg-white/42 p-4">
-                  <div className="text-[18px] uppercase tracking-[0.18em] text-slate-500">{metric.label}</div>
-                  <div className="mt-2 text-[30px] font-semibold tabular-nums">{metric.value}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 pt-8 text-center text-[20px] uppercase tracking-[0.25em] text-slate-400">{footerLabel}</div>
-          </div>
+      <div className="pointer-events-none fixed -left-[99999px] top-0 h-0 w-0 overflow-hidden" aria-hidden="true">
+        <div ref={shareCardExportRef} style={{ width: `${SHARE_CARD_EXPORT_WIDTH}px`, height: `${SHARE_CARD_EXPORT_HEIGHT}px` }}>
+          <SharePortraitCard
+            shareType={shareType}
+            selectedInstrumentKey={selectedInstrument.key}
+            contextLine={contextLine}
+            entryValue={entry}
+            stopValue={stop}
+            targetValue={target}
+            visualPanelHeight={visualPanelHeight}
+            replayPathLabel={replayPathLabel}
+            rewardRiskRatio={rewardRiskRatio}
+            isJournalCard={isJournalCard}
+            isReplayCard={isReplayCard}
+            replayPathCurve={replayPathCurve}
+            GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
+            heroMetric={heroMetric}
+            compoundModeLabel={compoundModeLabel}
+            frequencySummary={frequencySummary}
+            secondaryMetrics={secondaryMetrics}
+            footerLabel={footerLabel}
+          />
         </div>
       </div>
     </div>
