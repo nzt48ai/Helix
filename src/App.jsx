@@ -136,6 +136,49 @@ function formatSecondsLabel(seconds) {
   return `${safeSeconds.toFixed(1)}s`;
 }
 
+function derivePositionSetupSnapshot(positionState) {
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const entry = parseNumberString(positionState.entry || "0");
+  const stop = parseNumberString(positionState.stop || "0");
+  const target = parseNumberString(positionState.target || "0");
+  const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
+  const riskPoints = Math.max(0, Math.abs(entry - stop));
+  const rewardPoints = Math.max(0, Math.abs(target - entry));
+  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+  const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
+  const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
+  const direction =
+    typeof positionState.direction === "string" && positionState.direction.trim()
+      ? positionState.direction.trim().toUpperCase()
+      : "";
+  const setupTimestamp =
+    typeof positionState.setupTimestamp === "string"
+      ? positionState.setupTimestamp.trim()
+      : typeof positionState.timestamp === "string"
+        ? positionState.timestamp.trim()
+        : "";
+  const setupContext = typeof positionState.setupContext === "string" ? positionState.setupContext.trim() : "";
+  const setupIsComplete =
+    Boolean(selectedInstrument?.key) && entry > 0 && stop > 0 && target > 0 && riskPoints > 0 && rewardPoints > 0 && contracts > 0;
+
+  return {
+    selectedInstrument,
+    entry,
+    stop,
+    target,
+    contracts,
+    riskPoints,
+    rewardPoints,
+    rewardRiskRatio,
+    projectedRisk,
+    projectedReward,
+    direction,
+    setupTimestamp,
+    setupContext,
+    setupIsComplete,
+  };
+}
+
 const SHARE_CARD_EXPORT_WIDTH = 420;
 const SHARE_CARD_EXPORT_HEIGHT = Math.round((SHARE_CARD_EXPORT_WIDTH * 16) / 9);
 
@@ -197,6 +240,7 @@ function GlassCard({ children, className = "", padded = true, highlight = false 
 function SharePortraitCard({
   shareType,
   selectedInstrumentKey,
+  directionLabel = "—",
   contextLine,
   entryValue,
   stopValue,
@@ -213,6 +257,7 @@ function SharePortraitCard({
   frequencySummary,
   secondaryMetrics,
   footerLabel,
+  setupMissingMessage = "",
 }) {
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
@@ -223,7 +268,7 @@ function SharePortraitCard({
           </div>
           <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
           <div className="shrink-0 inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-700">
-            LONG
+            {directionLabel}
           </div>
         </div>
 
@@ -323,6 +368,10 @@ function SharePortraitCard({
             </div>
           ))}
         </div>
+
+        {setupMissingMessage ? (
+          <div className="mt-3 rounded-[16px] border border-slate-200/80 bg-white/45 px-4 py-2.5 text-center text-[12px] text-slate-500">{setupMissingMessage}</div>
+        ) : null}
 
         <div className="mt-auto pt-4 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
       </div>
@@ -746,13 +795,13 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const pointValue = selectedInstrument.pointValue || 1;
   const instrumentDefaults = selectedInstrument.defaults || POSITION_INSTRUMENTS[2].defaults;
   const fallbackValue = "—";
+  const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
   const accountBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
-  const entryPrice = parseNumberString(entry);
-  const stopPrice = parseNumberString(stop);
-  const targetPrice = parseNumberString(target);
-  const riskPoints = Math.max(0, Math.abs(entryPrice - stopPrice));
-  const rewardPoints = Math.max(0, Math.abs(targetPrice - entryPrice));
-  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
+  const entryPrice = positionSetupSnapshot.entry;
+  const stopPrice = positionSetupSnapshot.stop;
+  const riskPoints = positionSetupSnapshot.riskPoints;
+  const rewardPoints = positionSetupSnapshot.rewardPoints;
+  const rewardRiskRatio = positionSetupSnapshot.rewardRiskRatio;
   const riskPerContract = riskPoints * pointValue;
 
   const winProbability = Math.max(0, Math.min(1, winRate / 100));
@@ -1619,17 +1668,24 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled
 }
 
 function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEnabled = false }) {
-  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-  const entry = parseNumberString(positionState.entry || "0");
-  const stop = parseNumberString(positionState.stop || "0");
-  const target = parseNumberString(positionState.target || "0");
-  const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
+  const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
+  const {
+    selectedInstrument,
+    entry,
+    stop,
+    target,
+    contracts,
+    riskPoints,
+    rewardPoints,
+    rewardRiskRatio,
+    projectedRisk,
+    projectedReward,
+    direction,
+    setupTimestamp,
+    setupContext,
+    setupIsComplete,
+  } = positionSetupSnapshot;
   const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
-  const riskPoints = Math.max(0, Math.abs(entry - stop));
-  const rewardPoints = Math.max(0, Math.abs(target - entry));
-  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
-  const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
-  const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
   const replayResult = projectedReward - projectedRisk;
   const replayResultPoints = rewardPoints - riskPoints;
 
@@ -1639,7 +1695,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   );
   const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
   const frequencySummary = buildCompoundFrequencySummary(compoundState);
-  const hasMeaningfulContent = Boolean(selectedInstrument?.key) && Number.isFinite(contracts) && Boolean(dashboardMonthSnapshot.modeOutcome);
   const [shareType, setShareType] = useState("SETUP");
   const [displayMode, setDisplayMode] = useState("dollar");
   const [journalPeriod, setJournalPeriod] = useState("Month");
@@ -1674,8 +1729,11 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     if (shareType === "JOURNAL") {
       return `${journalPeriod} performance period`;
     }
-    return "Called at · 9:41 AM EST";
-  }, [shareType, journalPeriod]);
+    if (setupContext && setupTimestamp) return `${setupContext} · ${setupTimestamp}`;
+    if (setupContext) return setupContext;
+    if (setupTimestamp) return setupTimestamp;
+    return "Current Position tab setup";
+  }, [journalPeriod, setupContext, setupTimestamp, shareType]);
 
   const heroMetric = useMemo(() => {
     if (shareType === "REPLAY") {
@@ -1752,11 +1810,18 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const isReplayCard = shareType === "REPLAY";
   const isJournalCard = shareType === "JOURNAL";
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
+  const isSetupCard = shareType === "SETUP";
+  const setupDirectionLabel = direction || "—";
+  const setupMissingMessage = isSetupCard && !setupIsComplete ? "Missing setup values on Position tab." : "";
+  const setupCardInstrumentLabel = isSetupCard && !setupIsComplete ? "—" : selectedInstrument.key;
+  const setupCardEntry = isSetupCard && !setupIsComplete ? 0 : entry;
+  const setupCardStop = isSetupCard && !setupIsComplete ? 0 : stop;
+  const setupCardTarget = isSetupCard && !setupIsComplete ? 0 : target;
+  const shareDisabled = isExporting || (isSetupCard && !setupIsComplete);
 
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="SHARE SCREEN" />
-      {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Share rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
       <div className="mt-4 space-y-3">
@@ -1765,11 +1830,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         <div className="mx-auto w-full max-w-[420px] shrink-0">
           <SharePortraitCard
             shareType={shareType}
-            selectedInstrumentKey={selectedInstrument.key}
+            selectedInstrumentKey={setupCardInstrumentLabel}
+            directionLabel={isSetupCard ? setupDirectionLabel : "LONG"}
             contextLine={contextLine}
-            entryValue={entry}
-            stopValue={stop}
-            targetValue={target}
+            entryValue={setupCardEntry}
+            stopValue={setupCardStop}
+            targetValue={setupCardTarget}
             visualPanelHeight={visualPanelHeight}
             replayPathLabel={replayPathLabel}
             rewardRiskRatio={rewardRiskRatio}
@@ -1782,6 +1848,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             frequencySummary={frequencySummary}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
+            setupMissingMessage={setupMissingMessage}
           />
         </div>
         <SegmentedControl
@@ -1795,7 +1862,11 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         <button
           type="button"
           onClick={handleShareExport}
-          className="w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]"
+          disabled={shareDisabled}
+          className={cn(
+            "w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]",
+            shareDisabled && "cursor-not-allowed opacity-60"
+          )}
         >
           {isExporting ? "Exporting..." : "Share"}
         </button>
@@ -1807,11 +1878,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         <div ref={shareCardExportRef} style={{ width: `${SHARE_CARD_EXPORT_WIDTH}px`, height: `${SHARE_CARD_EXPORT_HEIGHT}px` }}>
           <SharePortraitCard
             shareType={shareType}
-            selectedInstrumentKey={selectedInstrument.key}
+            selectedInstrumentKey={setupCardInstrumentLabel}
+            directionLabel={isSetupCard ? setupDirectionLabel : "LONG"}
             contextLine={contextLine}
-            entryValue={entry}
-            stopValue={stop}
-            targetValue={target}
+            entryValue={setupCardEntry}
+            stopValue={setupCardStop}
+            targetValue={setupCardTarget}
             visualPanelHeight={visualPanelHeight}
             replayPathLabel={replayPathLabel}
             rewardRiskRatio={rewardRiskRatio}
@@ -1824,6 +1896,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             frequencySummary={frequencySummary}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
+            setupMissingMessage={setupMissingMessage}
           />
         </div>
       </div>
