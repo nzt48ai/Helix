@@ -151,10 +151,21 @@ function formatSecondsLabel(seconds) {
   return `${safeSeconds.toFixed(1)}s`;
 }
 
-function validateSetupValues({ entry, stop, target }) {
-  const hasEntry = Number.isFinite(entry);
-  const hasStop = Number.isFinite(stop);
-  const hasTarget = Number.isFinite(target);
+function parseSetupInputNumber(value) {
+  const normalized = String(value ?? "").replace(/,/g, "").trim();
+  if (!normalized) return null;
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function validateSetupValues({ entryInput, stopInput, targetInput }) {
+  const entry = parseSetupInputNumber(entryInput);
+  const stop = parseSetupInputNumber(stopInput);
+  const target = parseSetupInputNumber(targetInput);
+  const hasEntry = entry !== null;
+  const hasStop = stop !== null;
+  const hasTarget = target !== null;
 
   if (!hasEntry || !hasStop || !hasTarget) {
     return {
@@ -165,6 +176,9 @@ function validateSetupValues({ entry, stop, target }) {
       hasEntry,
       hasStop,
       hasTarget,
+      entry,
+      stop,
+      target,
     };
   }
 
@@ -177,6 +191,9 @@ function validateSetupValues({ entry, stop, target }) {
       hasEntry,
       hasStop,
       hasTarget,
+      entry,
+      stop,
+      target,
     };
   }
 
@@ -192,6 +209,9 @@ function validateSetupValues({ entry, stop, target }) {
       hasEntry,
       hasStop,
       hasTarget,
+      entry,
+      stop,
+      target,
     };
   }
 
@@ -204,6 +224,9 @@ function validateSetupValues({ entry, stop, target }) {
       hasEntry,
       hasStop,
       hasTarget,
+      entry,
+      stop,
+      target,
     };
   }
 
@@ -215,16 +238,21 @@ function validateSetupValues({ entry, stop, target }) {
     hasEntry,
     hasStop,
     hasTarget,
+    entry,
+    stop,
+    target,
   };
 }
 
 function derivePositionSetupSnapshot(positionState) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-  const entry = parseNullableNumberString(positionState.entry);
-  const stop = parseNullableNumberString(positionState.stop);
-  const target = parseNullableNumberString(positionState.target);
   const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
-  const setupValidation = validateSetupValues({ entry, stop, target });
+  const setupValidation = validateSetupValues({
+    entryInput: positionState.entry,
+    stopInput: positionState.stop,
+    targetInput: positionState.target,
+  });
+  const { entry, stop, target } = setupValidation;
   const hasEntry = setupValidation.hasEntry;
   const hasStop = setupValidation.hasStop;
   const hasTarget = setupValidation.hasTarget;
@@ -241,8 +269,6 @@ function derivePositionSetupSnapshot(positionState) {
         ? positionState.timestamp.trim()
         : "";
   const setupContext = typeof positionState.setupContext === "string" ? positionState.setupContext.trim() : "";
-  const setupIsComplete =
-    Boolean(selectedInstrument?.key) && hasEntry && hasStop && hasTarget && riskPoints > 0 && rewardPoints > 0 && contracts > 0;
 
   return {
     selectedInstrument,
@@ -261,7 +287,6 @@ function derivePositionSetupSnapshot(positionState) {
     setupValidationReason: setupValidation.reason,
     setupTimestamp,
     setupContext,
-    setupIsComplete,
   };
 }
 
