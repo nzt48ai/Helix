@@ -87,6 +87,20 @@ export function sanitizeCompoundState(value) {
   };
 }
 
+export function updateCompoundStateSafely(previousState, nextValueOrUpdater) {
+  const safePrevious = sanitizeCompoundState(previousState);
+  const resolvedNext = typeof nextValueOrUpdater === "function" ? nextValueOrUpdater(safePrevious) : nextValueOrUpdater;
+
+  if (!resolvedNext || typeof resolvedNext !== "object") {
+    return safePrevious;
+  }
+
+  return sanitizeCompoundState({
+    ...safePrevious,
+    ...resolvedNext,
+  });
+}
+
 export function sanitizeViewState(value) {
   if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
   return {
