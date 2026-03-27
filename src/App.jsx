@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BookOpen,
@@ -159,6 +159,7 @@ function TopIconPill({ icon: Icon }) {
 }
 
 function SegmentedControl({ items, value, onChange }) {
+  const segmentedId = useId();
   const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
 
   return (
@@ -179,14 +180,14 @@ function SegmentedControl({ items, value, onChange }) {
                 active ? "text-blue-600" : "text-slate-500"
               )}
             >
-              <span
-                className={cn(
-                  "absolute inset-0 rounded-full transition-all duration-200",
-                  active
-                    ? "bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
-                    : "bg-transparent"
-                )}
-              />
+              {active ? (
+                <motion.span
+                  layoutId={`segmented-pill-${segmentedId}`}
+                  initial={false}
+                  transition={SPRING}
+                  className="absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
+                />
+              ) : null}
               <span className="relative z-10">{item.label}</span>
             </button>
           );
@@ -263,20 +264,27 @@ function BalanceHeroCard({
                 aria-pressed={toggleState}
               >
                 <span className={cn("transition-colors", toggleState ? "text-slate-500/80" : "text-slate-700")}>{toggleLabel === "Prop" ? toggleLabel : toggleLabel || "$"}</span>
-                <span
-                  className={cn(
-                    "relative h-[14px] w-[30px] rounded-full transition-all",
+                <motion.span
+                  className="relative h-[14px] w-[30px] rounded-full"
+                  animate={
                     toggleState
-                      ? "bg-[linear-gradient(180deg,rgba(105,145,236,0.95),rgba(95,131,219,0.92))]"
-                      : "bg-slate-300/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_0_0_1px_rgba(148,163,184,0.25)]"
-                  )}
+                      ? {
+                          background: "linear-gradient(180deg,rgba(105,145,236,0.95),rgba(95,131,219,0.92))",
+                          boxShadow: "0 0 0 1px rgba(77,116,210,0.12)",
+                        }
+                      : {
+                          background: "rgba(203,213,225,0.45)",
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), 0 0 0 1px rgba(148,163,184,0.25)",
+                        }
+                  }
+                  transition={reduceMotion ? { duration: 0 } : SPRING}
                 >
                   <motion.span
                     className="absolute left-[1px] top-[1px] h-[12px] w-[12px] rounded-full bg-[linear-gradient(180deg,#ffffff,#eef2ff)] shadow-[0_1px_4px_rgba(108,125,156,0.25)]"
                     animate={{ x: toggleState ? 16 : 0 }}
                     transition={reduceMotion ? { duration: 0 } : SPRING}
                   />
-                </span>
+                </motion.span>
                 {toggleLabel === "Prop" ? null : <span className={cn("transition-colors", toggleState ? "text-slate-700" : "text-slate-500/80")}>{toggleRightLabel || "%"}</span>}
               </motion.button>
             </div>
@@ -1589,14 +1597,14 @@ function BottomNav({ activeTab, onTabChange }) {
                   active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
                 )}
               >
-                <span
-                  className={cn(
-                    "absolute inset-[1px] rounded-[14px] transition-all duration-200",
-                    active
-                      ? "bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
-                      : "bg-transparent"
-                  )}
-                />
+                {active ? (
+                  <motion.span
+                    layoutId="bottom-nav-pill"
+                    initial={false}
+                    transition={SPRING}
+                    className="absolute inset-[1px] rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
+                  />
+                ) : null}
                 <Icon className="relative z-10" size={17} strokeWidth={2.1} />
                 <span className={cn("relative z-10 mt-1 flex min-h-[10px] w-full items-center justify-center text-center font-semibold leading-[1] tracking-[-0.01em] opacity-[0.96]", key === "share" ? "text-[10px]" : "text-[8px]")}>{label}</span>
               </motion.button>
