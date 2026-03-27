@@ -130,6 +130,51 @@ function formatCompactPercent(value, maximumFractionDigits = 1) {
   return formatAbbreviatedNumber(safeValue, { suffix: "%", threshold: 99999 });
 }
 
+function formatSecondsLabel(seconds) {
+  const safeSeconds = Number(seconds);
+  if (!Number.isFinite(safeSeconds) || safeSeconds <= 0) return "0.0s";
+  return `${safeSeconds.toFixed(1)}s`;
+}
+
+async function exportElementAsPng(node, fileName = "helix-share-card.png") {
+  if (!node || typeof window === "undefined" || typeof document === "undefined") return false;
+  const rect = node.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  const serializedNode = new XMLSerializer().serializeToString(node);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${serializedNode}</foreignObject></svg>`;
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = new Image();
+    const imageLoaded = new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+    image.src = svgUrl;
+    await imageLoaded;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return false;
+    context.drawImage(image, 0, 0, width, height);
+
+    const pngUrl = canvas.toDataURL("image/png");
+    const downloadLink = document.createElement("a");
+    downloadLink.href = pngUrl;
+    downloadLink.download = fileName;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    return true;
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
 function GlassCard({ children, className = "", padded = true, highlight = false }) {
   return (
     <div
@@ -1459,6 +1504,29 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const [shareType, setShareType] = useState("SETUP");
   const [displayMode, setDisplayMode] = useState("dollar");
   const [journalPeriod, setJournalPeriod] = useState("Month");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const shareCardExportRef = useRef(null);
+  const GIF_PREVIEW_DURATION_SECONDS = 6.4;
+  const hasReplayTruePath = riskPoints > 0 && rewardPoints > 0;
+  const replayPathLabel = hasReplayTruePath ? "True Path" : "Replay Path";
+  const replayPathCurve = hasReplayTruePath
+    ? "M 8 74 C 18 72, 22 58, 30 62 C 42 69, 50 54, 62 48 C 72 42, 82 34, 92 26"
+    : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28";
+
+  const handleShareExport = useCallback(async () => {
+    if (!shareCardExportRef.current || isExporting) return;
+    setIsExporting(true);
+    setExportError("");
+    try {
+      const didExport = await exportElementAsPng(shareCardExportRef.current, "helix-share-card.png");
+      if (!didExport) setExportError("Unable to export share card on this device/browser.");
+    } catch {
+      setExportError("Unable to export share card on this device/browser.");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting]);
 
   const contextLine = useMemo(() => {
     if (shareType === "REPLAY") {
@@ -1502,13 +1570,13 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
         return [
           { label: "Result Points", value: `${replayResultPoints >= 0 ? "+" : ""}${replayResultPoints.toFixed(1)}` },
           { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
-          { label: "Duration", value: "6m 12s" },
+          { label: "Duration", value: formatSecondsLabel(GIF_PREVIEW_DURATION_SECONDS) },
         ];
       }
       return [
         { label: "Result", value: `${replayResult >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(replayResult))}` },
         { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
-        { label: "Duration", value: "6m 12s" },
+        { label: "Duration", value: formatSecondsLabel(GIF_PREVIEW_DURATION_SECONDS) },
       ];
     }
     if (displayMode === "points") {
@@ -1538,6 +1606,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     replayResult,
     winRate,
     dashboardMonthSnapshot.modeOutcome,
+    GIF_PREVIEW_DURATION_SECONDS,
   ]);
 
   const visualPanelHeight = shareType === "JOURNAL" ? 460 : 520;
@@ -1568,36 +1637,38 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
           {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
           <button
             type="button"
+            onClick={handleShareExport}
             className="w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]"
           >
-            Share
+            {isExporting ? "Exporting..." : "Share"}
           </button>
+          {exportError ? <div className="text-[12px] text-rose-500">{exportError}</div> : null}
         </div>
       </GlassCard>
 
-      <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(16,25,47,0.94),rgba(8,17,36,0.98))] shadow-[0_26px_65px_rgba(15,27,54,0.46),inset_0_1px_0_rgba(255,255,255,0.12)]">
+      <div ref={shareCardExportRef} className="mx-auto w-full max-w-[420px] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
         <div className="aspect-[9/16] w-full">
-          <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-[6.667%] pb-[3.75%] pt-[4.58%] text-slate-100">
+          <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-[6.667%] pb-[3.75%] pt-[4.58%] text-slate-700">
             <div className="flex h-[56px] items-center justify-between">
-              <div className="inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-emerald-200">
+              <div className="inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
                 {shareType}
               </div>
-              <div className="ml-4 text-[34px] font-semibold tracking-[-0.03em] tabular-nums">{selectedInstrument.key}</div>
-              <div className="ml-auto inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-cyan-200">
+              <div className="ml-4 text-[34px] font-semibold tracking-[-0.03em] tabular-nums text-slate-700">{selectedInstrument.key}</div>
+              <div className="ml-auto inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-cyan-700">
                 LONG
               </div>
             </div>
 
-            <div className="mt-6 text-[22px] text-slate-300/85">{contextLine}</div>
+            <div className="mt-6 text-[22px] text-slate-500">{contextLine}</div>
 
             <div className="mt-8 grid grid-cols-3 gap-5">
               {[
-                { label: "ENTRY", value: entry, tone: "text-slate-100" },
+                { label: "ENTRY", value: entry, tone: "text-slate-700" },
                 { label: "STOP", value: stop, tone: "text-rose-300" },
                 { label: "TARGET", value: target, tone: "text-emerald-300" },
               ].map((item) => (
-                <div key={item.label} className="h-[120px] rounded-[22px] border border-white/8 bg-white/8 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
-                  <div className="text-[20px] uppercase tracking-[0.22em] text-slate-300">{item.label}</div>
+                <div key={item.label} className="h-[120px] rounded-[22px] border border-white/55 bg-white/46 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.54)]">
+                  <div className="text-[20px] uppercase tracking-[0.22em] text-slate-500">{item.label}</div>
                   <div className={cn("mt-3 text-[34px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
                     {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </div>
@@ -1605,16 +1676,16 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
               ))}
             </div>
 
-            <div className="mt-8 overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-6" style={{ height: `${visualPanelHeight}px` }}>
+            <div className="mt-8 overflow-hidden rounded-[26px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.38))] p-6" style={{ height: `${visualPanelHeight}px` }}>
               <div className="mb-4 flex items-center justify-between">
-                <div className="text-[20px] uppercase tracking-[0.2em] text-slate-300">
-                  {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? "Replay Path" : "Equity Curve"}
+                <div className="text-[20px] uppercase tracking-[0.2em] text-slate-500">
+                  {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
                 </div>
-                <div className="text-[28px] font-semibold text-cyan-200 tabular-nums">{rewardRiskRatio.toFixed(1)}R</div>
+                <div className="text-[28px] font-semibold text-cyan-700 tabular-nums">{rewardRiskRatio.toFixed(1)}R</div>
               </div>
-              <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/6 p-3">
+              <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
                 {[20, 50, 80].map((line) => (
-                  <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(226,232,240,0.24)" strokeDasharray="2 3" />
+                  <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(148,163,184,0.32)" strokeDasharray="2 3" />
                 ))}
                 {isJournalCard ? (
                   <motion.path
@@ -1626,7 +1697,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
                     strokeLinejoin="round"
                     initial={{ pathLength: 0 }}
                     animate={{ pathLength: 1 }}
-                    transition={{ duration: 6.2, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                    transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
                   />
                 ) : (
                   <>
@@ -1634,7 +1705,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
                     <path d="M 8 20 L 92 20" fill="none" stroke="rgba(52,211,153,0.45)" strokeDasharray="4 3" />
                     <path d="M 8 86 L 92 86" fill="none" stroke="rgba(251,113,133,0.45)" strokeDasharray="4 3" />
                     <motion.path
-                      d={isReplayCard ? "M 8 74 C 18 72, 22 58, 30 62 C 42 69, 50 54, 62 48 C 72 42, 82 34, 92 26" : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
+                      d={isReplayCard ? replayPathCurve : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
                       fill="none"
                       stroke="rgba(129,140,248,1)"
                       strokeWidth="2.7"
@@ -1642,7 +1713,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
                       strokeLinejoin="round"
                       initial={{ pathLength: 0 }}
                       animate={{ pathLength: 1 }}
-                      transition={{ duration: 6.4, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
+                      transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
                     />
                     {isReplayCard ? (
                       <motion.circle
@@ -1651,7 +1722,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
                         r="2.5"
                         fill="rgba(191,219,254,1)"
                         animate={{ cx: [8, 30, 62, 92], cy: [74, 62, 48, 26] }}
-                        transition={{ duration: 6.4, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                        transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
                       />
                     ) : null}
                   </>
@@ -1660,14 +1731,14 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             </div>
 
             <div className="mt-8 text-center">
-              <div className={cn("text-[94px] font-semibold leading-none tracking-[-0.04em] tabular-nums", shareType === "REPLAY" ? "text-cyan-200" : "text-white")}>{heroMetric}</div>
-              <div className="mt-2 text-[22px] text-slate-300">{`${compoundModeLabel} • ${frequencySummary}`}</div>
+              <div className={cn("text-[94px] font-semibold leading-none tracking-[-0.04em] tabular-nums", shareType === "REPLAY" ? "text-cyan-700" : "text-slate-700")}>{heroMetric}</div>
+              <div className="mt-2 text-[22px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
             </div>
 
             <div className={cn("mt-6 grid gap-4", secondaryMetrics.length === 2 ? "grid-cols-2" : secondaryMetrics.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
               {secondaryMetrics.map((metric) => (
-                <div key={metric.label} className="rounded-[20px] border border-white/10 bg-white/7 p-4">
-                  <div className="text-[18px] uppercase tracking-[0.18em] text-slate-300">{metric.label}</div>
+                <div key={metric.label} className="rounded-[20px] border border-white/50 bg-white/42 p-4">
+                  <div className="text-[18px] uppercase tracking-[0.18em] text-slate-500">{metric.label}</div>
                   <div className="mt-2 text-[30px] font-semibold tabular-nums">{metric.value}</div>
                 </div>
               ))}
