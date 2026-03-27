@@ -343,7 +343,7 @@ function BalanceHeroCard({
               value={`${prefix}${value}${suffix}`}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
+              className="h-full w-auto min-w-0 bg-[linear-gradient(112deg,rgba(71,85,105,0.94)_0%,rgba(103,122,148,0.93)_28%,rgba(244,248,255,0.88)_52%,rgba(104,122,147,0.92)_76%,rgba(71,85,105,0.94)_100%)] bg-[length:280%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_9.6s_ease-in-out_infinite_alternate] caret-slate-500"
               aria-label={label}
             />
           </motion.div>
@@ -2009,7 +2009,7 @@ export default function App() {
       </div>
 
       <style>{`
-        @keyframes balanceShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        @keyframes balanceShimmer { 0% { background-position: 120% 50%; } 100% { background-position: -20% 50%; } }
       `}</style>
     </div>
   );
