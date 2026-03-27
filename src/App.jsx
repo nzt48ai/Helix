@@ -292,7 +292,7 @@ function SharePortraitCard({
   const directionPillClassName = cn(
     "shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
     normalizedDirection === "LONG" && "bg-emerald-400/15 text-emerald-700",
-    normalizedDirection === "SHORT" && "bg-rose-500 text-white"
+    normalizedDirection === "SHORT" && "bg-rose-400/15 text-rose-700"
   );
 
   return (
