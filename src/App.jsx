@@ -153,11 +153,22 @@ function ScreenHeader({ right }) {
   );
 }
 
-function DebugRenderMarker({ label, enabled = false }) {
+function DebugRenderMarker({ markerText, enabled = false }) {
   if (!enabled) return null;
   return (
-    <div className="mb-2 inline-flex items-center rounded-full border border-amber-400/65 bg-amber-100/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-900">
-      {`Mounted: ${label}`}
+    <div className="mb-2 inline-flex items-center rounded-full border border-amber-400/70 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-900">
+      {markerText}
+    </div>
+  );
+}
+
+function DebugModeBanner({ enabled = false }) {
+  if (!enabled) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[10000] flex justify-center px-3 pt-2">
+      <div className="rounded-full border border-red-300 bg-red-500 px-4 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.2em] text-white shadow-lg">
+        DEBUG MODE ACTIVE
+      </div>
     </div>
   );
 }
@@ -174,11 +185,17 @@ function DebugEmptyFallback({ label, enabled = false }) {
 function DebugStateInspector({ enabled = false, state }) {
   if (!enabled) return null;
   return (
-    <div className="pointer-events-none fixed right-3 top-3 z-[9998] max-w-[360px]">
+    <div className="pointer-events-none fixed right-3 top-11 z-[9998] w-[min(92vw,380px)]">
       <div className="pointer-events-auto overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 text-slate-100 shadow-2xl">
-        <div className="border-b border-slate-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]">State Inspector (?debug=1)</div>
-        <div className="max-h-[42vh] overflow-auto p-3 text-[11px] leading-relaxed">
-          <pre className="whitespace-pre-wrap break-words text-slate-200">{JSON.stringify(state, null, 2)}</pre>
+        <div className="border-b border-slate-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]">Debug Inspector (?debug=1 or #debug)</div>
+        <div className="space-y-1.5 border-b border-slate-800 px-3 py-2.5 text-[11px]">
+          <div><span className="text-slate-400">activeTab:</span> <span className="font-semibold text-cyan-200">{state.activeTab}</span></div>
+          <div><span className="text-slate-400">window.location.hash:</span> <span className="font-semibold text-cyan-200">{state.currentHash || "(empty)"}</span></div>
+          <div><span className="text-slate-400">debugMode:</span> <span className="font-semibold text-lime-300">{String(state.debugModeActive)}</span></div>
+          <div><span className="text-slate-400">renderedScreenComponent:</span> <span className="font-semibold text-amber-200">{state.renderedScreenComponent}</span></div>
+        </div>
+        <div className="max-h-[30vh] overflow-auto p-3 text-[11px] leading-relaxed">
+          <pre className="whitespace-pre-wrap break-words text-slate-300">{JSON.stringify(state, null, 2)}</pre>
         </div>
       </div>
     </div>
@@ -622,7 +639,7 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
 
   return (
     <div className="space-y-4 pb-4">
-      <DebugRenderMarker enabled={debugEnabled} label="PositionScreen" />
+      <DebugRenderMarker enabled={debugEnabled} markerText="POSITION SCREEN" />
       <ScreenHeader />
       <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={(value) => setField("instrument", value)} />
       <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
@@ -1036,7 +1053,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
 
   return (
     <div className="space-y-4 pb-4 sm:space-y-5">
-      <DebugRenderMarker enabled={debugEnabled} label="CompoundScreen" />
+      <DebugRenderMarker enabled={debugEnabled} markerText="COMPOUND SCREEN" />
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
       <div className="px-1">
         <SegmentedControl items={modeItems} value={projectionMode ? "On" : "Off"} onChange={(value) => setProjectionMode(value === "On")} />
@@ -1343,7 +1360,7 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled
 
   return (
     <div className="space-y-4 pb-4">
-      <DebugRenderMarker enabled={debugEnabled} label="DashboardScreen" />
+      <DebugRenderMarker enabled={debugEnabled} markerText="DASHBOARD SCREEN" />
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Dashboard rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
@@ -1432,7 +1449,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
   return (
     <div className="space-y-4 pb-4">
-      <DebugRenderMarker enabled={debugEnabled} label="ShareScreen" />
+      <DebugRenderMarker enabled={debugEnabled} markerText="SHARE SCREEN" />
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Share rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
@@ -1560,7 +1577,7 @@ function JournalScreen({ positionState, compoundState, onResetPreferences, debug
 
   return (
     <div className="space-y-4 pb-4">
-      <DebugRenderMarker enabled={debugEnabled} label="JournalScreen" />
+      <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Journal rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={BookOpen} />} />
       <GlassCard className="rounded-[30px] p-5">
@@ -1668,7 +1685,7 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
-  const debugEnabled = typeof window !== "undefined" ? isDebugModeEnabled(window.location.search) : false;
+  const [debugEnabled] = useState(() => (typeof window !== "undefined" ? isDebugModeEnabled(window.location.search, window.location.hash) : false));
   const getTabFromWindowHash = () => {
     if (typeof window === "undefined") return "position";
     return resolveTabFromHash(window.location.hash);
@@ -1869,6 +1886,7 @@ export default function App() {
   const debugInspectorState = {
     activeTab,
     currentHash: hashValue || "",
+    debugModeActive: debugEnabled,
     resolvedTabFromHash: resolvedTabFromHashValue,
     renderedScreenComponent: renderedScreenName,
     sanitizedCompoundState: safeCompoundState,
@@ -1887,6 +1905,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(204,221,255,0.96),_rgba(236,241,250,0.98)_38%,_rgba(243,241,237,0.98)_76%)] text-slate-700">
+      <DebugModeBanner enabled={debugEnabled} />
       <DebugStateInspector enabled={debugEnabled} state={debugInspectorState} />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[6%] h-[420px] w-[420px] rounded-full bg-blue-200/24 blur-3xl" />

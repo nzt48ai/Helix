@@ -23,12 +23,29 @@ function toIsoTimestamp(value) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
 }
 
-export function isDebugModeEnabled(search = typeof window !== "undefined" ? window.location.search : "") {
-  if (!search) return false;
+function normalizeHash(hash = "") {
+  return String(hash || "")
+    .replace(/^#/, "")
+    .trim()
+    .toLowerCase();
+}
+
+function hashEnablesDebugMode(hash = "") {
+  const normalized = normalizeHash(hash);
+  if (!normalized) return false;
+  const tokens = normalized.split(/[&|,;\s]+/).filter(Boolean);
+  return tokens.includes("debug");
+}
+
+export function isDebugModeEnabled(
+  search = typeof window !== "undefined" ? window.location.search : "",
+  hash = typeof window !== "undefined" ? window.location.hash : ""
+) {
   try {
-    return new URLSearchParams(search).get("debug") === "1";
+    const hasSearchDebug = new URLSearchParams(search || "").get("debug") === "1";
+    return hasSearchDebug || hashEnablesDebugMode(hash);
   } catch {
-    return false;
+    return hashEnablesDebugMode(hash);
   }
 }
 
@@ -89,7 +106,7 @@ function DebugPanel({ events }) {
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[9999] flex justify-center px-3 pb-3">
       <div className="pointer-events-auto w-full max-w-[840px] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 text-slate-100 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-700 px-4 py-2.5">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em]">Debug Mode (?debug=1)</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em]">Debug Mode (?debug=1 or #debug)</div>
           <div className="text-xs text-slate-400">{events.length} event(s)</div>
         </div>
         <div className="max-h-[38vh] overflow-auto px-4 py-3 text-xs leading-relaxed">

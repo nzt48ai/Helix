@@ -40,6 +40,8 @@ test("app loads with sane defaults", () => {
 test("hash-based tab restore works", () => {
   assert.equal(resolveTabFromHash("#dashboard"), "dashboard");
   assert.equal(resolveTabFromHash("#journal"), "journal");
+  assert.equal(resolveTabFromHash("#dashboard&debug"), "dashboard");
+  assert.equal(resolveTabFromHash("#debug"), "position");
   assert.equal(resolveTabFromHash("#unknown"), "position");
 });
 
