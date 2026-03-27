@@ -668,10 +668,10 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
         </GlassCard>
       </div>
 
-      <GlassCard className="rounded-[24px] px-5 py-2.5">
+      <GlassCard className="overflow-visible rounded-[24px] px-5 py-2.5">
         <div className="flex items-center gap-3">
           <div className="min-w-[42px]"><TinyLabel className="whitespace-nowrap">WIN %</TinyLabel></div>
-          <div className="relative flex-1 overflow-hidden rounded-full">
+          <div className="relative flex-1 overflow-visible rounded-full py-1">
             <div className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.22)_45%,rgba(255,255,255,0)_100%)] opacity-60 blur-[0.5px]" style={{ width: "36px", transform: `translateX(calc(${winRate}% - 18px))`, transition: "transform 120ms cubic-bezier(0.22,1,0.36,1)" }} />
             <input type="range" min="0" max="100" step="1" value={winRate} onChange={(e) => setField("winRate", Number(e.target.value))} className="slider-premium w-full cursor-pointer appearance-none bg-transparent" aria-label="Win Rate" />
           </div>
