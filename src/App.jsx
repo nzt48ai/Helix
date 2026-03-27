@@ -9,6 +9,20 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import {
+  COMPOUND_DEFAULTS,
+  DASHBOARD_RANGES,
+  KELLY_OPTIONS,
+  POSITION_DEFAULTS,
+  VIEW_DEFAULTS,
+  clearPersistedAppState,
+  persistAppState,
+  readStoredAppState,
+  resolveTabFromHash,
+  sanitizeCompoundState,
+  sanitizePositionState,
+  sanitizeViewState,
+} from "./appState";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -29,91 +43,6 @@ const POSITION_INSTRUMENTS = [
   { key: "MNQ", pointValue: 2, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
   { key: "MES", pointValue: 5, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
 ];
-const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
-const DASHBOARD_RANGES = ["Week", "Month", "Quarter", "Year"];
-const APP_STORAGE_KEY = "helix.app.state.v1";
-const POSITION_DEFAULTS = {
-  accountBalance: "25,000",
-  propMode: false,
-  instrument: "MNQ",
-  entry: "21,500.00",
-  stop: "21,470.00",
-  target: "21,560.00",
-  winRate: 55,
-  kelly: "½",
-  contracts: "7",
-};
-const COMPOUND_DEFAULTS = {
-  projectionMode: true,
-  projectionGoalDisplayType: "$",
-  projectionGoalDollarInput: "50,000",
-  projectionGoalPercentInput: "100",
-  manualStartingBalanceInput: "25,000",
-  tradeFrequencyValue: "1",
-  tradeFrequency: "Per Day",
-  gainInput: "8",
-  winRateInput: "55",
-  durationInput: "6",
-  durationUnit: "Months",
-};
-const VIEW_DEFAULTS = {
-  dashboardRange: "Month",
-};
-
-function readStoredAppState() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function sanitizePositionState(value) {
-  if (!value || typeof value !== "object") return { ...POSITION_DEFAULTS };
-  return {
-    accountBalance: typeof value.accountBalance === "string" ? value.accountBalance : POSITION_DEFAULTS.accountBalance,
-    propMode: typeof value.propMode === "boolean" ? value.propMode : POSITION_DEFAULTS.propMode,
-    instrument: POSITION_INSTRUMENTS.some((item) => item.key === value.instrument) ? value.instrument : POSITION_DEFAULTS.instrument,
-    entry: typeof value.entry === "string" ? value.entry : POSITION_DEFAULTS.entry,
-    stop: typeof value.stop === "string" ? value.stop : POSITION_DEFAULTS.stop,
-    target: typeof value.target === "string" ? value.target : POSITION_DEFAULTS.target,
-    winRate: typeof value.winRate === "number" ? value.winRate : POSITION_DEFAULTS.winRate,
-    kelly: KELLY_OPTIONS.includes(value.kelly) ? value.kelly : POSITION_DEFAULTS.kelly,
-    contracts: typeof value.contracts === "string" ? value.contracts : POSITION_DEFAULTS.contracts,
-  };
-}
-
-function sanitizeCompoundState(value) {
-  if (!value || typeof value !== "object") return { ...COMPOUND_DEFAULTS };
-  return {
-    projectionMode: typeof value.projectionMode === "boolean" ? value.projectionMode : COMPOUND_DEFAULTS.projectionMode,
-    projectionGoalDisplayType: value.projectionGoalDisplayType === "%" ? "%" : COMPOUND_DEFAULTS.projectionGoalDisplayType,
-    projectionGoalDollarInput:
-      typeof value.projectionGoalDollarInput === "string" ? value.projectionGoalDollarInput : COMPOUND_DEFAULTS.projectionGoalDollarInput,
-    projectionGoalPercentInput:
-      typeof value.projectionGoalPercentInput === "string" ? value.projectionGoalPercentInput : COMPOUND_DEFAULTS.projectionGoalPercentInput,
-    manualStartingBalanceInput:
-      typeof value.manualStartingBalanceInput === "string" ? value.manualStartingBalanceInput : COMPOUND_DEFAULTS.manualStartingBalanceInput,
-    tradeFrequencyValue: typeof value.tradeFrequencyValue === "string" ? value.tradeFrequencyValue : COMPOUND_DEFAULTS.tradeFrequencyValue,
-    tradeFrequency:
-      value.tradeFrequency === "Per Week" || value.tradeFrequency === "Per Month" ? value.tradeFrequency : COMPOUND_DEFAULTS.tradeFrequency,
-    gainInput: typeof value.gainInput === "string" ? value.gainInput : COMPOUND_DEFAULTS.gainInput,
-    winRateInput: typeof value.winRateInput === "string" ? value.winRateInput : COMPOUND_DEFAULTS.winRateInput,
-    durationInput: typeof value.durationInput === "string" ? value.durationInput : COMPOUND_DEFAULTS.durationInput,
-    durationUnit: value.durationUnit === "Days" || value.durationUnit === "Weeks" ? value.durationUnit : COMPOUND_DEFAULTS.durationUnit,
-  };
-}
-
-function sanitizeViewState(value) {
-  if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
-  return {
-    dashboardRange: DASHBOARD_RANGES.includes(value.dashboardRange) ? value.dashboardRange : VIEW_DEFAULTS.dashboardRange,
-  };
-}
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -1681,12 +1610,11 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
-  const resolveTabFromHash = () => {
+  const getTabFromWindowHash = () => {
     if (typeof window === "undefined") return "position";
-    const hashValue = window.location.hash.replace("#", "").trim();
-    return NAV_ITEMS.some((item) => item.key === hashValue) ? hashValue : "position";
+    return resolveTabFromHash(window.location.hash);
   };
-  const [activeTab, setActiveTab] = useState(resolveTabFromHash);
+  const [activeTab, setActiveTab] = useState(getTabFromWindowHash);
   const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
@@ -1697,13 +1625,7 @@ export default function App() {
       if (!shouldReset) return;
     }
 
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.removeItem(APP_STORAGE_KEY);
-      } catch {
-        // Ignore storage failures so in-memory reset still works.
-      }
-    }
+    clearPersistedAppState();
 
     setPositionState({ ...POSITION_DEFAULTS });
     setCompoundState({ ...COMPOUND_DEFAULTS });
@@ -1809,7 +1731,7 @@ export default function App() {
     if (typeof window === "undefined") return undefined;
 
     const syncTabFromHash = () => {
-      const nextTab = resolveTabFromHash();
+      const nextTab = getTabFromWindowHash();
       setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
     };
 
@@ -1827,18 +1749,11 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        APP_STORAGE_KEY,
-        JSON.stringify({
-          positionState,
-          compoundState,
-          viewState,
-        })
-      );
-    } catch {
-      // Ignore write failures so the app remains usable if storage is unavailable.
-    }
+    persistAppState({
+      positionState,
+      compoundState,
+      viewState,
+    });
   }, [positionState, compoundState, viewState]);
 
   const screen =
