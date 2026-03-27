@@ -84,10 +84,18 @@ function formatCurrency(value) {
 }
 
 function formatLocalTimeAmPm(value = Date.now()) {
-  return new Date(value).toLocaleTimeString(undefined, {
+  return new Date(value).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+  });
+}
+
+function formatLocalDateMmDdYy(value = Date.now()) {
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
   });
 }
 
@@ -1766,7 +1774,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
   const contextLine = useMemo(() => {
     if (shareType === "SETUP") {
-      return `Called at ${formatLocalTimeAmPm(setupCardTimeMs)}`;
+      return `Called at ${formatLocalTimeAmPm(setupCardTimeMs)} (${formatLocalDateMmDdYy(setupCardTimeMs)})`;
     }
     if (shareType === "REPLAY") {
       return "Replay timestamp · 9:41 AM EST";
