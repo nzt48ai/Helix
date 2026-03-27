@@ -335,29 +335,15 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="inline-grid items-center justify-center"
+            className="inline-flex items-center justify-center"
           >
-            <span
-              aria-hidden="true"
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-layer hero-number-base pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
-            >
-              {`${prefix}${value}${suffix}`}
-            </span>
-            <span
-              aria-hidden="true"
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-layer hero-number-shimmer-overlay pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
-            >
-              {`${prefix}${value}${suffix}`}
-            </span>
             <input
               type="text"
               inputMode="numeric"
               value={`${prefix}${value}${suffix}`}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-input relative col-start-1 row-start-1 h-full w-auto min-w-0 bg-transparent text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
+              className="hero-number-shimmer h-full w-auto min-w-0 bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
               aria-label={label}
             />
           </motion.div>
@@ -2023,15 +2009,7 @@ export default function App() {
       </div>
 
       <style>{`
-        .hero-number-layer {
-          -webkit-font-smoothing: antialiased;
-          text-rendering: geometricPrecision;
-          transform: translateZ(0);
-          backface-visibility: hidden;
-          -webkit-text-size-adjust: 100%;
-        }
-
-        .hero-number-base {
+        .hero-number-shimmer {
           background-image:
             linear-gradient(
               112deg,
@@ -2039,66 +2017,36 @@ export default function App() {
               rgba(103, 122, 148, 0.93) 30%,
               rgba(104, 122, 147, 0.92) 70%,
               rgba(71, 85, 105, 0.94) 100%
+            ),
+            repeating-linear-gradient(
+              112deg,
+              rgba(255, 255, 255, 0.03) 0%,
+              rgba(255, 255, 255, 0.08) 27%,
+              rgba(244, 248, 255, 0.18) 50%,
+              rgba(255, 255, 255, 0.08) 73%,
+              rgba(255, 255, 255, 0.03) 100%
             );
+          background-size: 100% 100%, 220% 100%;
+          background-position: 50% 50%, 0% 50%;
           -webkit-background-clip: text;
           background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-
-        .hero-number-shimmer-overlay {
-          --hero-shimmer-width: 28%;
-          --hero-shimmer-opacity-soft: 0.3;
-          --hero-shimmer-opacity-peak: 0.72;
-          background-image: linear-gradient(
-            105deg,
-            rgba(255, 255, 255, 0) calc(50% - var(--hero-shimmer-width)),
-            rgba(255, 255, 255, var(--hero-shimmer-opacity-soft)) calc(50% - (var(--hero-shimmer-width) * 0.42)),
-            rgba(255, 255, 255, var(--hero-shimmer-opacity-peak)) 50%,
-            rgba(247, 251, 255, 0.5) calc(50% + (var(--hero-shimmer-width) * 0.38)),
-            rgba(255, 255, 255, 0) calc(50% + var(--hero-shimmer-width))
-          );
-          background-size: 190% 100%;
-          background-position: 140% 50%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation: heroNumberShimmerSweep 4.2s linear infinite;
+          animation: heroNumberShimmer 8.8s linear infinite;
           will-change: background-position;
-          opacity: 1;
         }
 
-        .hero-number-input {
-          -webkit-text-fill-color: transparent;
-        }
-
-        @keyframes heroNumberShimmerSweep {
-          0%,
-          28% {
-            background-position: 140% 50%;
+        @keyframes heroNumberShimmer {
+          from {
+            background-position: 50% 50%, 0% 50%;
           }
-
-          64% {
-            background-position: -40% 50%;
-          }
-
-          100% {
-            background-position: -40% 50%;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .hero-number-shimmer-overlay {
-            --hero-shimmer-width: 32%;
-            --hero-shimmer-opacity-soft: 0.38;
-            --hero-shimmer-opacity-peak: 0.82;
+          to {
+            background-position: 50% 50%, -220% 50%;
           }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .hero-number-shimmer-overlay {
+          .hero-number-shimmer {
             animation: none;
-            background-position: 52% 50%;
-            opacity: 0.5;
+            background-position: 50% 50%, 38% 50%;
           }
         }
       `}</style>
