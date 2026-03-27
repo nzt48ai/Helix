@@ -218,16 +218,16 @@ function SharePortraitCard({
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
       <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700">
         <div className="flex items-center justify-between gap-3">
-          <div className="shrink-0 inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+          <div className="shrink-0 inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
             {shareType}
           </div>
-          <div className="min-w-0 flex-1 text-center text-[30px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
-          <div className="shrink-0 inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-cyan-700">
+          <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
+          <div className="shrink-0 inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-700">
             LONG
           </div>
         </div>
 
-        <div className="mt-3 text-[18px] text-slate-500">{contextLine}</div>
+        <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
 
         <div className="mt-6 grid w-full grid-cols-3 gap-4">
           {[
@@ -236,8 +236,8 @@ function SharePortraitCard({
             { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
           ].map((item) => (
             <div key={item.label} className="min-w-0 rounded-[20px] border border-white/55 bg-white/46 p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.54)] flex flex-col items-center justify-center">
-              <div className="text-[13px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
-              <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[22px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
+              <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
                 {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
             </div>
@@ -246,10 +246,10 @@ function SharePortraitCard({
 
         <div className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.38))] p-4" style={{ height: `${visualPanelHeight}px` }}>
           <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="min-w-0 truncate text-[14px] uppercase tracking-[0.16em] text-slate-500">
+            <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.16em] text-slate-500">
               {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
             </div>
-            <div className="shrink-0 whitespace-nowrap text-[22px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
+            <div className="shrink-0 whitespace-nowrap text-[16px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
           </div>
           <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
             {[20, 50, 80].map((line) => (
@@ -301,13 +301,13 @@ function SharePortraitCard({
         <div className="mt-6 min-w-0 text-center">
           <div
             className={cn(
-              "overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(56px,13vw,88px)] font-semibold leading-[1] tracking-[-0.04em] tabular-nums",
+              "overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(42px,10.5vw,62px)] font-semibold leading-[1] tracking-[-0.04em] tabular-nums",
               shareType === "REPLAY" ? "text-cyan-700" : "text-slate-700"
             )}
           >
             {heroMetric}
           </div>
-          <div className="mt-3 text-[16px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
+          <div className="mt-3 text-[12px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
         </div>
 
         <div
@@ -318,13 +318,13 @@ function SharePortraitCard({
         >
           {secondaryMetrics.map((metric) => (
             <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] border border-white/50 bg-white/42 p-4">
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
-              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[24px] font-semibold tabular-nums">{metric.value}</div>
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
+              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">{metric.value}</div>
             </div>
           ))}
         </div>
 
-        <div className="mt-auto pt-4 text-center text-[14px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+        <div className="mt-auto pt-4 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
       </div>
     </div>
   );
