@@ -24,6 +24,7 @@ import {
   sanitizeViewState,
   updateCompoundStateSafely,
 } from "./appState";
+import { buildCompoundFrequencySummary, createFallbackDashboardSnapshot, ensureDashboardSnapshot, toSafeLower, toSafeString } from "./downstreamSafety";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -1288,7 +1289,8 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
 }
 
 function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
-  const activeSnapshot = dashboardSnapshot.byRange[range] || dashboardSnapshot.byRange.Month;
+  const fallbackSnapshot = createFallbackDashboardSnapshot(formatCurrency(0));
+  const activeSnapshot = ensureDashboardSnapshot(dashboardSnapshot?.byRange?.[range] || dashboardSnapshot?.byRange?.Month, fallbackSnapshot);
   const performanceSeries = activeSnapshot.performanceSeries;
   const sessionMix = activeSnapshot.sessionMix;
   const width = 320;
@@ -1343,7 +1345,7 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
           </div>
           <div className="text-right">
             <TinyLabel>Mode</TinyLabel>
-            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{activeSnapshot.modeLabel}</div>
+            <div className="mt-1 text-[13px] font-semibold tracking-[-0.02em] text-slate-600">{toSafeString(activeSnapshot.modeLabel, fallbackSnapshot.modeLabel)}</div>
           </div>
         </div>
         <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10))] p-3">
@@ -1359,7 +1361,7 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
         <div className="mt-4 space-y-3">
           {[activeSnapshot.modeOutcome, activeSnapshot.frequencySummary, activeSnapshot.contractSummary].map((note) => (
             <div key={note} className="rounded-[20px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-              {note}
+              {toSafeString(note, "—")}
             </div>
           ))}
         </div>
@@ -1382,9 +1384,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
   const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
   const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
 
-  const dashboardMonthSnapshot = dashboardSnapshot.byRange.Month || dashboardSnapshot.byRange.Week;
+  const dashboardMonthSnapshot = ensureDashboardSnapshot(
+    dashboardSnapshot?.byRange?.Month || dashboardSnapshot?.byRange?.Week,
+    createFallbackDashboardSnapshot(formatCurrency(0))
+  );
   const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
-  const frequencySummary = `${compoundState.tradeFrequencyValue || "1"} ${compoundState.tradeFrequency || "Per Day"} • ${compoundState.durationInput || "1"} ${(compoundState.durationUnit || "Months").toLowerCase()}`;
+  const frequencySummary = buildCompoundFrequencySummary(compoundState);
 
   return (
     <div className="space-y-4 pb-4">
@@ -1493,7 +1498,7 @@ function JournalScreen({ positionState, compoundState, onResetPreferences }) {
   const frequencyValue = Math.max(1, parseNumberString(compoundState.tradeFrequencyValue || "1"));
   const tradeFrequency = compoundState.tradeFrequency || "Per Day";
   const durationValue = Math.max(1, parseNumberString(compoundState.durationInput || "1"));
-  const durationUnit = compoundState.durationUnit || "Months";
+  const durationUnit = toSafeString(compoundState.durationUnit, "Months") || "Months";
   const projectionMode = compoundState.projectionMode ? "Forecast" : "Compound";
   const projectionWinRate = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
   const projectionGain = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
@@ -1509,7 +1514,7 @@ function JournalScreen({ positionState, compoundState, onResetPreferences }) {
   }, [tradeFrequency, frequencyValue, durationValue, durationUnit]);
 
   const outlookTone = projectedReturn >= projectedRisk ? "text-emerald-600/90" : "text-rose-500/90";
-  const outcomeContext = `${projectionMode}: ${frequencyValue} ${tradeFrequency} for ${durationValue} ${durationUnit.toLowerCase()}`;
+  const outcomeContext = `${projectionMode}: ${frequencyValue} ${tradeFrequency} for ${durationValue} ${toSafeLower(durationUnit, "months")}`;
 
   return (
     <div className="space-y-4 pb-4">
