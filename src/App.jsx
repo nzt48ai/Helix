@@ -1759,53 +1759,51 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Share rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Share</TinyLabel>
-        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Portrait export card layout</div>
-        <div className="mt-1 text-[13px] text-slate-500">Controls stay in Share tab UI. Exported image only includes card container bounds.</div>
-        <div className="mt-4 space-y-3">
-          <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
-          <div className="mx-auto w-full max-w-[420px] shrink-0">
-            <SharePortraitCard
-              shareType={shareType}
-              selectedInstrumentKey={selectedInstrument.key}
-              contextLine={contextLine}
-              entryValue={entry}
-              stopValue={stop}
-              targetValue={target}
-              visualPanelHeight={visualPanelHeight}
-              replayPathLabel={replayPathLabel}
-              rewardRiskRatio={rewardRiskRatio}
-              isJournalCard={isJournalCard}
-              isReplayCard={isReplayCard}
-              replayPathCurve={replayPathCurve}
-              GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
-              heroMetric={heroMetric}
-              compoundModeLabel={compoundModeLabel}
-              frequencySummary={frequencySummary}
-              secondaryMetrics={secondaryMetrics}
-              footerLabel={footerLabel}
-            />
-          </div>
-          <SegmentedControl
-            items={[
-              { value: "dollar", label: "$" },
-              { value: "points", label: "Points" },
-            ]}
-            value={displayMode}
-            onChange={setDisplayMode}
+      <TinyLabel>Share</TinyLabel>
+      <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Portrait export card layout</div>
+      <div className="mt-1 text-[13px] text-slate-500">Controls stay in Share tab UI. Exported image only includes card container bounds.</div>
+      <div className="mt-4 space-y-3">
+        <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
+        <SegmentedControl
+          items={[
+            { value: "dollar", label: "$" },
+            { value: "points", label: "Points" },
+          ]}
+          value={displayMode}
+          onChange={setDisplayMode}
+        />
+        {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
+        <div className="mx-auto w-full max-w-[420px] shrink-0">
+          <SharePortraitCard
+            shareType={shareType}
+            selectedInstrumentKey={selectedInstrument.key}
+            contextLine={contextLine}
+            entryValue={entry}
+            stopValue={stop}
+            targetValue={target}
+            visualPanelHeight={visualPanelHeight}
+            replayPathLabel={replayPathLabel}
+            rewardRiskRatio={rewardRiskRatio}
+            isJournalCard={isJournalCard}
+            isReplayCard={isReplayCard}
+            replayPathCurve={replayPathCurve}
+            GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
+            heroMetric={heroMetric}
+            compoundModeLabel={compoundModeLabel}
+            frequencySummary={frequencySummary}
+            secondaryMetrics={secondaryMetrics}
+            footerLabel={footerLabel}
           />
-          {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
-          <button
-            type="button"
-            onClick={handleShareExport}
-            className="w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]"
-          >
-            {isExporting ? "Exporting..." : "Share"}
-          </button>
-          {exportError ? <div className="text-[12px] text-rose-500">{exportError}</div> : null}
         </div>
-      </GlassCard>
+        <button
+          type="button"
+          onClick={handleShareExport}
+          className="w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]"
+        >
+          {isExporting ? "Exporting..." : "Share"}
+        </button>
+        {exportError ? <div className="text-[12px] text-rose-500">{exportError}</div> : null}
+      </div>
 
 
       <div className="pointer-events-none fixed -left-[99999px] top-0 h-0 w-0 overflow-hidden" aria-hidden="true">
