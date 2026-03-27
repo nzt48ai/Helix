@@ -340,14 +340,14 @@ function BalanceHeroCard({
             <span
               aria-hidden="true"
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-base pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
+              className="hero-number-layer hero-number-base pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
             >
               {`${prefix}${value}${suffix}`}
             </span>
             <span
               aria-hidden="true"
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-shimmer-overlay pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
+              className="hero-number-layer hero-number-shimmer-overlay pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
             >
               {`${prefix}${value}${suffix}`}
             </span>
@@ -2023,6 +2023,14 @@ export default function App() {
       </div>
 
       <style>{`
+        .hero-number-layer {
+          -webkit-font-smoothing: antialiased;
+          text-rendering: geometricPrecision;
+          transform: translateZ(0);
+          backface-visibility: hidden;
+          -webkit-text-size-adjust: 100%;
+        }
+
         .hero-number-base {
           background-image:
             linear-gradient(
@@ -2034,22 +2042,27 @@ export default function App() {
             );
           -webkit-background-clip: text;
           background-clip: text;
+          -webkit-text-fill-color: transparent;
         }
 
         .hero-number-shimmer-overlay {
+          --hero-shimmer-width: 28%;
+          --hero-shimmer-opacity-soft: 0.3;
+          --hero-shimmer-opacity-peak: 0.72;
           background-image: linear-gradient(
-            106deg,
-            rgba(255, 255, 255, 0) 24%,
-            rgba(255, 255, 255, 0.13) 40%,
-            rgba(255, 255, 255, 0.36) 50%,
-            rgba(247, 251, 255, 0.2) 58%,
-            rgba(255, 255, 255, 0) 74%
+            105deg,
+            rgba(255, 255, 255, 0) calc(50% - var(--hero-shimmer-width)),
+            rgba(255, 255, 255, var(--hero-shimmer-opacity-soft)) calc(50% - (var(--hero-shimmer-width) * 0.42)),
+            rgba(255, 255, 255, var(--hero-shimmer-opacity-peak)) 50%,
+            rgba(247, 251, 255, 0.5) calc(50% + (var(--hero-shimmer-width) * 0.38)),
+            rgba(255, 255, 255, 0) calc(50% + var(--hero-shimmer-width))
           );
-          background-size: 260% 100%;
-          background-position: 130% 50%;
+          background-size: 190% 100%;
+          background-position: 140% 50%;
           -webkit-background-clip: text;
           background-clip: text;
-          animation: heroNumberShimmerSweep 5.2s ease-in-out infinite;
+          -webkit-text-fill-color: transparent;
+          animation: heroNumberShimmerSweep 4.2s linear infinite;
           will-change: background-position;
           opacity: 1;
         }
@@ -2059,16 +2072,25 @@ export default function App() {
         }
 
         @keyframes heroNumberShimmerSweep {
-          0% {
-            background-position: 130% 50%;
+          0%,
+          28% {
+            background-position: 140% 50%;
           }
 
-          65% {
-            background-position: -130% 50%;
+          64% {
+            background-position: -40% 50%;
           }
 
           100% {
-            background-position: -130% 50%;
+            background-position: -40% 50%;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .hero-number-shimmer-overlay {
+            --hero-shimmer-width: 32%;
+            --hero-shimmer-opacity-soft: 0.38;
+            --hero-shimmer-opacity-peak: 0.82;
           }
         }
 
@@ -2076,7 +2098,7 @@ export default function App() {
           .hero-number-shimmer-overlay {
             animation: none;
             background-position: 52% 50%;
-            opacity: 0.45;
+            opacity: 0.5;
           }
         }
       `}</style>
