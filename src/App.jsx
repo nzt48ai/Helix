@@ -1761,14 +1761,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
       <div className="mt-4 space-y-3">
         <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
-        <SegmentedControl
-          items={[
-            { value: "dollar", label: "$" },
-            { value: "points", label: "Points" },
-          ]}
-          value={displayMode}
-          onChange={setDisplayMode}
-        />
         {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
         <div className="mx-auto w-full max-w-[420px] shrink-0">
           <SharePortraitCard
@@ -1792,6 +1784,14 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             footerLabel={footerLabel}
           />
         </div>
+        <SegmentedControl
+          items={[
+            { value: "dollar", label: "$" },
+            { value: "points", label: "Points" },
+          ]}
+          value={displayMode}
+          onChange={setDisplayMode}
+        />
         <button
           type="button"
           onClick={handleShareExport}
