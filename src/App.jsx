@@ -2020,15 +2020,15 @@ export default function App() {
             ),
             repeating-linear-gradient(
               112deg,
-              rgba(255, 255, 255, 0.02) 0%,
-              rgba(255, 255, 255, 0.05) 26%,
-              rgba(244, 248, 255, 0.16) 50%,
-              rgba(255, 255, 255, 0.05) 74%,
-              rgba(255, 255, 255, 0.02) 100%
+              rgba(255, 255, 255, 0.03) 0%,
+              rgba(255, 255, 255, 0.08) 27%,
+              rgba(244, 248, 255, 0.22) 50%,
+              rgba(255, 255, 255, 0.08) 73%,
+              rgba(255, 255, 255, 0.03) 100%
             );
           background-size: 100% 100%, 220% 100%;
           background-position: 50% 50%, 0% 50%;
-          animation: heroNumberShimmer 10.8s linear infinite;
+          animation: heroNumberShimmer 8.8s linear infinite;
           will-change: background-position;
         }
 
