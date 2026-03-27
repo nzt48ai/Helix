@@ -335,29 +335,15 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="inline-grid items-center justify-center"
+            className="inline-flex items-center justify-center"
           >
-            <span
-              aria-hidden="true"
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-base pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
-            >
-              {`${prefix}${value}${suffix}`}
-            </span>
-            <span
-              aria-hidden="true"
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-shimmer-overlay pointer-events-none col-start-1 row-start-1 select-none whitespace-pre text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent"
-            >
-              {`${prefix}${value}${suffix}`}
-            </span>
             <input
               type="text"
               inputMode="numeric"
               value={`${prefix}${value}${suffix}`}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-input relative col-start-1 row-start-1 h-full w-auto min-w-0 bg-transparent text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
+              className="hero-number-shimmer h-full w-auto min-w-0 bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
               aria-label={label}
             />
           </motion.div>
@@ -2023,7 +2009,7 @@ export default function App() {
       </div>
 
       <style>{`
-        .hero-number-base {
+        .hero-number-shimmer {
           background-image:
             linear-gradient(
               112deg,
@@ -2031,52 +2017,27 @@ export default function App() {
               rgba(103, 122, 148, 0.93) 30%,
               rgba(104, 122, 147, 0.92) 70%,
               rgba(71, 85, 105, 0.94) 100%
+            ),
+            repeating-linear-gradient(
+              112deg,
+              rgba(255, 255, 255, 0.03) 0%,
+              rgba(255, 255, 255, 0.08) 27%,
+              rgba(244, 248, 255, 0.22) 50%,
+              rgba(255, 255, 255, 0.08) 73%,
+              rgba(255, 255, 255, 0.03) 100%
             );
-          -webkit-background-clip: text;
-          background-clip: text;
-        }
-
-        .hero-number-shimmer-overlay {
-          background-image: linear-gradient(
-            106deg,
-            rgba(255, 255, 255, 0) 24%,
-            rgba(255, 255, 255, 0.13) 40%,
-            rgba(255, 255, 255, 0.36) 50%,
-            rgba(247, 251, 255, 0.2) 58%,
-            rgba(255, 255, 255, 0) 74%
-          );
-          background-size: 260% 100%;
-          background-position: 130% 50%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          animation: heroNumberShimmerSweep 5.2s ease-in-out infinite;
+          background-size: 100% 100%, 220% 100%;
+          background-position: 50% 50%, 0% 50%;
+          animation: heroNumberShimmer 8.8s linear infinite;
           will-change: background-position;
-          opacity: 1;
         }
 
-        .hero-number-input {
-          -webkit-text-fill-color: transparent;
-        }
-
-        @keyframes heroNumberShimmerSweep {
-          0% {
-            background-position: 130% 50%;
+        @keyframes heroNumberShimmer {
+          from {
+            background-position: 50% 50%, 0% 50%;
           }
-
-          65% {
-            background-position: -130% 50%;
-          }
-
-          100% {
-            background-position: -130% 50%;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .hero-number-shimmer-overlay {
-            animation: none;
-            background-position: 52% 50%;
-            opacity: 0.45;
+          to {
+            background-position: 50% 50%, -220% 50%;
           }
         }
       `}</style>
