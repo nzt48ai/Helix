@@ -343,7 +343,7 @@ function BalanceHeroCard({
               value={`${prefix}${value}${suffix}`}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-shimmer h-full w-auto min-w-0 bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
+              className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
               aria-label={label}
             />
           </motion.div>
@@ -2009,46 +2009,7 @@ export default function App() {
       </div>
 
       <style>{`
-        .hero-number-shimmer {
-          background-image:
-            linear-gradient(
-              112deg,
-              rgba(71, 85, 105, 0.94) 0%,
-              rgba(103, 122, 148, 0.93) 30%,
-              rgba(104, 122, 147, 0.92) 70%,
-              rgba(71, 85, 105, 0.94) 100%
-            ),
-            repeating-linear-gradient(
-              112deg,
-              rgba(255, 255, 255, 0.03) 0%,
-              rgba(255, 255, 255, 0.08) 27%,
-              rgba(244, 248, 255, 0.18) 50%,
-              rgba(255, 255, 255, 0.08) 73%,
-              rgba(255, 255, 255, 0.03) 100%
-            );
-          background-size: 100% 100%, 220% 100%;
-          background-position: 50% 50%, 0% 50%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          animation: heroNumberShimmer 8.8s linear infinite;
-          will-change: background-position;
-        }
-
-        @keyframes heroNumberShimmer {
-          from {
-            background-position: 50% 50%, 0% 50%;
-          }
-          to {
-            background-position: 50% 50%, -220% 50%;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .hero-number-shimmer {
-            animation: none;
-            background-position: 50% 50%, 38% 50%;
-          }
-        }
+        @keyframes balanceShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
       `}</style>
     </div>
   );
