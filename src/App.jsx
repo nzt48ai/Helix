@@ -1759,9 +1759,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Share rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
-      <TinyLabel>Share</TinyLabel>
-      <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Portrait export card layout</div>
-      <div className="mt-1 text-[13px] text-slate-500">Controls stay in Share tab UI. Exported image only includes card container bounds.</div>
       <div className="mt-4 space-y-3">
         <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
         <SegmentedControl
