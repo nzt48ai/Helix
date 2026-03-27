@@ -27,6 +27,7 @@ import {
 } from "./appState";
 import { buildCompoundFrequencySummary, createFallbackDashboardSnapshot, ensureDashboardSnapshot, toSafeLower, toSafeString } from "./downstreamSafety";
 import { isDebugModeEnabled } from "./debugRuntime";
+import { shouldHandleTabPointerUp } from "./navInteractions";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 
 function cn(...classes) {
@@ -1647,6 +1648,35 @@ function JournalScreen({ positionState, compoundState, onResetPreferences, debug
 
 function BottomNav({ activeTab, onTabChange }) {
   const reduceMotion = useReducedMotion();
+  const skipClickAfterPointerUpRef = useRef(false);
+
+  const triggerTabChange = useCallback(
+    (nextTab) => {
+      onTabChange(nextTab);
+    },
+    [onTabChange]
+  );
+
+  const handleTabPointerUp = useCallback(
+    (event, nextTab) => {
+      if (!shouldHandleTabPointerUp(event.pointerType)) return;
+      skipClickAfterPointerUpRef.current = true;
+      triggerTabChange(nextTab);
+    },
+    [triggerTabChange]
+  );
+
+  const handleTabClick = useCallback(
+    (nextTab) => {
+      if (skipClickAfterPointerUpRef.current) {
+        skipClickAfterPointerUpRef.current = false;
+        return;
+      }
+      triggerTabChange(nextTab);
+    },
+    [triggerTabChange]
+  );
+
   return (
     <div className="absolute inset-x-4 bottom-4 z-20">
       <GlassCard className="rounded-full border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(245,248,255,0.58))] p-1.5 shadow-[0_22px_44px_rgba(118,138,183,0.18),0_8px_18px_rgba(118,138,183,0.10),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(214,223,242,0.72)] backdrop-blur-[30px] [backdrop-filter:saturate(1.45)_blur(30px)]" padded={false}>
@@ -1661,10 +1691,11 @@ function BottomNav({ activeTab, onTabChange }) {
               <motion.button
                 key={key}
                 whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                onClick={() => onTabChange(key)}
+                onPointerUp={(event) => handleTabPointerUp(event, key)}
+                onClick={() => handleTabClick(key)}
                 type="button"
                 className={cn(
-                  "relative z-10 flex min-h-[42px] flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
+                  "relative z-10 flex min-h-[42px] touch-manipulation flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
                   active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
                 )}
               >
