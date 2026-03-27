@@ -53,14 +53,48 @@ const POSITION_INSTRUMENTS = [
   { key: "MES", pointValue: 5, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
 ];
 
-function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
-  const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
-  return digits || fallback;
-}
-
 function formatNumberString(value) {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, 12);
   return digits ? Number(digits).toLocaleString("en-US") : "";
+}
+
+function sanitizeIntegerInput(value, maxDigits = 12) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
+}
+
+function sanitizeDecimalInput(value, { maxWholeDigits = 7, maxFractionDigits = 2 } = {}) {
+  const raw = String(value ?? "").replace(/,/g, "");
+  let whole = "";
+  let fraction = "";
+  let hasDot = false;
+
+  for (const char of raw) {
+    if (char >= "0" && char <= "9") {
+      if (!hasDot && whole.length < maxWholeDigits) {
+        whole += char;
+      } else if (hasDot && fraction.length < maxFractionDigits) {
+        fraction += char;
+      }
+    } else if (char === "." && !hasDot) {
+      hasDot = true;
+    }
+  }
+
+  if (!hasDot) return whole;
+  return `${whole}.${fraction}`;
+}
+
+function formatIntegerForBlur(value, maxDigits = 12) {
+  const digits = sanitizeIntegerInput(value, maxDigits);
+  return digits ? Number(digits).toLocaleString("en-US") : "";
+}
+
+function formatDecimalForBlur(value, { decimals = 2, maxWholeDigits = 7 } = {}) {
+  const sanitized = sanitizeDecimalInput(value, { maxWholeDigits, maxFractionDigits: decimals });
+  if (!sanitized || sanitized === ".") return "";
+  const parsed = Number(sanitized);
+  if (!Number.isFinite(parsed)) return "";
+  return parsed.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 function parseNumberString(value) {
@@ -495,6 +529,7 @@ function BalanceHeroCard({
   label,
   value,
   onChange,
+  onBlur,
   toggleLabel,
   toggleRightLabel,
   toggleState = false,
@@ -535,15 +570,20 @@ function BalanceHeroCard({
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="inline-flex items-center justify-center"
           >
-            <input
-              type="text"
-              inputMode="numeric"
-              value={`${prefix}${value}${suffix}`}
-              onChange={(e) => onChange?.(e.target.value)}
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
-              aria-label={label}
-            />
+            <div className="flex items-center justify-center gap-1">
+              {prefix ? <span className="select-none bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent animate-[balanceShimmer_10s_linear_infinite]" style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}>{prefix}</span> : null}
+              <input
+                type="text"
+                inputMode="numeric"
+                value={value ?? ""}
+                onChange={(e) => onChange?.(e.target.value)}
+                onBlur={onBlur}
+                style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
+                className="h-full min-w-[2ch] max-w-[14ch] bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
+                aria-label={label}
+              />
+              {suffix ? <span className="select-none bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent animate-[balanceShimmer_10s_linear_infinite]" style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}>{suffix}</span> : null}
+            </div>
           </motion.div>
         </div>
 
@@ -785,9 +825,9 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const previousKellyManualRef = useRef(false);
   const lastManualContractsRef = useRef("1");
   const instrument = positionState.instrument || "MNQ";
-  const entry = positionState.entry || "21,500.00";
-  const stop = positionState.stop || "21,470.00";
-  const target = positionState.target || "21,560.00";
+  const entry = positionState.entry ?? "";
+  const stop = positionState.stop ?? "";
+  const target = positionState.target ?? "";
   const winRate = positionState.winRate ?? 55;
   const kelly = positionState.kelly || "½";
 
@@ -855,28 +895,33 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
 
   const setField = (key, value) => setPositionState((prev) => ({ ...prev, [key]: value }));
 
+  const handleAccountBalanceChange = (raw) => {
+    setField("accountBalance", sanitizeIntegerInput(raw, 12));
+  };
+
+  const handleAccountBalanceBlur = () => {
+    setField("accountBalance", formatIntegerForBlur(positionState.accountBalance, 12));
+  };
+
+  const handlePriceChange = (field) => (raw) => {
+    setField(field, sanitizeDecimalInput(raw, { maxWholeDigits: 7, maxFractionDigits: 2 }));
+  };
+
+  const handlePriceBlur = (field) => () => {
+    setField(field, formatDecimalForBlur(positionState[field], { decimals: 2, maxWholeDigits: 7 }));
+  };
+
   const handleManualContractsChange = (raw) => {
-    const rawDigits = keepDigitsOnly(raw, 3, "");
-    const nextValue = rawDigits.length > 1 ? rawDigits.replace(/^0+/, "") || "" : rawDigits;
+    const nextValue = sanitizeIntegerInput(raw, 3);
     if (nextValue !== "") lastManualContractsRef.current = nextValue;
     setField("contracts", nextValue);
   };
 
-  const formatPriceInput = (raw, decimals) => {
-    const clean = String(raw).replace(/,/g, "");
-    let whole = "";
-    let frac = "";
-    let seenDot = false;
-    for (const ch of clean) {
-      if (ch >= "0" && ch <= "9") {
-        if (!seenDot && whole.length < 7) whole += ch;
-        else if (seenDot && frac.length < (decimals || 2)) frac += ch;
-      } else if (ch === "." && !seenDot) {
-        seenDot = true;
-      }
-    }
-    const formattedWhole = whole ? Number(whole).toLocaleString("en-US") : "";
-    return seenDot ? `${formattedWhole}.${frac}` : formattedWhole;
+  const handleManualContractsBlur = () => {
+    if (!isKellyManual) return;
+    const normalized = sanitizeIntegerInput(positionState.contracts, 3).replace(/^0+(?=\d)/, "");
+    setField("contracts", normalized);
+    if (normalized !== "") lastManualContractsRef.current = normalized;
   };
 
   return (
@@ -884,20 +929,28 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
       <DebugRenderMarker enabled={debugEnabled} markerText="POSITION SCREEN" />
       <ScreenHeader />
       <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={(value) => setField("instrument", value)} />
-      <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
+      <BalanceHeroCard
+        label="Account Balance"
+        value={positionState.accountBalance}
+        onChange={handleAccountBalanceChange}
+        onBlur={handleAccountBalanceBlur}
+        toggleLabel="Prop"
+        toggleState={positionState.propMode}
+        onToggle={() => setField("propMode", !positionState.propMode)}
+      />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Entry</TinyLabel>
-          <input type="text" inputMode="decimal" value={entry} onChange={(e) => setField("entry", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-slate-600 outline-none" />
+          <input type="text" inputMode="decimal" value={entry} onChange={(e) => handlePriceChange("entry")(e.target.value)} onBlur={handlePriceBlur("entry")} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-slate-600 outline-none" />
         </GlassCard>
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Stop</TinyLabel>
-          <input type="text" inputMode="decimal" value={stop} onChange={(e) => setField("stop", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-rose-500/85 outline-none" />
+          <input type="text" inputMode="decimal" value={stop} onChange={(e) => handlePriceChange("stop")(e.target.value)} onBlur={handlePriceBlur("stop")} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-rose-500/85 outline-none" />
         </GlassCard>
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Target</TinyLabel>
-          <input type="text" inputMode="decimal" value={target} onChange={(e) => setField("target", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90 outline-none" />
+          <input type="text" inputMode="decimal" value={target} onChange={(e) => handlePriceChange("target")(e.target.value)} onBlur={handlePriceBlur("target")} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90 outline-none" />
         </GlassCard>
       </div>
 
@@ -934,6 +987,7 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
                 inputMode="numeric"
                 value={suggestedContractsDisplay}
                 onChange={isKellyManual ? (e) => handleManualContractsChange(e.target.value) : undefined}
+                onBlur={isKellyManual ? handleManualContractsBlur : undefined}
                 readOnly={!isKellyManual}
                 className="w-full bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[78px] font-semibold leading-[0.92] tracking-[-0.075em] text-transparent outline-none"
               />
