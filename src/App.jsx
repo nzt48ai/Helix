@@ -165,10 +165,13 @@ function derivePositionSetupSnapshot(positionState) {
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
   const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
   const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
-  const direction =
-    typeof positionState.direction === "string" && positionState.direction.trim()
-      ? positionState.direction.trim().toUpperCase()
-      : "";
+  const direction = hasEntry && hasStop && hasTarget
+    ? target > entry && stop < entry
+      ? "LONG"
+      : target < entry && stop > entry
+        ? "SHORT"
+        : ""
+    : "";
   const setupTimestamp =
     typeof positionState.setupTimestamp === "string"
       ? positionState.setupTimestamp.trim()
@@ -258,7 +261,7 @@ function GlassCard({ children, className = "", padded = true, highlight = false 
 function SharePortraitCard({
   shareType,
   selectedInstrumentKey,
-  directionLabel = "—",
+  directionLabel = "",
   contextLine,
   entryValue,
   stopValue,
@@ -277,6 +280,13 @@ function SharePortraitCard({
   footerLabel,
   setupMissingMessage = "",
 }) {
+  const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
+  const directionPillClassName = cn(
+    "shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
+    normalizedDirection === "LONG" && "bg-emerald-400/15 text-emerald-700",
+    normalizedDirection === "SHORT" && "bg-rose-500 text-white"
+  );
+
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
       <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700">
@@ -285,9 +295,7 @@ function SharePortraitCard({
             {shareType}
           </div>
           <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
-          <div className="shrink-0 inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-700">
-            {directionLabel}
-          </div>
+          {normalizedDirection ? <div className={directionPillClassName}>{normalizedDirection}</div> : null}
         </div>
 
         <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
@@ -1845,7 +1853,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const isJournalCard = shareType === "JOURNAL";
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
   const isSetupCard = shareType === "SETUP";
-  const setupDirectionLabel = direction || "—";
+  const setupDirectionLabel = direction;
   const setupMissingMessage = isSetupCard && !setupIsComplete ? "Missing setup values on Position tab." : "";
   const setupCardInstrumentLabel = isSetupCard && !setupIsComplete ? "—" : selectedInstrument.key;
   const setupCardEntry = isSetupCard && !setupIsComplete ? 0 : entry;
