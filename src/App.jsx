@@ -1536,7 +1536,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
   );
 }
 
-function JournalScreen({ positionState, compoundState }) {
+function JournalScreen({ positionState, compoundState, onResetPreferences }) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
   const instrument = selectedInstrument.key;
   const entry = parseNumberString(positionState.entry || "0");
@@ -1620,6 +1620,19 @@ function JournalScreen({ positionState, compoundState }) {
           </div>
         </div>
       </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Preferences</TinyLabel>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Reset local data</div>
+        <div className="mt-1 text-[13px] text-slate-500">Clear saved app state and return to default values.</div>
+        <button
+          type="button"
+          onClick={onResetPreferences}
+          className="mt-3 w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-600 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
+        >
+          Reset preferences
+        </button>
+      </GlassCard>
     </div>
   );
 }
@@ -1677,6 +1690,25 @@ export default function App() {
   const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
+
+  const resetPreferences = () => {
+    if (typeof window !== "undefined") {
+      const shouldReset = window.confirm("Reset saved preferences and restore defaults?");
+      if (!shouldReset) return;
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(APP_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures so in-memory reset still works.
+      }
+    }
+
+    setPositionState({ ...POSITION_DEFAULTS });
+    setCompoundState({ ...COMPOUND_DEFAULTS });
+    setViewState({ ...VIEW_DEFAULTS });
+  };
 
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
@@ -1821,7 +1853,7 @@ export default function App() {
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen positionState={positionState} compoundState={compoundState} />
+      <JournalScreen positionState={positionState} compoundState={compoundState} onResetPreferences={resetPreferences} />
     ) : (
       <ShareScreen positionState={positionState} compoundState={compoundState} dashboardSnapshot={dashboardSnapshot} />
     );
