@@ -343,7 +343,7 @@ function BalanceHeroCard({
               value={`${prefix}${value}${suffix}`}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="hero-number-shimmer h-full w-auto min-w-0 bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none caret-slate-500"
+              className="h-full w-auto min-w-0 bg-[linear-gradient(112deg,rgba(71,85,105,0.94)_0%,rgba(103,122,148,0.93)_28%,rgba(244,248,255,0.88)_52%,rgba(104,122,147,0.92)_76%,rgba(71,85,105,0.94)_100%)] bg-[length:280%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_9.6s_ease-in-out_infinite_alternate] caret-slate-500"
               aria-label={label}
             />
           </motion.div>
@@ -2009,37 +2009,7 @@ export default function App() {
       </div>
 
       <style>{`
-        .hero-number-shimmer {
-          background-image:
-            linear-gradient(
-              112deg,
-              rgba(71, 85, 105, 0.94) 0%,
-              rgba(103, 122, 148, 0.93) 30%,
-              rgba(104, 122, 147, 0.92) 70%,
-              rgba(71, 85, 105, 0.94) 100%
-            ),
-            repeating-linear-gradient(
-              112deg,
-              rgba(255, 255, 255, 0.02) 0%,
-              rgba(255, 255, 255, 0.05) 26%,
-              rgba(244, 248, 255, 0.16) 50%,
-              rgba(255, 255, 255, 0.05) 74%,
-              rgba(255, 255, 255, 0.02) 100%
-            );
-          background-size: 100% 100%, 220% 100%;
-          background-position: 50% 50%, 0% 50%;
-          animation: heroNumberShimmer 10.8s linear infinite;
-          will-change: background-position;
-        }
-
-        @keyframes heroNumberShimmer {
-          from {
-            background-position: 50% 50%, 0% 50%;
-          }
-          to {
-            background-position: 50% 50%, -220% 50%;
-          }
-        }
+        @keyframes balanceShimmer { 0% { background-position: 120% 50%; } 100% { background-position: -20% 50%; } }
       `}</style>
     </div>
   );
