@@ -35,8 +35,14 @@ export const VIEW_DEFAULTS = {
 };
 
 export function resolveTabFromHash(hashValue = "") {
-  const trimmedHash = String(hashValue).replace("#", "").trim();
-  return ["position", "compound", "share", "dashboard", "journal"].includes(trimmedHash) ? trimmedHash : "position";
+  const trimmedHash = String(hashValue).replace(/^#/, "").trim().toLowerCase();
+  if (!trimmedHash) return "position";
+
+  const allowedTabs = ["position", "compound", "share", "dashboard", "journal"];
+  const firstToken = trimmedHash.split(/[&|,;\s]+/).find(Boolean) || "";
+
+  if (allowedTabs.includes(firstToken)) return firstToken;
+  return allowedTabs.includes(trimmedHash) ? trimmedHash : "position";
 }
 
 export function readStoredAppState(storage) {
