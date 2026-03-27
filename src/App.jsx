@@ -30,6 +30,90 @@ const POSITION_INSTRUMENTS = [
   { key: "MES", pointValue: 5, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
 ];
 const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
+const DASHBOARD_RANGES = ["Week", "Month", "Quarter", "Year"];
+const APP_STORAGE_KEY = "helix.app.state.v1";
+const POSITION_DEFAULTS = {
+  accountBalance: "25,000",
+  propMode: false,
+  instrument: "MNQ",
+  entry: "21,500.00",
+  stop: "21,470.00",
+  target: "21,560.00",
+  winRate: 55,
+  kelly: "½",
+  contracts: "7",
+};
+const COMPOUND_DEFAULTS = {
+  projectionMode: true,
+  projectionGoalDisplayType: "$",
+  projectionGoalDollarInput: "50,000",
+  projectionGoalPercentInput: "100",
+  manualStartingBalanceInput: "25,000",
+  tradeFrequencyValue: "1",
+  tradeFrequency: "Per Day",
+  gainInput: "8",
+  winRateInput: "55",
+  durationInput: "6",
+  durationUnit: "Months",
+};
+const VIEW_DEFAULTS = {
+  dashboardRange: "Month",
+};
+
+function readStoredAppState() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizePositionState(value) {
+  if (!value || typeof value !== "object") return { ...POSITION_DEFAULTS };
+  return {
+    accountBalance: typeof value.accountBalance === "string" ? value.accountBalance : POSITION_DEFAULTS.accountBalance,
+    propMode: typeof value.propMode === "boolean" ? value.propMode : POSITION_DEFAULTS.propMode,
+    instrument: POSITION_INSTRUMENTS.some((item) => item.key === value.instrument) ? value.instrument : POSITION_DEFAULTS.instrument,
+    entry: typeof value.entry === "string" ? value.entry : POSITION_DEFAULTS.entry,
+    stop: typeof value.stop === "string" ? value.stop : POSITION_DEFAULTS.stop,
+    target: typeof value.target === "string" ? value.target : POSITION_DEFAULTS.target,
+    winRate: typeof value.winRate === "number" ? value.winRate : POSITION_DEFAULTS.winRate,
+    kelly: KELLY_OPTIONS.includes(value.kelly) ? value.kelly : POSITION_DEFAULTS.kelly,
+    contracts: typeof value.contracts === "string" ? value.contracts : POSITION_DEFAULTS.contracts,
+  };
+}
+
+function sanitizeCompoundState(value) {
+  if (!value || typeof value !== "object") return { ...COMPOUND_DEFAULTS };
+  return {
+    projectionMode: typeof value.projectionMode === "boolean" ? value.projectionMode : COMPOUND_DEFAULTS.projectionMode,
+    projectionGoalDisplayType: value.projectionGoalDisplayType === "%" ? "%" : COMPOUND_DEFAULTS.projectionGoalDisplayType,
+    projectionGoalDollarInput:
+      typeof value.projectionGoalDollarInput === "string" ? value.projectionGoalDollarInput : COMPOUND_DEFAULTS.projectionGoalDollarInput,
+    projectionGoalPercentInput:
+      typeof value.projectionGoalPercentInput === "string" ? value.projectionGoalPercentInput : COMPOUND_DEFAULTS.projectionGoalPercentInput,
+    manualStartingBalanceInput:
+      typeof value.manualStartingBalanceInput === "string" ? value.manualStartingBalanceInput : COMPOUND_DEFAULTS.manualStartingBalanceInput,
+    tradeFrequencyValue: typeof value.tradeFrequencyValue === "string" ? value.tradeFrequencyValue : COMPOUND_DEFAULTS.tradeFrequencyValue,
+    tradeFrequency:
+      value.tradeFrequency === "Per Week" || value.tradeFrequency === "Per Month" ? value.tradeFrequency : COMPOUND_DEFAULTS.tradeFrequency,
+    gainInput: typeof value.gainInput === "string" ? value.gainInput : COMPOUND_DEFAULTS.gainInput,
+    winRateInput: typeof value.winRateInput === "string" ? value.winRateInput : COMPOUND_DEFAULTS.winRateInput,
+    durationInput: typeof value.durationInput === "string" ? value.durationInput : COMPOUND_DEFAULTS.durationInput,
+    durationUnit: value.durationUnit === "Days" || value.durationUnit === "Weeks" ? value.durationUnit : COMPOUND_DEFAULTS.durationUnit,
+  };
+}
+
+function sanitizeViewState(value) {
+  if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
+  return {
+    dashboardRange: DASHBOARD_RANGES.includes(value.dashboardRange) ? value.dashboardRange : VIEW_DEFAULTS.dashboardRange,
+  };
+}
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -1265,8 +1349,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
   );
 }
 
-function DashboardScreen({ dashboardSnapshot }) {
-  const [range, setRange] = useState("Month");
+function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
   const activeSnapshot = dashboardSnapshot.byRange[range] || dashboardSnapshot.byRange.Month;
   const performanceSeries = activeSnapshot.performanceSeries;
   const sessionMix = activeSnapshot.sessionMix;
@@ -1285,7 +1368,7 @@ function DashboardScreen({ dashboardSnapshot }) {
   return (
     <div className="space-y-4 pb-4">
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
-      <SegmentedControl items={["Week", "Month", "Quarter", "Year"]} value={range} onChange={setRange} />
+      <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
         <MetricRowCard label="Win Rate" value={activeSnapshot.winRate} tone={activeSnapshot.winRateTone} />
@@ -1591,30 +1674,9 @@ export default function App() {
     return NAV_ITEMS.some((item) => item.key === hashValue) ? hashValue : "position";
   };
   const [activeTab, setActiveTab] = useState(resolveTabFromHash);
-  const [positionState, setPositionState] = useState({
-    accountBalance: "25,000",
-    propMode: false,
-    instrument: "MNQ",
-    entry: "21,500.00",
-    stop: "21,470.00",
-    target: "21,560.00",
-    winRate: 55,
-    kelly: "½",
-    contracts: "7",
-  });
-  const [compoundState, setCompoundState] = useState({
-    projectionMode: true,
-    projectionGoalDisplayType: "$",
-    projectionGoalDollarInput: "50,000",
-    projectionGoalPercentInput: "100",
-    manualStartingBalanceInput: "25,000",
-    tradeFrequencyValue: "1",
-    tradeFrequency: "Per Day",
-    gainInput: "8",
-    winRateInput: "55",
-    durationInput: "6",
-    durationUnit: "Months",
-  });
+  const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
+  const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
+  const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
 
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
@@ -1731,13 +1793,33 @@ export default function App() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        APP_STORAGE_KEY,
+        JSON.stringify({
+          positionState,
+          compoundState,
+          viewState,
+        })
+      );
+    } catch {
+      // Ignore write failures so the app remains usable if storage is unavailable.
+    }
+  }, [positionState, compoundState, viewState]);
+
   const screen =
     activeTab === "position" ? (
       <PositionScreen positionState={positionState} setPositionState={setPositionState} />
     ) : activeTab === "compound" ? (
       <CompoundScreen positionState={positionState} compoundState={compoundState} setCompoundState={setCompoundState} />
     ) : activeTab === "dashboard" ? (
-      <DashboardScreen dashboardSnapshot={dashboardSnapshot} />
+      <DashboardScreen
+        dashboardSnapshot={dashboardSnapshot}
+        range={viewState.dashboardRange}
+        onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
+      />
     ) : activeTab === "journal" ? (
       <JournalScreen positionState={positionState} compoundState={compoundState} />
     ) : (
