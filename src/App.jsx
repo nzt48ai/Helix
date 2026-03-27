@@ -83,6 +83,14 @@ function formatCurrency(value) {
   }).format(value || 0);
 }
 
+function formatLocalTimeAmPm(value = Date.now()) {
+  return new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function formatAbbreviatedNumber(value, { suffix = "", prefix = "", threshold = 99999 } = {}) {
   const safeValue = Number(value);
   if (!Number.isFinite(safeValue)) return `${prefix}0${suffix}`;
@@ -1695,8 +1703,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     projectedRisk,
     projectedReward,
     direction,
-    setupTimestamp,
-    setupContext,
     setupIsComplete,
   } = positionSetupSnapshot;
   const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
@@ -1714,6 +1720,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const [journalPeriod, setJournalPeriod] = useState("Month");
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [setupCardTimeMs, setSetupCardTimeMs] = useState(() => Date.now());
   const shareCardExportRef = useRef(null);
   const GIF_PREVIEW_DURATION_SECONDS = 6.4;
   const hasReplayTruePath = riskPoints > 0 && rewardPoints > 0;
@@ -1722,11 +1729,24 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     ? "M 8 74 C 18 72, 22 58, 30 62 C 42 69, 50 54, 62 48 C 72 42, 82 34, 92 26"
     : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28";
 
+  useEffect(() => {
+    if (shareType !== "SETUP") return undefined;
+    setSetupCardTimeMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setSetupCardTimeMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [shareType]);
+
   const handleShareExport = useCallback(async () => {
     if (!shareCardExportRef.current || isExporting) return;
     setIsExporting(true);
     setExportError("");
     try {
+      if (shareType === "SETUP") {
+        setSetupCardTimeMs(Date.now());
+        await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+      }
       const didExport = await exportElementAsPng(shareCardExportRef.current, "helix-share-card.png");
       if (!didExport) setExportError("Unable to export share card on this device/browser.");
     } catch {
@@ -1734,20 +1754,20 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     } finally {
       setIsExporting(false);
     }
-  }, [isExporting]);
+  }, [isExporting, shareType]);
 
   const contextLine = useMemo(() => {
+    if (shareType === "SETUP") {
+      return `Called at ${formatLocalTimeAmPm(setupCardTimeMs)}`;
+    }
     if (shareType === "REPLAY") {
       return "Replay timestamp · 9:41 AM EST";
     }
     if (shareType === "JOURNAL") {
       return `${journalPeriod} performance period`;
     }
-    if (setupContext && setupTimestamp) return `${setupContext} · ${setupTimestamp}`;
-    if (setupContext) return setupContext;
-    if (setupTimestamp) return setupTimestamp;
     return "Current Position tab setup";
-  }, [journalPeriod, setupContext, setupTimestamp, shareType]);
+  }, [journalPeriod, setupCardTimeMs, shareType]);
 
   const heroMetric = useMemo(() => {
     if (shareType === "REPLAY") {
