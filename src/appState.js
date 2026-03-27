@@ -3,6 +3,7 @@ export const APP_STORAGE_KEY = "helix.app.state.v1";
 export const POSITION_INSTRUMENT_KEYS = ["NQ", "ES", "MNQ", "MES"];
 export const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
 export const DASHBOARD_RANGES = ["Week", "Month", "Quarter", "Year"];
+export const TAB_KEYS = ["position", "compound", "share", "dashboard", "journal"];
 
 export const POSITION_DEFAULTS = {
   accountBalance: "25,000",
@@ -38,11 +39,10 @@ export function resolveTabFromHash(hashValue = "") {
   const trimmedHash = String(hashValue).replace(/^#/, "").trim().toLowerCase();
   if (!trimmedHash) return "position";
 
-  const allowedTabs = ["position", "compound", "share", "dashboard", "journal"];
   const firstToken = trimmedHash.split(/[&|,;\s]+/).find(Boolean) || "";
 
-  if (allowedTabs.includes(firstToken)) return firstToken;
-  return allowedTabs.includes(trimmedHash) ? trimmedHash : "position";
+  if (TAB_KEYS.includes(firstToken)) return firstToken;
+  return TAB_KEYS.includes(trimmedHash) ? trimmedHash : "position";
 }
 
 export function readStoredAppState(storage) {
