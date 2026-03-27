@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BookOpen,
@@ -28,6 +28,7 @@ import {
 import { buildCompoundFrequencySummary, createFallbackDashboardSnapshot, ensureDashboardSnapshot, toSafeLower, toSafeString } from "./downstreamSafety";
 import { isDebugModeEnabled } from "./debugRuntime";
 import { shouldHandleTabPointerUp } from "./navInteractions";
+import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 
 function cn(...classes) {
@@ -216,8 +217,12 @@ function TopIconPill({ icon: Icon }) {
 }
 
 function SegmentedControl({ items, value, onChange }) {
-  const segmentedId = useId();
   const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
+  const activeIndex = getActiveIndex(
+    normalizedItems.map((item) => item.value),
+    value
+  );
+  const indicatorStyle = getSegmentedIndicatorStyle(normalizedItems.length, activeIndex);
 
   return (
     <GlassCard
@@ -225,6 +230,13 @@ function SegmentedControl({ items, value, onChange }) {
       padded={false}
     >
       <div className="relative grid gap-1.5" style={{ gridTemplateColumns: `repeat(${normalizedItems.length}, minmax(0, 1fr))` }}>
+        <motion.span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 top-0 z-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
+          initial={false}
+          animate={indicatorStyle}
+          transition={SPRING}
+        />
         {normalizedItems.map((item) => {
           const active = item.value === value;
           return (
@@ -237,14 +249,6 @@ function SegmentedControl({ items, value, onChange }) {
                 active ? "text-blue-600" : "text-slate-500"
               )}
             >
-              {active ? (
-                <motion.span
-                  layoutId={`segmented-pill-${segmentedId}`}
-                  initial={false}
-                  transition={SPRING}
-                  className="absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
-                />
-              ) : null}
               <span className="relative z-10">{item.label}</span>
             </button>
           );
@@ -1649,6 +1653,11 @@ function JournalScreen({ positionState, compoundState, onResetPreferences, debug
 function BottomNav({ activeTab, onTabChange }) {
   const reduceMotion = useReducedMotion();
   const skipClickAfterPointerUpRef = useRef(false);
+  const activeIndex = getActiveIndex(
+    NAV_ITEMS.map((item) => item.key),
+    activeTab
+  );
+  const indicatorStyle = getSegmentedIndicatorStyle(NAV_ITEMS.length, activeIndex, 1);
 
   const triggerTabChange = useCallback(
     (nextTab) => {
@@ -1685,6 +1694,13 @@ function BottomNav({ activeTab, onTabChange }) {
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.10)_42%,rgba(255,255,255,0.06))]" />
         <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.95),transparent)] opacity-95" />
         <div className="relative grid grid-cols-5 gap-1.5">
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-[1px] top-[1px] z-0 rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
+            initial={false}
+            animate={indicatorStyle}
+            transition={SPRING}
+          />
           {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
             const active = activeTab === key;
             return (
@@ -1699,14 +1715,6 @@ function BottomNav({ activeTab, onTabChange }) {
                   active ? "text-[rgb(74,113,206)]" : "text-slate-400/58 hover:text-slate-500/80"
                 )}
               >
-                {active ? (
-                  <motion.span
-                    layoutId="bottom-nav-pill"
-                    initial={false}
-                    transition={SPRING}
-                    className="absolute inset-[1px] rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.995)_0%,rgba(255,255,255,0.975)_18%,rgba(245,248,255,0.96)_48%,rgba(232,238,250,0.92)_78%,rgba(224,231,246,0.9)_100%)] shadow-[0_12px_28px_rgba(118,138,183,0.12),0_1px_2px_rgba(118,138,183,0.05),inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(210,220,240,0.62),0_0_10px_rgba(120,150,255,0.05)]"
-                  />
-                ) : null}
                 <Icon className="relative z-10" size={17} strokeWidth={2.1} />
                 <span className={cn("relative z-10 mt-1 flex min-h-[10px] w-full items-center justify-center text-center font-semibold leading-[1] tracking-[-0.01em] opacity-[0.96]", key === "share" ? "text-[10px]" : "text-[8px]")}>{label}</span>
               </motion.button>
