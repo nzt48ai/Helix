@@ -68,6 +68,13 @@ function parseNumberString(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseNullableNumberString(value) {
+  const normalized = String(value ?? "").replace(/,/g, "").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -138,12 +145,15 @@ function formatSecondsLabel(seconds) {
 
 function derivePositionSetupSnapshot(positionState) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-  const entry = parseNumberString(positionState.entry || "0");
-  const stop = parseNumberString(positionState.stop || "0");
-  const target = parseNumberString(positionState.target || "0");
+  const entry = parseNullableNumberString(positionState.entry);
+  const stop = parseNullableNumberString(positionState.stop);
+  const target = parseNullableNumberString(positionState.target);
   const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
-  const riskPoints = Math.max(0, Math.abs(entry - stop));
-  const rewardPoints = Math.max(0, Math.abs(target - entry));
+  const hasEntry = entry !== null && entry > 0;
+  const hasStop = stop !== null && stop > 0;
+  const hasTarget = target !== null && target > 0;
+  const riskPoints = hasEntry && hasStop ? Math.max(0, Math.abs(entry - stop)) : 0;
+  const rewardPoints = hasEntry && hasTarget ? Math.max(0, Math.abs(target - entry)) : 0;
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
   const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
   const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
@@ -159,13 +169,13 @@ function derivePositionSetupSnapshot(positionState) {
         : "";
   const setupContext = typeof positionState.setupContext === "string" ? positionState.setupContext.trim() : "";
   const setupIsComplete =
-    Boolean(selectedInstrument?.key) && entry > 0 && stop > 0 && target > 0 && riskPoints > 0 && rewardPoints > 0 && contracts > 0;
+    Boolean(selectedInstrument?.key) && hasEntry && hasStop && hasTarget && riskPoints > 0 && rewardPoints > 0 && contracts > 0;
 
   return {
     selectedInstrument,
-    entry,
-    stop,
-    target,
+    entry: hasEntry ? entry : 0,
+    stop: hasStop ? stop : 0,
+    target: hasTarget ? target : 0,
     contracts,
     riskPoints,
     rewardPoints,
@@ -533,17 +543,19 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="inline-flex items-center justify-center"
+            className="inline-flex items-center justify-center gap-1.5"
           >
+            {prefix ? <span className="pointer-events-none text-[26px] font-semibold leading-none tracking-[-0.04em] text-slate-400/90">{prefix}</span> : null}
             <input
               type="text"
               inputMode="numeric"
-              value={`${prefix}${value}${suffix}`}
+              value={value ?? ""}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
               className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
               aria-label={label}
             />
+            {suffix ? <span className="pointer-events-none text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
           </motion.div>
         </div>
 
@@ -795,7 +807,8 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const pointValue = selectedInstrument.pointValue || 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
-  const accountBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
+  const parsedAccountBalance = parseNullableNumberString(positionState.accountBalance);
+  const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
   const stopPrice = positionSetupSnapshot.stop;
   const riskPoints = positionSetupSnapshot.riskPoints;
