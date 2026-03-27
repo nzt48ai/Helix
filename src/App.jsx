@@ -1441,12 +1441,13 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const target = parseNumberString(positionState.target || "0");
   const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
   const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
-  const kellyMode = positionState.kelly || "Off";
   const riskPoints = Math.max(0, Math.abs(entry - stop));
   const rewardPoints = Math.max(0, Math.abs(target - entry));
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
   const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
   const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
+  const replayResult = projectedReward - projectedRisk;
+  const replayResultPoints = rewardPoints - riskPoints;
 
   const dashboardMonthSnapshot = ensureDashboardSnapshot(
     dashboardSnapshot?.byRange?.Month || dashboardSnapshot?.byRange?.Week,
@@ -1455,6 +1456,94 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
   const frequencySummary = buildCompoundFrequencySummary(compoundState);
   const hasMeaningfulContent = Boolean(selectedInstrument?.key) && Number.isFinite(contracts) && Boolean(dashboardMonthSnapshot.modeOutcome);
+  const [shareType, setShareType] = useState("SETUP");
+  const [displayMode, setDisplayMode] = useState("dollar");
+  const [journalPeriod, setJournalPeriod] = useState("Month");
+
+  const contextLine = useMemo(() => {
+    if (shareType === "REPLAY") {
+      return "Replay timestamp · 9:41 AM EST";
+    }
+    if (shareType === "JOURNAL") {
+      return `${journalPeriod} performance period`;
+    }
+    return "Called at · 9:41 AM EST";
+  }, [shareType, journalPeriod]);
+
+  const heroMetric = useMemo(() => {
+    if (shareType === "REPLAY") {
+      if (displayMode === "points") return `${replayResultPoints >= 0 ? "+" : ""}${replayResultPoints.toFixed(1)} pts`;
+      return `${replayResult >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(replayResult))}`;
+    }
+    if (shareType === "JOURNAL") {
+      if (displayMode === "points") return `${rewardRiskRatio.toFixed(1)}R`;
+      return dashboardMonthSnapshot.modeOutcome;
+    }
+    if (displayMode === "points") return `${rewardRiskRatio.toFixed(1)}R`;
+    return formatCompactCurrency(projectedReward);
+  }, [dashboardMonthSnapshot.modeOutcome, displayMode, projectedReward, replayResult, replayResultPoints, rewardRiskRatio, shareType]);
+
+  const secondaryMetrics = useMemo(() => {
+    if (shareType === "SETUP") {
+      if (displayMode === "points") {
+        return [
+          { label: "Risk Points", value: riskPoints.toFixed(1) },
+          { label: "Reward Points", value: rewardPoints.toFixed(1) },
+        ];
+      }
+      return [
+        { label: "Risk", value: formatCompactCurrency(projectedRisk) },
+        { label: "Reward", value: formatCompactCurrency(projectedReward) },
+        { label: "Contracts", value: contracts.toLocaleString("en-US") },
+      ];
+    }
+    if (shareType === "REPLAY") {
+      if (displayMode === "points") {
+        return [
+          { label: "Result Points", value: `${replayResultPoints >= 0 ? "+" : ""}${replayResultPoints.toFixed(1)}` },
+          { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
+          { label: "Duration", value: "6m 12s" },
+        ];
+      }
+      return [
+        { label: "Result", value: `${replayResult >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(replayResult))}` },
+        { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
+        { label: "Duration", value: "6m 12s" },
+      ];
+    }
+    if (displayMode === "points") {
+      return [
+        { label: "Trades", value: "48" },
+        { label: "Win Rate", value: formatPercent(winRate) },
+        { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R` },
+        { label: "Net Result", value: `${rewardRiskRatio.toFixed(1)}R` },
+      ];
+    }
+    return [
+      { label: "Trades", value: "48" },
+      { label: "Win Rate", value: formatPercent(winRate) },
+      { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R` },
+      { label: "Net Result", value: dashboardMonthSnapshot.modeOutcome },
+    ];
+  }, [
+    shareType,
+    displayMode,
+    riskPoints,
+    rewardPoints,
+    projectedRisk,
+    projectedReward,
+    contracts,
+    replayResultPoints,
+    rewardRiskRatio,
+    replayResult,
+    winRate,
+    dashboardMonthSnapshot.modeOutcome,
+  ]);
+
+  const visualPanelHeight = shareType === "JOURNAL" ? 460 : 520;
+  const isReplayCard = shareType === "REPLAY";
+  const isJournalCard = shareType === "JOURNAL";
+  const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
 
   return (
     <div className="space-y-4 pb-4">
@@ -1464,84 +1553,130 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Share</TinyLabel>
-        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Current setup export</div>
-        <div className="mt-1 text-[13px] text-slate-500">Read-only summary cards designed for clean screenshot sharing.</div>
-      </GlassCard>
-
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Setup Summary</TinyLabel>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Instrument</div>
-            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">{selectedInstrument.key}</div>
-          </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Contracts</div>
-            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">{contracts}</div>
-          </div>
-          <div className="col-span-2 rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Entry / Stop / Target</div>
-            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">
-              {`${entry.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${stop.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${target.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            </div>
-          </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Win Rate</div>
-            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{formatPercent(winRate)}</div>
-          </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Kelly</div>
-            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{kellyMode}</div>
-          </div>
+        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Portrait export card layout</div>
+        <div className="mt-1 text-[13px] text-slate-500">Controls stay in Share tab UI. Exported image only includes card container bounds.</div>
+        <div className="mt-4 space-y-3">
+          <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
+          <SegmentedControl
+            items={[
+              { value: "dollar", label: "$" },
+              { value: "points", label: "Points" },
+            ]}
+            value={displayMode}
+            onChange={setDisplayMode}
+          />
+          {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
+          <button
+            type="button"
+            className="w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]"
+          >
+            Share
+          </button>
         </div>
       </GlassCard>
 
-      <GlassCard className="rounded-[30px] p-5" highlight>
-        <TinyLabel>Performance Share Card</TinyLabel>
-        {/* Synthesized share card values below are compacted from current dashboardSnapshot and position/compound state. */}
-        <div className="mt-3 rounded-[24px] border border-blue-100/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.36),rgba(255,255,255,0.16))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Helix Snapshot</div>
-              <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardMonthSnapshot.modeLabel}</div>
+      <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(16,25,47,0.94),rgba(8,17,36,0.98))] shadow-[0_26px_65px_rgba(15,27,54,0.46),inset_0_1px_0_rgba(255,255,255,0.12)]">
+        <div className="aspect-[9/16] w-full">
+          <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-[6.667%] pb-[3.75%] pt-[4.58%] text-slate-100">
+            <div className="flex h-[56px] items-center justify-between">
+              <div className="inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-emerald-200">
+                {shareType}
+              </div>
+              <div className="ml-4 text-[34px] font-semibold tracking-[-0.03em] tabular-nums">{selectedInstrument.key}</div>
+              <div className="ml-auto inline-flex items-center rounded-full bg-cyan-400/15 px-3 py-1 text-[20px] font-semibold uppercase tracking-[0.24em] text-cyan-200">
+                LONG
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Account</div>
-              <div className="mt-1 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">{dashboardMonthSnapshot.accountBalance}</div>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
-              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">R:R</div>
-              <div className="mt-1 text-[13px] font-semibold text-slate-700">{rewardRiskRatio > 0 ? `${rewardRiskRatio.toFixed(1)}R` : "—"}</div>
-            </div>
-            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
-              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">Risk</div>
-              <div className="mt-1 text-[13px] font-semibold text-slate-700">{formatCompactCurrency(projectedRisk)}</div>
-            </div>
-            <div className="rounded-[14px] bg-white/32 px-3 py-2 text-center">
-              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-slate-500/85">Reward</div>
-              <div className="mt-1 text-[13px] font-semibold text-slate-700">{formatCompactCurrency(projectedReward)}</div>
-            </div>
-          </div>
-        </div>
-      </GlassCard>
 
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Journal Share Summary</TinyLabel>
-        {/* Journal summary lines are synthesized from active state because no persisted trade history exists yet. */}
-        <div className="mt-3 space-y-2">
-          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
-            {`Setup: ${selectedInstrument.key} • ${contracts} contract${contracts === 1 ? "" : "s"} • ${formatPercent(winRate)} win rate • Kelly ${kellyMode}.`}
-          </div>
-          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
-            {`Model: ${compoundModeLabel} • ${frequencySummary}.`}
-          </div>
-          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
-            {`Dashboard snapshot: ${dashboardMonthSnapshot.modeOutcome}.`}
+            <div className="mt-6 text-[22px] text-slate-300/85">{contextLine}</div>
+
+            <div className="mt-8 grid grid-cols-3 gap-5">
+              {[
+                { label: "ENTRY", value: entry, tone: "text-slate-100" },
+                { label: "STOP", value: stop, tone: "text-rose-300" },
+                { label: "TARGET", value: target, tone: "text-emerald-300" },
+              ].map((item) => (
+                <div key={item.label} className="h-[120px] rounded-[22px] border border-white/8 bg-white/8 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
+                  <div className="text-[20px] uppercase tracking-[0.22em] text-slate-300">{item.label}</div>
+                  <div className={cn("mt-3 text-[34px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+                    {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-6" style={{ height: `${visualPanelHeight}px` }}>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="text-[20px] uppercase tracking-[0.2em] text-slate-300">
+                  {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? "Replay Path" : "Equity Curve"}
+                </div>
+                <div className="text-[28px] font-semibold text-cyan-200 tabular-nums">{rewardRiskRatio.toFixed(1)}R</div>
+              </div>
+              <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/6 p-3">
+                {[20, 50, 80].map((line) => (
+                  <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(226,232,240,0.24)" strokeDasharray="2 3" />
+                ))}
+                {isJournalCard ? (
+                  <motion.path
+                    d="M 8 74 C 20 70, 24 66, 34 58 C 48 46, 57 50, 68 40 C 78 31, 86 28, 92 24"
+                    fill="none"
+                    stroke="rgba(96,165,250,1)"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 6.2, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                  />
+                ) : (
+                  <>
+                    <path d="M 8 74 L 92 74" fill="none" stroke="rgba(148,163,184,0.5)" />
+                    <path d="M 8 20 L 92 20" fill="none" stroke="rgba(52,211,153,0.45)" strokeDasharray="4 3" />
+                    <path d="M 8 86 L 92 86" fill="none" stroke="rgba(251,113,133,0.45)" strokeDasharray="4 3" />
+                    <motion.path
+                      d={isReplayCard ? "M 8 74 C 18 72, 22 58, 30 62 C 42 69, 50 54, 62 48 C 72 42, 82 34, 92 26" : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
+                      fill="none"
+                      stroke="rgba(129,140,248,1)"
+                      strokeWidth="2.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 6.4, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
+                    />
+                    {isReplayCard ? (
+                      <motion.circle
+                        cx="8"
+                        cy="74"
+                        r="2.5"
+                        fill="rgba(191,219,254,1)"
+                        animate={{ cx: [8, 30, 62, 92], cy: [74, 62, 48, 26] }}
+                        transition={{ duration: 6.4, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </svg>
+            </div>
+
+            <div className="mt-8 text-center">
+              <div className={cn("text-[94px] font-semibold leading-none tracking-[-0.04em] tabular-nums", shareType === "REPLAY" ? "text-cyan-200" : "text-white")}>{heroMetric}</div>
+              <div className="mt-2 text-[22px] text-slate-300">{`${compoundModeLabel} • ${frequencySummary}`}</div>
+            </div>
+
+            <div className={cn("mt-6 grid gap-4", secondaryMetrics.length === 2 ? "grid-cols-2" : secondaryMetrics.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+              {secondaryMetrics.map((metric) => (
+                <div key={metric.label} className="rounded-[20px] border border-white/10 bg-white/7 p-4">
+                  <div className="text-[18px] uppercase tracking-[0.18em] text-slate-300">{metric.label}</div>
+                  <div className="mt-2 text-[30px] font-semibold tabular-nums">{metric.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 pt-8 text-center text-[20px] uppercase tracking-[0.25em] text-slate-400">{footerLabel}</div>
           </div>
         </div>
-      </GlassCard>
+      </div>
     </div>
   );
 }
