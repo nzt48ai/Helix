@@ -1952,11 +1952,11 @@ export default function App() {
         <div className="absolute left-[-10%] top-[6%] h-[420px] w-[420px] rounded-full bg-blue-200/24 blur-3xl" />
         <div className="absolute bottom-[-16%] right-[-8%] h-[380px] w-[380px] rounded-full bg-amber-100/22 blur-3xl" />
       </div>
-      <div className="mx-auto flex min-h-screen max-w-[430px] items-center justify-center px-3 py-4 sm:px-4">
-        <div className="relative h-[calc(100dvh-2rem)] max-h-[812px] w-full overflow-hidden rounded-[40px] border border-blue-100/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.18))] shadow-[0_24px_90px_rgba(126,148,188,0.28),0_10px_30px_rgba(172,188,220,0.14),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-[26px]">
+      <div className="mx-auto flex min-h-screen w-full items-center justify-center px-0 py-0 sm:max-w-[430px] sm:px-4 sm:py-4">
+        <div className="relative h-[100dvh] w-full overflow-hidden rounded-none border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.18))] shadow-none backdrop-blur-[26px] sm:h-[calc(100dvh-2rem)] sm:max-h-[812px] sm:rounded-[40px] sm:border sm:border-blue-100/40 sm:shadow-[0_24px_90px_rgba(126,148,188,0.28),0_10px_30px_rgba(172,188,220,0.14),inset_0_1px_0_rgba(255,255,255,0.92)]">
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))]" />
           <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(110,152,255,0.18),transparent_70%)]" />
-          <div className="absolute left-1/2 top-2 h-1.5 w-28 -translate-x-1/2 rounded-full bg-slate-300/45" />
+          <div className="absolute left-1/2 top-2 hidden h-1.5 w-28 -translate-x-1/2 rounded-full bg-slate-300/45 sm:block" />
           <main className="relative h-full overflow-y-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
