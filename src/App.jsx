@@ -19,6 +19,7 @@ import {
   persistAppState,
   readStoredAppState,
   resolveTabFromHash,
+  TAB_KEYS,
   sanitizeCompoundState,
   sanitizePositionState,
   sanitizeViewState,
@@ -26,18 +27,21 @@ import {
 } from "./appState";
 import { buildCompoundFrequencySummary, createFallbackDashboardSnapshot, ensureDashboardSnapshot, toSafeLower, toSafeString } from "./downstreamSafety";
 import { isDebugModeEnabled } from "./debugRuntime";
+import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
-const NAV_ITEMS = [
-  { key: "position", label: "Position", icon: Calculator },
-  { key: "compound", label: "Compound", icon: TrendingUp },
-  { key: "share", label: "Share", icon: Plus },
-  { key: "dashboard", label: "Dashboard", icon: ChartColumn },
-  { key: "journal", label: "Journal", icon: BookOpen },
-];
+const NAV_META = {
+  position: { label: "Position", icon: Calculator },
+  compound: { label: "Compound", icon: TrendingUp },
+  share: { label: "Share", icon: Plus },
+  dashboard: { label: "Dashboard", icon: ChartColumn },
+  journal: { label: "Journal", icon: BookOpen },
+};
+
+const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
 
 const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
 const POSITION_INSTRUMENTS = [
@@ -1686,11 +1690,10 @@ function BottomNav({ activeTab, onTabChange }) {
 export default function App() {
   const reduceMotion = useReducedMotion();
   const [debugEnabled] = useState(() => (typeof window !== "undefined" ? isDebugModeEnabled(window.location.search, window.location.hash) : false));
-  const getTabFromWindowHash = () => {
+  const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return "position";
-    return resolveTabFromHash(window.location.hash);
-  };
-  const [activeTab, setActiveTab] = useState(getTabFromWindowHash);
+    return resolveTabRoute(window.location.hash).activeTab;
+  });
   const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
@@ -1825,25 +1828,33 @@ export default function App() {
     compoundWinRateInput: safeCompoundState.winRateInput,
   };
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
+  const syncActiveTabFromLocationHash = useCallback(() => {
+    if (typeof window === "undefined") return;
+    setActiveTab((prev) => syncTabStateFromHash(prev, window.location.hash));
+  }, []);
 
-    const syncTabFromHash = () => {
-      const nextTab = getTabFromWindowHash();
-      setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
-    };
+  const handleTabChange = useCallback((nextTab) => {
+    const { activeTab: resolvedTab, canonicalHash } = resolveTabRoute(`#${nextTab}`);
 
-    window.addEventListener("hashchange", syncTabFromHash);
-    return () => window.removeEventListener("hashchange", syncTabFromHash);
+    if (typeof window !== "undefined" && window.location.hash !== canonicalHash) {
+      window.history.replaceState(null, "", canonicalHash);
+    }
+
+    setActiveTab((prev) => (prev === resolvedTab ? prev : resolvedTab));
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const nextHash = `#${activeTab}`;
-    if (window.location.hash !== nextHash) {
-      window.history.replaceState(null, "", nextHash);
-    }
-  }, [activeTab]);
+    if (typeof window === "undefined") return undefined;
+
+    syncActiveTabFromLocationHash();
+    window.addEventListener("hashchange", syncActiveTabFromLocationHash);
+    window.addEventListener("popstate", syncActiveTabFromLocationHash);
+
+    return () => {
+      window.removeEventListener("hashchange", syncActiveTabFromLocationHash);
+      window.removeEventListener("popstate", syncActiveTabFromLocationHash);
+    };
+  }, [syncActiveTabFromLocationHash]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1872,16 +1883,7 @@ export default function App() {
       <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} debugEnabled={debugEnabled} />
     );
 
-  const renderedScreenName =
-    activeTab === "position"
-      ? "PositionScreen"
-      : activeTab === "compound"
-        ? "CompoundScreen"
-        : activeTab === "dashboard"
-          ? "DashboardScreen"
-          : activeTab === "journal"
-            ? "JournalScreen"
-            : "ShareScreen";
+  const renderedScreenName = resolveScreenComponentName(activeTab);
 
   const debugInspectorState = {
     activeTab,
@@ -1929,7 +1931,7 @@ export default function App() {
               </motion.div>
             </AnimatePresence>
           </main>
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
         </div>
       </div>
 
