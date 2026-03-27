@@ -25,6 +25,7 @@ import {
   updateCompoundStateSafely,
 } from "./appState";
 import { buildCompoundFrequencySummary, createFallbackDashboardSnapshot, ensureDashboardSnapshot, toSafeLower, toSafeString } from "./downstreamSafety";
+import { isDebugModeEnabled } from "./debugRuntime";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -148,6 +149,38 @@ function ScreenHeader({ right }) {
     <div className="relative mb-6 flex items-center justify-center">
       <div className="text-center text-[12px] font-semibold uppercase tracking-[0.28em] text-slate-700">HELIX</div>
       {right ? <div className="absolute right-0">{right}</div> : null}
+    </div>
+  );
+}
+
+function DebugRenderMarker({ label, enabled = false }) {
+  if (!enabled) return null;
+  return (
+    <div className="mb-2 inline-flex items-center rounded-full border border-amber-400/65 bg-amber-100/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-900">
+      {`Mounted: ${label}`}
+    </div>
+  );
+}
+
+function DebugEmptyFallback({ label, enabled = false }) {
+  if (!enabled) return null;
+  return (
+    <GlassCard className="rounded-[24px] border border-amber-300/80 bg-amber-100/70 p-4">
+      <div className="text-[14px] font-semibold text-amber-900">{label}</div>
+    </GlassCard>
+  );
+}
+
+function DebugStateInspector({ enabled = false, state }) {
+  if (!enabled) return null;
+  return (
+    <div className="pointer-events-none fixed right-3 top-3 z-[9998] max-w-[360px]">
+      <div className="pointer-events-auto overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 text-slate-100 shadow-2xl">
+        <div className="border-b border-slate-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]">State Inspector (?debug=1)</div>
+        <div className="max-h-[42vh] overflow-auto p-3 text-[11px] leading-relaxed">
+          <pre className="whitespace-pre-wrap break-words text-slate-200">{JSON.stringify(state, null, 2)}</pre>
+        </div>
+      </div>
     </div>
   );
 }
@@ -488,7 +521,7 @@ function CompoundInputShell({ children, className = "" }) {
   );
 }
 
-function PositionScreen({ positionState, setPositionState }) {
+function PositionScreen({ positionState, setPositionState, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
   const previousKellyManualRef = useRef(false);
   const lastManualContractsRef = useRef("1");
@@ -589,6 +622,7 @@ function PositionScreen({ positionState, setPositionState }) {
 
   return (
     <div className="space-y-4 pb-4">
+      <DebugRenderMarker enabled={debugEnabled} label="PositionScreen" />
       <ScreenHeader />
       <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={(value) => setField("instrument", value)} />
       <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
@@ -658,7 +692,7 @@ function PositionScreen({ positionState, setPositionState }) {
   );
 }
 
-function CompoundScreen({ positionState, compoundState, setCompoundState }) {
+function CompoundScreen({ positionState, compoundState, setCompoundState, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
   const projectionMode = compoundState.projectionMode;
   const projectionGoalDisplayType = compoundState.projectionGoalDisplayType;
@@ -1002,6 +1036,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
 
   return (
     <div className="space-y-4 pb-4 sm:space-y-5">
+      <DebugRenderMarker enabled={debugEnabled} label="CompoundScreen" />
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
       <div className="px-1">
         <SegmentedControl items={modeItems} value={projectionMode ? "On" : "Off"} onChange={(value) => setProjectionMode(value === "On")} />
@@ -1288,7 +1323,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState }) {
   );
 }
 
-function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
+function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled = false }) {
   const fallbackSnapshot = createFallbackDashboardSnapshot(formatCurrency(0));
   const activeSnapshot = ensureDashboardSnapshot(dashboardSnapshot?.byRange?.[range] || dashboardSnapshot?.byRange?.Month, fallbackSnapshot);
   const performanceSeries = activeSnapshot.performanceSeries;
@@ -1304,9 +1339,12 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
+  const hasMeaningfulContent = performanceSeries.length > 0 && sessionMix.length > 0 && Boolean(activeSnapshot.accountBalance);
 
   return (
     <div className="space-y-4 pb-4">
+      <DebugRenderMarker enabled={debugEnabled} label="DashboardScreen" />
+      {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Dashboard rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1370,7 +1408,7 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange }) {
   );
 }
 
-function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
+function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEnabled = false }) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
   const entry = parseNumberString(positionState.entry || "0");
   const stop = parseNumberString(positionState.stop || "0");
@@ -1390,9 +1428,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
   );
   const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
   const frequencySummary = buildCompoundFrequencySummary(compoundState);
+  const hasMeaningfulContent = Boolean(selectedInstrument?.key) && Number.isFinite(contracts) && Boolean(dashboardMonthSnapshot.modeOutcome);
 
   return (
     <div className="space-y-4 pb-4">
+      <DebugRenderMarker enabled={debugEnabled} label="ShareScreen" />
+      {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Share rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
       <GlassCard className="rounded-[30px] p-5">
@@ -1479,7 +1520,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot }) {
   );
 }
 
-function JournalScreen({ positionState, compoundState, onResetPreferences }) {
+function JournalScreen({ positionState, compoundState, onResetPreferences, debugEnabled = false }) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
   const instrument = selectedInstrument.key;
   const entry = parseNumberString(positionState.entry || "0");
@@ -1515,9 +1556,12 @@ function JournalScreen({ positionState, compoundState, onResetPreferences }) {
 
   const outlookTone = projectedReturn >= projectedRisk ? "text-emerald-600/90" : "text-rose-500/90";
   const outcomeContext = `${projectionMode}: ${frequencyValue} ${tradeFrequency} for ${durationValue} ${toSafeLower(durationUnit, "months")}`;
+  const hasMeaningfulContent = Boolean(instrument) && Boolean(outcomeContext) && Number.isFinite(projectedTrades);
 
   return (
     <div className="space-y-4 pb-4">
+      <DebugRenderMarker enabled={debugEnabled} label="JournalScreen" />
+      {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Journal rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={BookOpen} />} />
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Journal</TinyLabel>
@@ -1624,6 +1668,7 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
+  const debugEnabled = typeof window !== "undefined" ? isDebugModeEnabled(window.location.search) : false;
   const getTabFromWindowHash = () => {
     if (typeof window === "undefined") return "position";
     return resolveTabFromHash(window.location.hash);
@@ -1745,6 +1790,24 @@ export default function App() {
     return { byRange };
   }, [positionState, safeCompoundState]);
 
+  const hashValue = typeof window !== "undefined" ? window.location.hash : "";
+  const resolvedTabFromHashValue = resolveTabFromHash(hashValue);
+  const activeDashboardSnapshot = ensureDashboardSnapshot(
+    dashboardSnapshot?.byRange?.[viewState.dashboardRange] || dashboardSnapshot?.byRange?.Month,
+    createFallbackDashboardSnapshot(formatCurrency(0))
+  );
+  const shareJournalDerivedSummary = {
+    instrument: positionState.instrument,
+    contracts: positionState.contracts,
+    winRate: positionState.winRate,
+    kelly: positionState.kelly,
+    compoundMode: safeCompoundState.projectionMode ? "Forecast" : "Compound",
+    frequencySummary: buildCompoundFrequencySummary(safeCompoundState),
+    duration: `${safeCompoundState.durationInput} ${safeCompoundState.durationUnit}`,
+    gainInput: safeCompoundState.gainInput,
+    compoundWinRateInput: safeCompoundState.winRateInput,
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
@@ -1776,23 +1839,55 @@ export default function App() {
 
   const screen =
     activeTab === "position" ? (
-      <PositionScreen positionState={positionState} setPositionState={setPositionState} />
+      <PositionScreen positionState={positionState} setPositionState={setPositionState} debugEnabled={debugEnabled} />
     ) : activeTab === "compound" ? (
-      <CompoundScreen positionState={positionState} compoundState={safeCompoundState} setCompoundState={setCompoundStateSafe} />
+      <CompoundScreen positionState={positionState} compoundState={safeCompoundState} setCompoundState={setCompoundStateSafe} debugEnabled={debugEnabled} />
     ) : activeTab === "dashboard" ? (
       <DashboardScreen
         dashboardSnapshot={dashboardSnapshot}
         range={viewState.dashboardRange}
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
+        debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen positionState={positionState} compoundState={safeCompoundState} onResetPreferences={resetPreferences} />
+      <JournalScreen positionState={positionState} compoundState={safeCompoundState} onResetPreferences={resetPreferences} debugEnabled={debugEnabled} />
     ) : (
-      <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} />
+      <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} debugEnabled={debugEnabled} />
     );
+
+  const renderedScreenName =
+    activeTab === "position"
+      ? "PositionScreen"
+      : activeTab === "compound"
+        ? "CompoundScreen"
+        : activeTab === "dashboard"
+          ? "DashboardScreen"
+          : activeTab === "journal"
+            ? "JournalScreen"
+            : "ShareScreen";
+
+  const debugInspectorState = {
+    activeTab,
+    currentHash: hashValue || "",
+    resolvedTabFromHash: resolvedTabFromHashValue,
+    renderedScreenComponent: renderedScreenName,
+    sanitizedCompoundState: safeCompoundState,
+    dashboardSnapshotSummary: {
+      selectedRange: viewState.dashboardRange,
+      modeLabel: activeDashboardSnapshot.modeLabel,
+      modeOutcome: activeDashboardSnapshot.modeOutcome,
+      accountBalance: activeDashboardSnapshot.accountBalance,
+      frequencySummary: activeDashboardSnapshot.frequencySummary,
+      contractSummary: activeDashboardSnapshot.contractSummary,
+      performanceSeriesPoints: activeDashboardSnapshot.performanceSeries?.length || 0,
+      sessionMixPoints: activeDashboardSnapshot.sessionMix?.length || 0,
+    },
+    shareJournalDerivedSummaryInputs: shareJournalDerivedSummary,
+  };
 
   return (
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(204,221,255,0.96),_rgba(236,241,250,0.98)_38%,_rgba(243,241,237,0.98)_76%)] text-slate-700">
+      <DebugStateInspector enabled={debugEnabled} state={debugInspectorState} />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[6%] h-[420px] w-[420px] rounded-full bg-blue-200/24 blur-3xl" />
         <div className="absolute bottom-[-16%] right-[-8%] h-[380px] w-[380px] rounded-full bg-amber-100/22 blur-3xl" />
