@@ -35,18 +35,8 @@ export const VIEW_DEFAULTS = {
 };
 
 export function resolveTabFromHash(hashValue = "") {
-  const normalizedHash = String(hashValue ?? "")
-    .trim()
-    .replace(/^#+/, "")
-    .replace(/^!/, "");
-
-  const hashWithoutQuery = normalizedHash.split(/[?&]/)[0] || "";
-  const normalizedSegment = hashWithoutQuery
-    .split("/")
-    .map((segment) => segment.trim().toLowerCase())
-    .find(Boolean) || "";
-
-  return ["position", "compound", "share", "dashboard", "journal"].includes(normalizedSegment) ? normalizedSegment : "position";
+  const trimmedHash = String(hashValue).replace("#", "").trim();
+  return ["position", "compound", "share", "dashboard", "journal"].includes(trimmedHash) ? trimmedHash : "position";
 }
 
 export function readStoredAppState(storage) {
