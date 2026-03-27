@@ -150,6 +150,41 @@ function TinyLabel({ children, className = "" }) {
   return <div className={cn("text-[9px] font-medium uppercase tracking-[0.28em] text-slate-500/90", className)}>{children}</div>;
 }
 
+function WinRateSlider({ value, onChange }) {
+  return (
+    <div className="relative h-8 w-full overflow-visible">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-0 right-0 top-1/2 h-[10px] -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,rgba(96,137,232,0.92),rgba(147,189,255,0.72))]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 h-[18px] w-9 -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.22)_45%,rgba(255,255,255,0)_100%)] opacity-60 blur-[0.5px]"
+        style={{ left: `calc(${value}% - 18px)`, transition: "left 120ms cubic-bezier(0.22,1,0.36,1)" }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 h-[22px] w-[22px] -translate-y-1/2 rounded-full border border-[rgba(190,205,240,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(238,244,255,0.96))]"
+        style={{
+          left: `calc(${value}% - 11px)`,
+          transition: "left 120ms cubic-bezier(0.22,1,0.36,1)",
+          boxShadow: "0 0 0 1px rgba(255,255,255,0.55), 0 4px 12px rgba(84,114,173,0.28), 0 0 16px rgba(150,184,255,0.5)",
+        }}
+      />
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={value}
+        onChange={onChange}
+        className="absolute inset-0 z-10 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0"
+        aria-label="Win Rate"
+      />
+    </div>
+  );
+}
+
 function ScreenHeader({ right }) {
   return (
     <div className="relative mb-6 flex items-center justify-center">
@@ -671,9 +706,8 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
       <GlassCard className="overflow-visible rounded-[24px] px-5 py-2.5">
         <div className="flex items-center gap-3">
           <div className="min-w-[42px]"><TinyLabel className="whitespace-nowrap">WIN %</TinyLabel></div>
-          <div className="relative flex-1 overflow-visible rounded-full py-1">
-            <div className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.22)_45%,rgba(255,255,255,0)_100%)] opacity-60 blur-[0.5px]" style={{ width: "36px", transform: `translateX(calc(${winRate}% - 18px))`, transition: "transform 120ms cubic-bezier(0.22,1,0.36,1)" }} />
-            <input type="range" min="0" max="100" step="1" value={winRate} onChange={(e) => setField("winRate", Number(e.target.value))} className="slider-premium w-full cursor-pointer appearance-none bg-transparent" aria-label="Win Rate" />
+          <div className="flex-1 overflow-visible rounded-full">
+            <WinRateSlider value={winRate} onChange={(e) => setField("winRate", Number(e.target.value))} />
           </div>
           <div className="min-w-[44px] text-right text-[17px] font-semibold tracking-[-0.04em] text-slate-700">
             <motion.div key={`win-rate-${winRate}`} initial={reduceMotion ? false : { opacity: 0.55, y: 2, scale: 0.992, filter: "blur(0.8px)" }} animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }} transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 28, mass: 0.42 }}>
@@ -1975,10 +2009,6 @@ export default function App() {
       </div>
 
       <style>{`
-        .slider-premium::-webkit-slider-runnable-track { height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(96,137,232,0.92), rgba(147,189,255,0.72)); }
-        .slider-premium::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; margin-top: -6px; width: 22px; height: 22px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,1), rgba(238,244,255,0.96)); border: 1px solid rgba(190,205,240,0.95); }
-        .slider-premium::-moz-range-track { height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(96,137,232,0.92), rgba(147,189,255,0.72)); }
-        .slider-premium::-moz-range-thumb { width: 22px; height: 22px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,1), rgba(238,244,255,0.96)); border: 1px solid rgba(190,205,240,0.95); }
         @keyframes balanceShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
       `}</style>
     </div>
