@@ -12,6 +12,7 @@ import {
   sanitizeCompoundState,
   sanitizePositionState,
   sanitizeViewState,
+  updateCompoundStateSafely,
 } from "../src/appState.js";
 
 function createStorage(initial = {}) {
@@ -74,4 +75,17 @@ test("dashboard range persistence works", () => {
   const restored = readStoredAppState(storage);
 
   assert.equal(sanitizeViewState(restored?.viewState).dashboardRange, "Year");
+});
+
+test("compound updates preserve required fields for cross-tab rendering", () => {
+  const updated = updateCompoundStateSafely(COMPOUND_DEFAULTS, (prev) => ({
+    projectionGoalDollarInput: "70,000",
+    // Regression path: updater returns only one field while the user edits Compound values.
+    [prev.projectionGoalDisplayType === "%" ? "projectionGoalPercentInput" : "projectionGoalDollarInput"]: "90,000",
+  }));
+
+  assert.equal(updated.projectionGoalDollarInput, "90,000");
+  assert.equal(updated.tradeFrequency, COMPOUND_DEFAULTS.tradeFrequency);
+  assert.equal(updated.durationUnit, COMPOUND_DEFAULTS.durationUnit);
+  assert.equal(typeof updated.projectionMode, "boolean");
 });

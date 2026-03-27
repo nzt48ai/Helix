@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BookOpen,
@@ -22,6 +22,7 @@ import {
   sanitizeCompoundState,
   sanitizePositionState,
   sanitizeViewState,
+  updateCompoundStateSafely,
 } from "./appState";
 
 function cn(...classes) {
@@ -1626,6 +1627,10 @@ export default function App() {
   const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
+  const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
+  const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
+    setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
+  }, []);
 
   const resetPreferences = () => {
     if (typeof window !== "undefined") {
@@ -1663,24 +1668,24 @@ export default function App() {
     const isManualContracts = positionState.kelly === "Off";
     const activeContracts = isManualContracts ? manualContracts : autoSuggestedContracts;
 
-    const projectionMode = compoundState.projectionMode;
+    const projectionMode = safeCompoundState.projectionMode;
     const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
-    const projectionDollarGoal = Math.max(0, parseNumberString(compoundState.projectionGoalDollarInput || "0"));
-    const projectionPercentGoal = Math.max(0, parseNumberString(compoundState.projectionGoalPercentInput || "0"));
-    const projectionGoalValue = compoundState.projectionGoalDisplayType === "%"
+    const projectionDollarGoal = Math.max(0, parseNumberString(safeCompoundState.projectionGoalDollarInput || "0"));
+    const projectionPercentGoal = Math.max(0, parseNumberString(safeCompoundState.projectionGoalPercentInput || "0"));
+    const projectionGoalValue = safeCompoundState.projectionGoalDisplayType === "%"
       ? startingBalance * (1 + projectionPercentGoal / 100)
       : projectionDollarGoal;
-    const manualStartingBalance = Math.max(0, parseNumberString(compoundState.manualStartingBalanceInput || "0"));
-    const frequencyValue = Math.max(1, parseNumberString(compoundState.tradeFrequencyValue || "1"));
-    const durationValue = Math.max(0, parseNumberString(compoundState.durationInput || "0"));
-    const gainRate = Math.max(0, parseNumberString(compoundState.gainInput || "0")) / 100;
-    const parsedWinRateInput = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
+    const manualStartingBalance = Math.max(0, parseNumberString(safeCompoundState.manualStartingBalanceInput || "0"));
+    const frequencyValue = Math.max(1, parseNumberString(safeCompoundState.tradeFrequencyValue || "1"));
+    const durationValue = Math.max(0, parseNumberString(safeCompoundState.durationInput || "0"));
+    const gainRate = Math.max(0, parseNumberString(safeCompoundState.gainInput || "0")) / 100;
+    const parsedWinRateInput = Math.max(0, Math.min(100, parseNumberString(safeCompoundState.winRateInput || "0")));
     const winRateModifier = parsedWinRateInput > 0 ? 0.5 + parsedWinRateInput / 200 : 1;
     const effectiveGrowth = gainRate * winRateModifier;
     const durationInDays =
-      compoundState.durationUnit === "Days" ? durationValue : compoundState.durationUnit === "Weeks" ? durationValue * 7 : durationValue * 30;
+      safeCompoundState.durationUnit === "Days" ? durationValue : safeCompoundState.durationUnit === "Weeks" ? durationValue * 7 : durationValue * 30;
     const frequencyPerDay =
-      compoundState.tradeFrequency === "Per Day" ? frequencyValue : compoundState.tradeFrequency === "Per Week" ? frequencyValue / 7 : frequencyValue / 30;
+      safeCompoundState.tradeFrequency === "Per Day" ? frequencyValue : safeCompoundState.tradeFrequency === "Per Week" ? frequencyValue / 7 : frequencyValue / 30;
     const intervals = Math.max(0, Math.floor(durationInDays * frequencyPerDay));
     let endingBalance = manualStartingBalance || 0;
     if (endingBalance > 0 && intervals > 0 && effectiveGrowth > 0) {
@@ -1723,7 +1728,7 @@ export default function App() {
         modeLabel,
         performanceTitle,
         modeOutcome: modeledOutcome,
-        frequencySummary: `${frequencyValue} ${compoundState.tradeFrequency} • ${rangeKey}`,
+        frequencySummary: `${frequencyValue} ${safeCompoundState.tradeFrequency} • ${rangeKey}`,
         contractSummary: `Position sizing: ${activeContracts} contract${activeContracts === 1 ? "" : "s"} on ${instrument}.`,
         performanceSeries,
         sessionMix,
@@ -1733,7 +1738,7 @@ export default function App() {
     }, {});
 
     return { byRange };
-  }, [positionState, compoundState]);
+  }, [positionState, safeCompoundState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1759,16 +1764,16 @@ export default function App() {
     if (typeof window === "undefined") return;
     persistAppState({
       positionState,
-      compoundState,
+      compoundState: safeCompoundState,
       viewState,
     });
-  }, [positionState, compoundState, viewState]);
+  }, [positionState, safeCompoundState, viewState]);
 
   const screen =
     activeTab === "position" ? (
       <PositionScreen positionState={positionState} setPositionState={setPositionState} />
     ) : activeTab === "compound" ? (
-      <CompoundScreen positionState={positionState} compoundState={compoundState} setCompoundState={setCompoundState} />
+      <CompoundScreen positionState={positionState} compoundState={safeCompoundState} setCompoundState={setCompoundStateSafe} />
     ) : activeTab === "dashboard" ? (
       <DashboardScreen
         dashboardSnapshot={dashboardSnapshot}
@@ -1776,9 +1781,9 @@ export default function App() {
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen positionState={positionState} compoundState={compoundState} onResetPreferences={resetPreferences} />
+      <JournalScreen positionState={positionState} compoundState={safeCompoundState} onResetPreferences={resetPreferences} />
     ) : (
-      <ShareScreen positionState={positionState} compoundState={compoundState} dashboardSnapshot={dashboardSnapshot} />
+      <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} />
     );
 
   return (
