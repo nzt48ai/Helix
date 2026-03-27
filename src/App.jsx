@@ -151,24 +151,89 @@ function formatSecondsLabel(seconds) {
   return `${safeSeconds.toFixed(1)}s`;
 }
 
+function validateSetupValues({ entry, stop, target }) {
+  const hasEntry = Number.isFinite(entry);
+  const hasStop = Number.isFinite(stop);
+  const hasTarget = Number.isFinite(target);
+
+  if (!hasEntry || !hasStop || !hasTarget) {
+    return {
+      isValid: false,
+      direction: "",
+      reason: "incomplete",
+      message: "Enter valid entry, stop, and target.",
+      hasEntry,
+      hasStop,
+      hasTarget,
+    };
+  }
+
+  if (stop === entry || target === entry) {
+    return {
+      isValid: false,
+      direction: "",
+      reason: "equal-to-entry",
+      message: "Stop/target cannot equal entry.",
+      hasEntry,
+      hasStop,
+      hasTarget,
+    };
+  }
+
+  const isLong = target > entry && stop < entry;
+  const isShort = target < entry && stop > entry;
+
+  if (isLong) {
+    return {
+      isValid: true,
+      direction: "LONG",
+      reason: "valid-long",
+      message: "",
+      hasEntry,
+      hasStop,
+      hasTarget,
+    };
+  }
+
+  if (isShort) {
+    return {
+      isValid: true,
+      direction: "SHORT",
+      reason: "valid-short",
+      message: "",
+      hasEntry,
+      hasStop,
+      hasTarget,
+    };
+  }
+
+  return {
+    isValid: false,
+    direction: "",
+    reason: "same-side",
+    message: "Stop and target must be on opposite sides of entry.",
+    hasEntry,
+    hasStop,
+    hasTarget,
+  };
+}
+
 function derivePositionSetupSnapshot(positionState) {
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
   const entry = parseNullableNumberString(positionState.entry);
   const stop = parseNullableNumberString(positionState.stop);
   const target = parseNullableNumberString(positionState.target);
   const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
-  const hasEntry = entry !== null && entry > 0;
-  const hasStop = stop !== null && stop > 0;
-  const hasTarget = target !== null && target > 0;
+  const setupValidation = validateSetupValues({ entry, stop, target });
+  const hasEntry = setupValidation.hasEntry;
+  const hasStop = setupValidation.hasStop;
+  const hasTarget = setupValidation.hasTarget;
   const riskPoints = hasEntry && hasStop ? Math.max(0, Math.abs(entry - stop)) : 0;
   const rewardPoints = hasEntry && hasTarget ? Math.max(0, Math.abs(target - entry)) : 0;
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
   const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
   const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
-  const direction =
-    typeof positionState.direction === "string" && positionState.direction.trim()
-      ? positionState.direction.trim().toUpperCase()
-      : "";
+  const direction = setupValidation.direction;
   const setupTimestamp =
     typeof positionState.setupTimestamp === "string"
       ? positionState.setupTimestamp.trim()
@@ -181,9 +246,9 @@ function derivePositionSetupSnapshot(positionState) {
 
   return {
     selectedInstrument,
-    entry: hasEntry ? entry : 0,
-    stop: hasStop ? stop : 0,
-    target: hasTarget ? target : 0,
+    entry,
+    stop,
+    target,
     contracts,
     riskPoints,
     rewardPoints,
@@ -191,6 +256,9 @@ function derivePositionSetupSnapshot(positionState) {
     projectedRisk,
     projectedReward,
     direction,
+    setupIsValid: setupValidation.isValid,
+    setupValidationMessage: setupValidation.message,
+    setupValidationReason: setupValidation.reason,
     setupTimestamp,
     setupContext,
     setupIsComplete,
@@ -276,7 +344,17 @@ function SharePortraitCard({
   secondaryMetrics,
   footerLabel,
   setupMissingMessage = "",
+  isSetupValid = true,
 }) {
+  const formatCardFieldValue = (value) => {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return "—";
+      return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    const rawValue = String(value ?? "").trim();
+    return rawValue || "—";
+  };
+
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
       <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700">
@@ -301,7 +379,7 @@ function SharePortraitCard({
             <div key={item.label} className="min-w-0 rounded-[20px] border border-white/55 bg-white/46 p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.54)] flex flex-col items-center justify-center">
               <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
               <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
-                {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                {formatCardFieldValue(item.value)}
               </div>
             </div>
           ))}
@@ -312,7 +390,9 @@ function SharePortraitCard({
             <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.16em] text-slate-500">
               {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
             </div>
-            <div className="shrink-0 whitespace-nowrap text-[16px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
+            <div className="shrink-0 whitespace-nowrap text-[16px] font-semibold tabular-nums text-cyan-700">
+              {shareType === "SETUP" && !isSetupValid ? "—" : `${rewardRiskRatio.toFixed(1)}R`}
+            </div>
           </div>
           <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
             {[20, 50, 80].map((line) => (
@@ -1703,7 +1783,8 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     projectedRisk,
     projectedReward,
     direction,
-    setupIsComplete,
+    setupIsValid,
+    setupValidationMessage,
   } = positionSetupSnapshot;
   const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
   const replayResult = projectedReward - projectedRisk;
@@ -1740,6 +1821,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
   const handleShareExport = useCallback(async () => {
     if (!shareCardExportRef.current || isExporting) return;
+    if (shareType === "SETUP" && !setupIsValid) return;
     setIsExporting(true);
     setExportError("");
     try {
@@ -1754,7 +1836,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     } finally {
       setIsExporting(false);
     }
-  }, [isExporting, shareType]);
+  }, [isExporting, shareType, setupIsValid]);
 
   const contextLine = useMemo(() => {
     if (shareType === "SETUP") {
@@ -1778,12 +1860,20 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
       if (displayMode === "points") return `${rewardRiskRatio.toFixed(1)}R`;
       return dashboardMonthSnapshot.modeOutcome;
     }
+    if (!setupIsValid) return "—";
     if (displayMode === "points") return `${rewardRiskRatio.toFixed(1)}R`;
     return formatCompactCurrency(projectedReward);
-  }, [dashboardMonthSnapshot.modeOutcome, displayMode, projectedReward, replayResult, replayResultPoints, rewardRiskRatio, shareType]);
+  }, [dashboardMonthSnapshot.modeOutcome, displayMode, projectedReward, replayResult, replayResultPoints, rewardRiskRatio, shareType, setupIsValid]);
 
   const secondaryMetrics = useMemo(() => {
     if (shareType === "SETUP") {
+      if (!setupIsValid) {
+        return [
+          { label: "Risk", value: "—" },
+          { label: "Reward", value: "—" },
+          { label: "Contracts", value: contracts.toLocaleString("en-US") },
+        ];
+      }
       if (displayMode === "points") {
         return [
           { label: "Risk Points", value: riskPoints.toFixed(1) },
@@ -1832,6 +1922,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     projectedRisk,
     projectedReward,
     contracts,
+    setupIsValid,
     replayResultPoints,
     rewardRiskRatio,
     replayResult,
@@ -1846,12 +1937,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
   const isSetupCard = shareType === "SETUP";
   const setupDirectionLabel = direction || "—";
-  const setupMissingMessage = isSetupCard && !setupIsComplete ? "Missing setup values on Position tab." : "";
-  const setupCardInstrumentLabel = isSetupCard && !setupIsComplete ? "—" : selectedInstrument.key;
-  const setupCardEntry = isSetupCard && !setupIsComplete ? 0 : entry;
-  const setupCardStop = isSetupCard && !setupIsComplete ? 0 : stop;
-  const setupCardTarget = isSetupCard && !setupIsComplete ? 0 : target;
-  const shareDisabled = isExporting || (isSetupCard && !setupIsComplete);
+  const setupMissingMessage = isSetupCard && !setupIsValid ? setupValidationMessage || "Invalid setup." : "";
+  const setupCardInstrumentLabel = selectedInstrument.key;
+  const setupCardEntry = isSetupCard ? positionState.entry : entry;
+  const setupCardStop = isSetupCard ? positionState.stop : stop;
+  const setupCardTarget = isSetupCard ? positionState.target : target;
+  const shareDisabled = isExporting || (isSetupCard && !setupIsValid);
 
   return (
     <div className="space-y-4 pb-4">
@@ -1883,6 +1974,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            isSetupValid={setupIsValid}
           />
         </div>
         <SegmentedControl
@@ -1931,6 +2023,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            isSetupValid={setupIsValid}
           />
         </div>
       </div>
