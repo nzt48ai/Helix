@@ -782,18 +782,17 @@ function CompoundInputShell({ children, className = "" }) {
 
 function PositionScreen({ positionState, setPositionState, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
-  const previousKellyManualRef = useRef(false);
   const lastManualContractsRef = useRef("1");
+  const hasMountedContractsEffectRef = useRef(false);
   const instrument = positionState.instrument || "MNQ";
-  const entry = positionState.entry || "21,500.00";
-  const stop = positionState.stop || "21,470.00";
-  const target = positionState.target || "21,560.00";
+  const entry = positionState.entry ?? "";
+  const stop = positionState.stop ?? "";
+  const target = positionState.target ?? "";
   const winRate = positionState.winRate ?? 55;
   const kelly = positionState.kelly || "½";
 
   const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === instrument) || POSITION_INSTRUMENTS[2];
   const pointValue = selectedInstrument.pointValue || 1;
-  const instrumentDefaults = selectedInstrument.defaults || POSITION_INSTRUMENTS[2].defaults;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
   const accountBalance = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
@@ -827,33 +826,35 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const potentialReturn = activeContractCount * rewardPoints * pointValue;
 
   useEffect(() => {
-    const enteringManualMode = isKellyManual && !previousKellyManualRef.current;
-    if (enteringManualMode) {
-      const nextManualContracts = lastManualContractsRef.current && parseNumberString(lastManualContractsRef.current) > 0 ? lastManualContractsRef.current : "1";
-      if ((positionState.contracts || "") !== nextManualContracts) {
-        setPositionState((prev) => ({ ...prev, contracts: nextManualContracts }));
-      }
+    if (!hasMountedContractsEffectRef.current) {
+      hasMountedContractsEffectRef.current = true;
+      return;
     }
+
     if (!isKellyManual) {
       const nextContracts = String(autoSuggestedContracts);
       if ((positionState.contracts || "") !== nextContracts) {
         setPositionState((prev) => ({ ...prev, contracts: nextContracts }));
       }
     }
-    previousKellyManualRef.current = isKellyManual;
   }, [isKellyManual, autoSuggestedContracts, positionState.contracts, setPositionState]);
 
-  useEffect(() => {
-    setPositionState((prev) => {
-      const nextEntry = instrumentDefaults.entry;
-      const nextStop = instrumentDefaults.stop;
-      const nextTarget = instrumentDefaults.target;
-      if (prev.entry === nextEntry && prev.stop === nextStop && prev.target === nextTarget) return prev;
-      return { ...prev, entry: nextEntry, stop: nextStop, target: nextTarget };
-    });
-  }, [instrument, instrumentDefaults.entry, instrumentDefaults.stop, instrumentDefaults.target, setPositionState]);
-
   const setField = (key, value) => setPositionState((prev) => ({ ...prev, [key]: value }));
+
+  const handleInstrumentChange = (nextInstrument) => {
+    setPositionState((prev) => {
+      if (prev.instrument === nextInstrument) return prev;
+      const selected = POSITION_INSTRUMENTS.find((item) => item.key === nextInstrument) || POSITION_INSTRUMENTS[2];
+      const defaults = selected.defaults || POSITION_INSTRUMENTS[2].defaults;
+      return {
+        ...prev,
+        instrument: nextInstrument,
+        entry: defaults.entry,
+        stop: defaults.stop,
+        target: defaults.target,
+      };
+    });
+  };
 
   const handleManualContractsChange = (raw) => {
     const rawDigits = keepDigitsOnly(raw, 3, "");
@@ -883,7 +884,7 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="POSITION SCREEN" />
       <ScreenHeader />
-      <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={(value) => setField("instrument", value)} />
+      <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={handleInstrumentChange} />
       <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
