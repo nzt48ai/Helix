@@ -36,6 +36,7 @@ export const COMPOUND_DEFAULTS = {
 
 export const VIEW_DEFAULTS = {
   dashboardRange: "Month",
+  dashboardAccountFilter: "all",
 };
 
 export const PROFILE_DEFAULTS = {
@@ -161,8 +162,13 @@ export function updateCompoundStateSafely(previousState, nextValueOrUpdater) {
 
 export function sanitizeViewState(value) {
   if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
+  const dashboardAccountFilter =
+    value.dashboardAccountFilter === "all" || value.dashboardAccountFilter === "unassigned" || typeof value.dashboardAccountFilter === "string"
+      ? value.dashboardAccountFilter
+      : VIEW_DEFAULTS.dashboardAccountFilter;
   return {
     dashboardRange: DASHBOARD_RANGES.includes(value.dashboardRange) ? value.dashboardRange : VIEW_DEFAULTS.dashboardRange,
+    dashboardAccountFilter,
   };
 }
 
