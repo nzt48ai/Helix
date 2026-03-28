@@ -689,7 +689,7 @@ function BalanceHeroCard({
               <span
                 style={fixedFontSize ? { fontSize: `${fixedFontSize}px`, lineHeight: 1 } : { lineHeight: 1 }}
                 className={cn(
-                  "pointer-events-none mr-1 shrink-0 leading-none tracking-[-0.07em]",
+                  "pointer-events-none mr-[0.02em] shrink-0 leading-none tracking-[-0.07em]",
                   computedFontSizeClass,
                   HERO_NUMBER_TEXT_CLASS
                 )}
@@ -708,7 +708,7 @@ function BalanceHeroCard({
                   : { lineHeight: 1, width: `${inputWidthCh}ch` }
               }
               className={cn(
-                "h-full min-w-0 max-w-full text-center outline-none caret-slate-500",
+                "h-full min-w-0 max-w-full p-0 text-center outline-none caret-slate-500",
                 computedFontSizeClass,
                 HERO_NUMBER_TEXT_CLASS
               )}
