@@ -294,20 +294,29 @@ function SharePortraitCard({
     normalizedDirection === "LONG" && "bg-emerald-400/15 text-emerald-700",
     normalizedDirection === "SHORT" && "bg-rose-400/15 text-rose-700"
   );
-  const chartTargetY = 24;
-  const chartEntryY = 58;
-  const chartStopY = 84;
+  const chartTargetY = 22;
+  const chartEntryY = 50;
+  const chartStopY = 78;
+  const chartPathStartX = 26;
+  const chartPathEndX = 74;
   const zoneLines = [
-    { label: "TARGET", y: chartTargetY, tone: "rgba(16,185,129,0.34)", rValue: `${rewardRiskRatio.toFixed(1)}R` },
-    { label: "ENTRY", y: chartEntryY, tone: "rgba(100,116,139,0.30)", rValue: "0.0R" },
-    { label: "STOP", y: chartStopY, tone: "rgba(244,63,94,0.32)", rValue: "-1.0R" },
+    { label: "TARGET", y: chartTargetY, tone: "rgba(16,185,129,0.38)", value: targetValue },
+    { label: "ENTRY", y: chartEntryY, tone: "rgba(71,85,105,0.32)", value: entryValue },
+    { label: "STOP", y: chartStopY, tone: "rgba(244,63,94,0.36)", value: stopValue },
   ];
+  const formatLevelValue = (value) =>
+    Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  const setupProjectedCurve = `M ${chartPathStartX} ${chartEntryY} C 35 ${chartEntryY - 1.5}, 45 ${chartEntryY - 12}, 55 ${chartEntryY - 16} C 63 ${chartEntryY - 20}, 69 ${chartTargetY + 2}, ${chartPathEndX} ${chartTargetY}`;
   const truePathCurve = isReplayCard
     ? replayPathCurve
-    : "M 18 58 C 27 57, 34 52, 42 49 C 52 45, 58 40, 66 35 C 73 31, 79 27, 84 24";
-  const markerKeyframes = isReplayCard
-    ? { cx: [18, 34, 52, 68, 84], cy: [58, 56, 48, 36, 24] }
-    : { cx: [18, 32, 48, 66, 84], cy: [58, 56, 50, 36, 24] };
+    : setupProjectedCurve;
+  const replayMarkerKeyframes = { cx: [26, 34, 46, 56, 66, 74], cy: [50, 48, 58, 44, 34, 24] };
+  const setupMarkerPosition = { cx: chartPathEndX, cy: chartTargetY };
+  const journalCurve = "M 26 70 C 34 67, 40 60, 46 56 C 52 52, 57 57, 62 48 C 66 41, 70 33, 74 26";
+  const chartModeLabel = shareType === "SETUP" ? "PROJECTED PATH" : shareType === "REPLAY" ? "TRUE PATH" : "EQUITY CURVE";
   const pathEase = [0.23, 1, 0.32, 1];
 
   return (
@@ -339,56 +348,61 @@ function SharePortraitCard({
         </div>
 
         <div
-          className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.70),rgba(255,255,255,0.40))] px-4 pb-4 pt-3.5"
+          className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(243,248,255,0.52))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(136,156,191,0.12)]"
           style={{ height: `${visualPanelHeight}px` }}
         >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.16em] text-slate-500">
-              {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
-            </div>
-            <div className="shrink-0 whitespace-nowrap text-[16px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <div className="min-w-0 truncate text-[19px] font-semibold uppercase tracking-[0.12em] text-slate-600">{chartModeLabel}</div>
+            <div className="shrink-0 whitespace-nowrap text-[22px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
           </div>
-          <svg viewBox="0 0 100 100" className="h-[calc(100%-36px)] w-full rounded-[22px]">
+          <svg viewBox="0 0 100 100" className="h-[calc(100%-52px)] w-full rounded-[20px]">
             <defs>
               <linearGradient id="share-chart-bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.82)" />
-                <stop offset="100%" stopColor="rgba(244,250,255,0.56)" />
+                <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
+                <stop offset="100%" stopColor="rgba(241,246,255,0.34)" />
               </linearGradient>
-              <linearGradient id="share-chart-path" x1="18%" y1="20%" x2="82%" y2="76%">
-                <stop offset="0%" stopColor="#7C8CFF" />
-                <stop offset="100%" stopColor="#56D8FF" />
+              <radialGradient id="share-chart-focus" cx="50%" cy="52%" r="46%">
+                <stop offset="0%" stopColor="rgba(116,152,255,0.10)" />
+                <stop offset="100%" stopColor="rgba(116,152,255,0)" />
+              </radialGradient>
+              <linearGradient id="share-chart-path" x1="22%" y1="16%" x2="84%" y2="82%">
+                <stop offset="0%" stopColor="#8B7CFF" />
+                <stop offset="52%" stopColor="#5B8CFF" />
+                <stop offset="100%" stopColor="#4FD9FF" />
               </linearGradient>
-              <filter id="endpoint-glow" x="-40%" y="-40%" width="180%" height="180%">
-                <feGaussianBlur stdDeviation="1.8" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
             </defs>
             <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-bg)" />
+            <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-focus)" />
             {zoneLines.map((zone) => (
               <g key={zone.label}>
-                <line x1="22" x2="82" y1={zone.y} y2={zone.y} stroke={zone.tone} strokeWidth="1.2" />
-                <text x="6" y={zone.y + 1.5} fill="rgba(71,85,105,0.72)" fontSize="4" letterSpacing="0.8" fontWeight="600">
+                <line x1="20" x2="80" y1={zone.y} y2={zone.y} stroke={zone.tone} strokeWidth="0.9" />
+                <text x="2" y={zone.y + 1.5} fill={zone.tone} fontSize="5.2" letterSpacing="0.68" fontWeight="600">
                   {zone.label}
                 </text>
-                <text x="94" y={zone.y + 1.5} fill="rgba(71,85,105,0.70)" fontSize="4" textAnchor="end" fontWeight="600">
-                  {zone.rValue}
+                <text
+                  x="98"
+                  y={zone.y + 1.6}
+                  fill={zone.tone}
+                  fontSize="6.4"
+                  textAnchor="end"
+                  fontWeight="600"
+                  style={{ fontVariantNumeric: "tabular-nums" }}
+                >
+                  {formatLevelValue(zone.value)}
                 </text>
               </g>
             ))}
             {isJournalCard ? (
               <motion.path
-                d="M 8 74 C 20 70, 24 66, 34 58 C 48 46, 57 50, 68 40 C 78 31, 86 28, 92 24"
+                d={journalCurve}
                 fill="none"
                 stroke="url(#share-chart-path)"
-                strokeWidth="2.8"
+                strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 initial={{ pathLength: 0 }}
                 animate={{ pathLength: 1 }}
-                transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: Infinity, repeatDelay: 0.35 }}
+                transition={{ duration: 5.8, ease: pathEase, repeat: Infinity, repeatDelay: 0.35 }}
               />
             ) : (
               <>
@@ -396,26 +410,50 @@ function SharePortraitCard({
                   d={truePathCurve}
                   fill="none"
                   stroke="url(#share-chart-path)"
-                  strokeWidth="2.9"
+                  strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
-                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
+                  transition={{ duration: 5.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
                 />
+                {!isReplayCard ? (
+                  <path
+                    d={`M ${chartPathEndX} ${chartTargetY} C 77 ${chartTargetY - 1}, 79 ${chartTargetY - 0.4}, 81 ${chartTargetY - 0.2}`}
+                    fill="none"
+                    stroke="url(#share-chart-path)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray="1.6 2.2"
+                    opacity="0.6"
+                  />
+                ) : null}
                 <motion.circle
-                  cx="18"
-                  cy="58"
-                  r="1.8"
-                  fill="rgba(229,246,255,0.98)"
-                  stroke="rgba(125,211,252,0.9)"
-                  strokeWidth="0.8"
-                  filter="url(#endpoint-glow)"
-                  animate={markerKeyframes}
-                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
+                  cx={isReplayCard ? 26 : setupMarkerPosition.cx}
+                  cy={isReplayCard ? 50 : setupMarkerPosition.cy}
+                  r="2.1"
+                  fill="rgba(237,248,255,0.96)"
+                  stroke="rgba(126,211,252,0.96)"
+                  strokeWidth="0.9"
+                  animate={isReplayCard ? replayMarkerKeyframes : undefined}
+                  transition={{ duration: 5.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
+                />
+                <circle
+                  cx={isReplayCard ? 26 : setupMarkerPosition.cx}
+                  cy={isReplayCard ? 50 : setupMarkerPosition.cy}
+                  r="3.2"
+                  fill="none"
+                  stroke="rgba(125,211,252,0.35)"
+                  strokeWidth="0.75"
                 />
               </>
             )}
+            {isJournalCard ? (
+              <>
+                <circle cx="74" cy="26" r="2.1" fill="rgba(237,248,255,0.96)" stroke="rgba(126,211,252,0.96)" strokeWidth="0.9" />
+                <circle cx="74" cy="26" r="3.2" fill="none" stroke="rgba(125,211,252,0.35)" strokeWidth="0.75" />
+              </>
+            ) : null}
           </svg>
         </div>
 
@@ -1780,12 +1818,12 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const [exportError, setExportError] = useState("");
   const [setupCardTimeMs, setSetupCardTimeMs] = useState(() => Date.now());
   const shareCardExportRef = useRef(null);
-  const GIF_PREVIEW_DURATION_SECONDS = 6.4;
+  const GIF_PREVIEW_DURATION_SECONDS = 5.8;
   const hasReplayTruePath = riskPoints > 0 && rewardPoints > 0;
   const replayPathLabel = hasReplayTruePath ? "True Path" : "Replay Path";
   const replayPathCurve = hasReplayTruePath
-    ? "M 8 74 C 18 72, 22 58, 30 62 C 42 69, 50 54, 62 48 C 72 42, 82 34, 92 26"
-    : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28";
+    ? "M 26 50 C 32 48, 37 60, 44 58 C 50 55, 53 43, 60 40 C 66 37, 70 30, 74 24"
+    : "M 26 50 C 33 52, 38 60, 45 56 C 51 53, 54 45, 61 44 C 66 43, 70 34, 74 30";
 
   useEffect(() => {
     if (shareType !== "SETUP") return undefined;
