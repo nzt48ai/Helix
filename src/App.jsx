@@ -679,12 +679,12 @@ function PositionInstrumentSelector({
             <button
               type="button"
               onClick={onOpenSearch}
-              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4 py-2 text-left text-slate-700"
+              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4.5 py-2 text-left text-slate-700"
               aria-label="Open futures instrument picker"
             >
-              <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="shrink-0 text-[13px] font-semibold leading-none tracking-[0.02em] text-slate-700">{customInstrument?.symbol || value}</span>
-                <span className="min-w-0 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
               </span>
               <span className="shrink-0">
                 <span
@@ -700,7 +700,7 @@ function PositionInstrumentSelector({
                     event.stopPropagation();
                     onReturnToCompact?.();
                   }}
-                  className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100/70 hover:text-slate-600"
+                  className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-slate-200/65 bg-white/35 text-slate-400 transition-colors hover:border-slate-300/80 hover:bg-slate-100/70 hover:text-slate-600 active:bg-slate-200/70"
                   aria-label="Return to compact favorite instruments"
                 >
                   <LayoutGrid size={17} />
