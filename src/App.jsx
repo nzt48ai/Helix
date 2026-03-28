@@ -682,23 +682,28 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="flex w-full max-w-[420px] items-center justify-center"
+            className="inline-flex max-w-full items-baseline justify-center"
           >
-            <div className="flex items-center justify-end">
-              {prefix ? <span className="pointer-events-none text-[26px] font-semibold leading-none tracking-[-0.04em] text-slate-400/90">{prefix}</span> : null}
-            </div>
+            {prefix ? (
+              <span
+                className={cn(
+                  "pointer-events-none mr-1 shrink-0 text-[0.78em] leading-none tracking-[-0.07em]",
+                  HERO_NUMBER_TEXT_CLASS
+                )}
+              >
+                {prefix}
+              </span>
+            ) : null}
             <input
               type="text"
               inputMode="numeric"
               value={value ?? ""}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className={cn("h-full w-auto min-w-0 text-left outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
+              className={cn("h-full w-auto min-w-0 max-w-full text-center outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
               aria-label={label}
             />
-            <div className="flex items-center justify-start">
-              {suffix ? <span className="pointer-events-none text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
-            </div>
+            {suffix ? <span className="pointer-events-none ml-1 text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
           </motion.div>
         </div>
 

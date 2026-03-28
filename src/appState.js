@@ -6,7 +6,7 @@ export const DASHBOARD_RANGES = ["Week", "Month", "Quarter", "Year"];
 export const TAB_KEYS = ["position", "compound", "share", "dashboard", "journal"];
 
 export const POSITION_DEFAULTS = {
-  accountBalance: "25,000",
+  accountBalance: "50,000",
   propMode: false,
   instrument: "MNQ",
   entry: "21,500.00",
