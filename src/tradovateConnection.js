@@ -56,6 +56,17 @@ export async function disconnectTradovateSession() {
   return parseJson(response);
 }
 
+export async function syncTradovateTrades(payload) {
+  const response = await fetch(buildEndpoint("/api/tradovate/sync-trades"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload || {}),
+  });
+
+  return parseJson(response);
+}
+
 export function readTradovateOAuthResultFromLocation() {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);

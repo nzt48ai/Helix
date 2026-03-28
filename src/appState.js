@@ -106,6 +106,22 @@ function sanitizeProfileAccount(value) {
     isHelixLinked: typeof value.isHelixLinked === "boolean" ? value.isHelixLinked : false,
     linkedProvider,
     connection: linkedProvider,
+    tradeSync: value.tradeSync && typeof value.tradeSync === "object"
+      ? {
+          lastSyncAt:
+            typeof value.tradeSync.lastSyncAt === "string" && value.tradeSync.lastSyncAt.trim()
+              ? value.tradeSync.lastSyncAt.trim()
+              : null,
+          lastSyncStatus:
+            value.tradeSync.lastSyncStatus === "success" || value.tradeSync.lastSyncStatus === "error"
+              ? value.tradeSync.lastSyncStatus
+              : null,
+          lastSyncMessage:
+            typeof value.tradeSync.lastSyncMessage === "string" && value.tradeSync.lastSyncMessage.trim()
+              ? value.tradeSync.lastSyncMessage.trim()
+              : null,
+        }
+      : null,
   };
 
   if (type !== "prop") {
