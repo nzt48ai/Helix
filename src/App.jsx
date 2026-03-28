@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
   BookOpen,
   Calculator,
@@ -203,6 +203,53 @@ function formatSecondsLabel(seconds) {
   return `${safeSeconds.toFixed(1)}s`;
 }
 
+function AnimatedFormattedNumber({
+  value,
+  formatter,
+  className = "",
+  duration = 0.5,
+  debounceMs = 180,
+}) {
+  const reduceMotion = useReducedMotion();
+  const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const motionValue = useMotionValue(numericValue);
+  const [displayValue, setDisplayValue] = useState(() => formatter(numericValue));
+  const [targetValue, setTargetValue] = useState(numericValue);
+
+  useEffect(() => {
+    setDisplayValue(formatter(motionValue.get()));
+  }, [formatter, motionValue]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setTargetValue(numericValue);
+    }, debounceMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [debounceMs, numericValue]);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      motionValue.set(targetValue);
+      setDisplayValue(formatter(targetValue));
+      return undefined;
+    }
+
+    const controls = animate(motionValue, targetValue, {
+      duration,
+      ease: "easeOut",
+      onUpdate: (latest) => {
+        setDisplayValue(formatter(latest));
+      },
+    });
+
+    return () => {
+      controls.stop();
+    };
+  }, [duration, formatter, motionValue, reduceMotion, targetValue]);
+
+  return <span className={className}>{displayValue}</span>;
+}
+
 function derivePositionSetupSnapshot(positionState) {
   const selectedInstrumentFromCatalog = getInstrumentBySymbol(positionState.instrument || "MNQ") || getInstrumentBySymbol("MNQ");
   const selectedShortcutInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (selectedInstrumentFromCatalog?.symbol || "MNQ")) || POSITION_INSTRUMENTS[2];
@@ -331,6 +378,8 @@ function SharePortraitCard({
   replayPathCurve,
   GIF_PREVIEW_DURATION_SECONDS,
   heroMetric,
+  heroMetricAnimatedNumber = null,
+  heroMetricFormatter = null,
   secondaryMetrics,
   footerLabel,
   setupMissingMessage = "",
@@ -529,7 +578,11 @@ function SharePortraitCard({
               HERO_NUMBER_TEXT_CLASS
             )}
           >
-            {heroMetric}
+            {heroMetricAnimatedNumber !== null && typeof heroMetricFormatter === "function" ? (
+              <AnimatedFormattedNumber value={heroMetricAnimatedNumber} formatter={heroMetricFormatter} />
+            ) : (
+              heroMetric
+            )}
           </div>
           {hasDirectionalStoryLine ? <div className="mt-3 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
         </div>
@@ -543,7 +596,13 @@ function SharePortraitCard({
           {secondaryMetrics.map((metric) => (
             <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] border border-white/50 bg-white/42 p-4">
               <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
-              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">{metric.value}</div>
+              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">
+                {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
+                  <AnimatedFormattedNumber value={metric.animatedNumber} formatter={metric.formatter} />
+                ) : (
+                  metric.value
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -630,6 +689,7 @@ function TopIconPill({ icon: Icon }) {
 }
 
 function SegmentedControl({ items, value, onChange }) {
+  const reduceMotion = useReducedMotion();
   const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
   const activeIndex = getActiveIndex(
     normalizedItems.map((item) => item.value),
@@ -653,17 +713,18 @@ function SegmentedControl({ items, value, onChange }) {
         {normalizedItems.map((item) => {
           const active = item.value === value;
           return (
-            <button
+            <motion.button
               key={item.value}
               type="button"
               onClick={() => onChange(item.value)}
+              whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
               className={cn(
                 "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
                 active ? "text-blue-600" : "text-slate-500"
               )}
             >
               <span className="relative z-10">{item.label}</span>
-            </button>
+            </motion.button>
           );
         })}
       </div>
@@ -680,6 +741,7 @@ function PositionInstrumentSelector({
   isCustomMode = false,
   onReturnToCompact,
 }) {
+  const reduceMotion = useReducedMotion();
   const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
 
   return (
@@ -696,9 +758,10 @@ function PositionInstrumentSelector({
             className="relative overflow-hidden rounded-[32px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.12))] p-[4px] shadow-[0_4px_10px_rgba(120,140,190,0.05),0_1px_4px_rgba(166,180,209,0.03),inset_0_1px_0_rgba(255,255,255,0.84)]"
             padded={false}
           >
-            <button
+            <motion.button
               type="button"
               onClick={onOpenSearch}
+              whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
               className="flex min-h-[42px] w-full appearance-none items-center justify-between gap-3 rounded-[28px] bg-transparent px-4.5 py-2 text-left text-slate-700"
               aria-label="Open futures instrument picker"
             >
@@ -707,7 +770,7 @@ function PositionInstrumentSelector({
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
               </span>
               <span className="shrink-0">
-                <span
+                <motion.span
                   role="button"
                   tabIndex={0}
                   onClick={(event) => {
@@ -720,13 +783,14 @@ function PositionInstrumentSelector({
                     event.stopPropagation();
                     onReturnToCompact?.();
                   }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
                   className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-slate-200/65 bg-white/35 text-slate-400 transition-colors hover:border-slate-300/80 hover:bg-slate-100/70 hover:text-slate-600 active:bg-slate-200/70"
                   aria-label="Return to compact favorite instruments"
                 >
                   <LayoutGrid size={17} />
-                </span>
+                </motion.span>
               </span>
-            </button>
+            </motion.button>
           </GlassCard>
         </motion.div>
       ) : (
@@ -759,28 +823,30 @@ function PositionInstrumentSelector({
                 {normalizedItems.map((item) => {
                   const active = item.value === value;
                   return (
-                    <button
+                    <motion.button
                       key={item.value}
                       type="button"
                       onClick={() => onChange(item.value)}
+                      whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
                       className={cn(
                         "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
                         active ? "text-blue-600" : "text-slate-500"
                       )}
                     >
                       <span className="relative z-10">{item.label}</span>
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
-              <button
+              <motion.button
                 type="button"
                 onClick={onOpenSearch}
+                whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
                 className="relative z-10 flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:text-slate-600"
                 aria-label="Search futures instruments"
               >
                 <Search size={16} />
-              </button>
+              </motion.button>
             </div>
           </GlassCard>
         </motion.div>
@@ -815,9 +881,9 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
           >
             <div className="flex items-center justify-between gap-3 border-b border-slate-200/75 px-4 py-3">
               <div className="text-[13px] font-semibold tracking-[-0.015em] text-slate-700">Futures Instrument Picker</div>
-              <button type="button" onClick={onClose} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close futures picker">
+              <motion.button type="button" onClick={onClose} whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close futures picker">
                 <X size={16} />
-              </button>
+              </motion.button>
             </div>
             <div className="px-4 py-3">
               <input
@@ -831,15 +897,16 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
               {results.map((instrument) => (
-                <button
+                <motion.button
                   key={instrument.symbol}
                   type="button"
                   onClick={() => onSelect(instrument.symbol)}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100/70"
                 >
                   <span className="w-[44px] shrink-0 text-[13px] font-semibold tracking-[0.02em] text-slate-700">{instrument.symbol}</span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-500">{instrument.name}</span>
-                </button>
+                </motion.button>
               ))}
             </div>
           </motion.div>
@@ -1103,7 +1170,8 @@ function ProjectionChart({
   );
 }
 
-function MetricRowCard({ label, value, tone = "default" }) {
+function MetricRowCard({ label, value, tone = "default", animatedNumber = null, formatter = null }) {
+  const shouldAnimateValue = animatedNumber !== null && typeof formatter === "function";
   return (
     <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[18px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
       <TinyLabel className="text-center text-slate-500/80">{label}</TinyLabel>
@@ -1115,7 +1183,7 @@ function MetricRowCard({ label, value, tone = "default" }) {
           tone === "default" && "text-slate-600"
         )}
       >
-        {value}
+        {shouldAnimateValue ? <AnimatedFormattedNumber value={animatedNumber} formatter={formatter} /> : value}
       </div>
     </GlassCard>
   );
@@ -1391,22 +1459,27 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
         <div className="mt-4 text-center">
           <div className="flex min-h-[88px] items-center justify-center px-2 overflow-visible">
             <motion.div key={isKellyManual ? "manual-contracts-input" : suggestedContractsDisplay} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion ? { duration: 0 } : SPRING} className="w-full">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={suggestedContractsDisplay}
-                onChange={isKellyManual ? (e) => handleManualContractsChange(e.target.value) : undefined}
-                readOnly={!isKellyManual}
-                className="w-full bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[78px] font-semibold leading-[0.92] tracking-[-0.075em] text-transparent outline-none"
-              />
+              {isKellyManual ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={suggestedContractsDisplay}
+                  onChange={(e) => handleManualContractsChange(e.target.value)}
+                  className="w-full bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[78px] font-semibold leading-[0.92] tracking-[-0.075em] text-transparent outline-none"
+                />
+              ) : (
+                <div className="w-full bg-[linear-gradient(180deg,#5A81D9_0%,#6F91E6_44%,#B69357_100%)] bg-clip-text text-center text-[78px] font-semibold leading-[0.92] tracking-[-0.075em] text-transparent">
+                  <AnimatedFormattedNumber value={autoSuggestedContracts} formatter={(value) => Math.max(0, Math.floor(value)).toLocaleString("en-US")} />
+                </div>
+              )}
             </motion.div>
           </div>
           <div className="mt-1.5 text-[16px] font-medium tracking-[-0.02em] text-slate-500">contracts</div>
         </div>
         <div className="mt-5 grid grid-cols-3 gap-2.5">
-          <MetricRowCard label="Risk" value={formatCurrency(potentialRisk)} tone="negative" />
-          <MetricRowCard label="Return" value={formatCurrency(potentialReturn)} tone="positive" />
-          <MetricRowCard label="R" value={`${rewardRiskRatio.toFixed(1)}R`} />
+          <MetricRowCard label="Risk" value={formatCurrency(potentialRisk)} animatedNumber={potentialRisk} formatter={formatCurrency} tone="negative" />
+          <MetricRowCard label="Return" value={formatCurrency(potentialReturn)} animatedNumber={potentialReturn} formatter={formatCurrency} tone="positive" />
+          <MetricRowCard label="R" value={`${rewardRiskRatio.toFixed(1)}R`} animatedNumber={rewardRiskRatio} formatter={(value) => `${value.toFixed(1)}R`} />
         </div>
       </GlassCard>
     </div>
@@ -2221,32 +2294,50 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     if (displayMode === "points") return `${rewardRiskRatio.toFixed(1)}R`;
     return formatCompactCurrency(projectedReward);
   }, [dashboardMonthSnapshot.modeOutcome, displayMode, projectedReward, replayResult, replayResultPoints, rewardRiskRatio, shareType]);
+  const heroMetricAnimation = useMemo(() => {
+    if (shareType === "REPLAY") {
+      if (displayMode === "points") {
+        return { value: replayResultPoints, formatter: (numericValue) => `${numericValue >= 0 ? "+" : ""}${numericValue.toFixed(1)} pts` };
+      }
+      return { value: replayResult, formatter: (numericValue) => `${numericValue >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(numericValue))}` };
+    }
+    if (shareType === "JOURNAL") {
+      if (displayMode === "points") {
+        return { value: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` };
+      }
+      return null;
+    }
+    if (displayMode === "points") {
+      return { value: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` };
+    }
+    return { value: projectedReward, formatter: (numericValue) => formatCompactCurrency(numericValue) };
+  }, [displayMode, projectedReward, replayResult, replayResultPoints, rewardRiskRatio, shareType]);
 
   const secondaryMetrics = useMemo(() => {
     if (shareType === "SETUP") {
       if (displayMode === "points") {
         return [
-          { label: "Risk Points", value: riskPoints.toFixed(1) },
-          { label: "Reward Points", value: rewardPoints.toFixed(1) },
+          { label: "Risk Points", value: riskPoints.toFixed(1), animatedNumber: riskPoints, formatter: (numericValue) => numericValue.toFixed(1) },
+          { label: "Reward Points", value: rewardPoints.toFixed(1), animatedNumber: rewardPoints, formatter: (numericValue) => numericValue.toFixed(1) },
         ];
       }
       return [
-        { label: "Risk", value: formatCompactCurrency(projectedRisk) },
-        { label: "Reward", value: formatCompactCurrency(projectedReward) },
-        { label: "Contracts", value: contracts.toLocaleString("en-US") },
+        { label: "Risk", value: formatCompactCurrency(projectedRisk), animatedNumber: projectedRisk, formatter: (numericValue) => formatCompactCurrency(numericValue) },
+        { label: "Reward", value: formatCompactCurrency(projectedReward), animatedNumber: projectedReward, formatter: (numericValue) => formatCompactCurrency(numericValue) },
+        { label: "Contracts", value: contracts.toLocaleString("en-US"), animatedNumber: contracts, formatter: (numericValue) => Math.max(0, Math.round(numericValue)).toLocaleString("en-US") },
       ];
     }
     if (shareType === "REPLAY") {
       if (displayMode === "points") {
         return [
-          { label: "Result Points", value: `${replayResultPoints >= 0 ? "+" : ""}${replayResultPoints.toFixed(1)}` },
-          { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
+          { label: "Result Points", value: `${replayResultPoints >= 0 ? "+" : ""}${replayResultPoints.toFixed(1)}`, animatedNumber: replayResultPoints, formatter: (numericValue) => `${numericValue >= 0 ? "+" : ""}${numericValue.toFixed(1)}` },
+          { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
           { label: "Duration", value: formatSecondsLabel(GIF_PREVIEW_DURATION_SECONDS) },
         ];
       }
       return [
-        { label: "Result", value: `${replayResult >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(replayResult))}` },
-        { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R` },
+        { label: "Result", value: `${replayResult >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(replayResult))}`, animatedNumber: replayResult, formatter: (numericValue) => `${numericValue >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(numericValue))}` },
+        { label: "R Multiple", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
         { label: "Duration", value: formatSecondsLabel(GIF_PREVIEW_DURATION_SECONDS) },
       ];
     }
@@ -2254,14 +2345,14 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
       return [
         { label: "Trades", value: "48" },
         { label: "Win Rate", value: formatPercent(winRate) },
-        { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R` },
-        { label: "Net Result", value: `${rewardRiskRatio.toFixed(1)}R` },
+        { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
+        { label: "Net Result", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
       ];
     }
     return [
       { label: "Trades", value: "48" },
       { label: "Win Rate", value: formatPercent(winRate) },
-      { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R` },
+      { label: "Average R", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
       { label: "Net Result", value: dashboardMonthSnapshot.modeOutcome },
     ];
   }, [
@@ -2318,6 +2409,8 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
+            heroMetricAnimatedNumber={heroMetricAnimation?.value ?? null}
+            heroMetricFormatter={heroMetricAnimation?.formatter ?? null}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
@@ -2332,17 +2425,18 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
           value={displayMode}
           onChange={setDisplayMode}
         />
-        <button
+        <motion.button
           type="button"
           onClick={handleShareExport}
           disabled={shareDisabled}
+          whileTap={shareDisabled ? undefined : { scale: 0.98, opacity: 0.85 }}
           className={cn(
             "w-full rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] px-4 py-3 text-[14px] font-semibold text-slate-700 shadow-[0_10px_22px_rgba(125,145,182,0.12),inset_0_1px_0_rgba(255,255,255,0.96)]",
             shareDisabled && "cursor-not-allowed opacity-60"
           )}
         >
           {isExporting ? "Exporting..." : "Share"}
-        </button>
+        </motion.button>
         {exportError ? <div className="text-[12px] text-rose-500">{exportError}</div> : null}
       </div>
 
@@ -2365,6 +2459,8 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
+            heroMetricAnimatedNumber={heroMetricAnimation?.value ?? null}
+            heroMetricFormatter={heroMetricAnimation?.formatter ?? null}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
