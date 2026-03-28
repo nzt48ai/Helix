@@ -679,12 +679,12 @@ function PositionInstrumentSelector({
             <button
               type="button"
               onClick={onOpenSearch}
-              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4 py-[11px] text-left text-slate-700"
+              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4 py-2 text-left text-slate-700"
               aria-label="Open futures instrument picker"
             >
               <span className="flex min-w-0 items-center gap-2.5">
-                <span className="shrink-0 text-[13px] font-semibold tracking-[0.02em] text-slate-700">{customInstrument?.symbol || value}</span>
-                <span className="min-w-0 truncate text-[13px] font-medium text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
+                <span className="shrink-0 text-[13px] font-semibold leading-none tracking-[0.02em] text-slate-700">{customInstrument?.symbol || value}</span>
+                <span className="min-w-0 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
               </span>
               <span className="shrink-0">
                 <span
