@@ -75,6 +75,37 @@ function parseNullableNumberString(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function sanitizePriceInputString(value, { maxWholeDigits = 7, maxFractionDigits = 2 } = {}) {
+  const clean = String(value ?? "").replace(/,/g, "");
+  let whole = "";
+  let fraction = "";
+  let seenDot = false;
+
+  for (const char of clean) {
+    if (char >= "0" && char <= "9") {
+      if (!seenDot && whole.length < maxWholeDigits) {
+        whole += char;
+      } else if (seenDot && fraction.length < maxFractionDigits) {
+        fraction += char;
+      }
+    } else if (char === "." && !seenDot) {
+      seenDot = true;
+    }
+  }
+
+  if (seenDot) return `${whole}.${fraction}`;
+  return whole;
+}
+
+function formatPriceOnBlur(value, decimals = 2) {
+  const parsed = parseNullableNumberString(value);
+  if (parsed === null) return "";
+  return parsed.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -902,6 +933,12 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const reduceMotion = useReducedMotion();
   const lastManualContractsRef = useRef("1");
   const hasMountedContractsEffectRef = useRef(false);
+  const [activePriceField, setActivePriceField] = useState(null);
+  const [priceDrafts, setPriceDrafts] = useState(() => ({
+    entry: sanitizePriceInputString(positionState.entry),
+    stop: sanitizePriceInputString(positionState.stop),
+    target: sanitizePriceInputString(positionState.target),
+  }));
   const instrument = positionState.instrument || "MNQ";
   const entry = positionState.entry ?? "";
   const stop = positionState.stop ?? "";
@@ -960,6 +997,25 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
 
   const setField = (key, value) => setPositionState((prev) => ({ ...prev, [key]: value }));
 
+  useEffect(() => {
+    setPriceDrafts((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const syncField = (key, sourceValue) => {
+        if (activePriceField === key) return;
+        const sanitized = sanitizePriceInputString(sourceValue);
+        if (next[key] !== sanitized) {
+          next[key] = sanitized;
+          changed = true;
+        }
+      };
+      syncField("entry", entry);
+      syncField("stop", stop);
+      syncField("target", target);
+      return changed ? next : prev;
+    });
+  }, [activePriceField, entry, stop, target]);
+
   const handleInstrumentChange = (nextInstrument) => {
     setPositionState((prev) => {
       if (prev.instrument === nextInstrument) return prev;
@@ -982,22 +1038,28 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
     setField("contracts", nextValue);
   };
 
-  const formatPriceInput = (raw, decimals) => {
-    const clean = String(raw).replace(/,/g, "");
-    let whole = "";
-    let frac = "";
-    let seenDot = false;
-    for (const ch of clean) {
-      if (ch >= "0" && ch <= "9") {
-        if (!seenDot && whole.length < 7) whole += ch;
-        else if (seenDot && frac.length < (decimals || 2)) frac += ch;
-      } else if (ch === "." && !seenDot) {
-        seenDot = true;
-      }
-    }
-    const formattedWhole = whole ? Number(whole).toLocaleString("en-US") : "";
-    return seenDot ? `${formattedWhole}.${frac}` : formattedWhole;
+  const handlePriceFocus = (key) => {
+    setActivePriceField(key);
+    setPriceDrafts((prev) => ({
+      ...prev,
+      [key]: sanitizePriceInputString(positionState[key]),
+    }));
   };
+
+  const handlePriceChange = (key, raw) => {
+    const nextRaw = sanitizePriceInputString(raw);
+    setPriceDrafts((prev) => ({ ...prev, [key]: nextRaw }));
+    setField(key, nextRaw);
+  };
+
+  const handlePriceBlur = (key) => {
+    const formatted = formatPriceOnBlur(priceDrafts[key], 2);
+    setField(key, formatted);
+    setPriceDrafts((prev) => ({ ...prev, [key]: sanitizePriceInputString(formatted) }));
+    setActivePriceField((prev) => (prev === key ? null : prev));
+  };
+
+  const resolvePriceValue = (key, persistedValue) => (activePriceField === key ? priceDrafts[key] : persistedValue);
 
   return (
     <div className="space-y-4 pb-4">
@@ -1009,15 +1071,39 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Entry</TinyLabel>
-          <input type="text" inputMode="decimal" value={entry} onChange={(e) => setField("entry", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-slate-600 outline-none" />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={resolvePriceValue("entry", entry)}
+            onFocus={() => handlePriceFocus("entry")}
+            onChange={(e) => handlePriceChange("entry", e.target.value)}
+            onBlur={() => handlePriceBlur("entry")}
+            className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-slate-600 outline-none"
+          />
         </GlassCard>
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Stop</TinyLabel>
-          <input type="text" inputMode="decimal" value={stop} onChange={(e) => setField("stop", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-rose-500/85 outline-none" />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={resolvePriceValue("stop", stop)}
+            onFocus={() => handlePriceFocus("stop")}
+            onChange={(e) => handlePriceChange("stop", e.target.value)}
+            onBlur={() => handlePriceBlur("stop")}
+            className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-rose-500/85 outline-none"
+          />
         </GlassCard>
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
           <TinyLabel className="text-center text-slate-500/80">Target</TinyLabel>
-          <input type="text" inputMode="decimal" value={target} onChange={(e) => setField("target", formatPriceInput(e.target.value, 2))} className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90 outline-none" />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={resolvePriceValue("target", target)}
+            onFocus={() => handlePriceFocus("target")}
+            onChange={(e) => handlePriceChange("target", e.target.value)}
+            onBlur={() => handlePriceBlur("target")}
+            className="mt-2.5 w-full bg-transparent text-center text-[16px] font-semibold tracking-[-0.04em] text-emerald-500/90 outline-none"
+          />
         </GlassCard>
       </div>
 
