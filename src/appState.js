@@ -36,7 +36,10 @@ export const COMPOUND_DEFAULTS = {
 
 export const VIEW_DEFAULTS = {
   dashboardRange: "Month",
-  dashboardAccountFilter: "all",
+  dashboardAccountFilterMode: "all",
+  dashboardSelectedAccountIds: [],
+  dashboardIncludeUnassigned: true,
+  dashboardTradeTypeFilter: "all",
 };
 
 export const PROFILE_DEFAULTS = {
@@ -162,13 +165,34 @@ export function updateCompoundStateSafely(previousState, nextValueOrUpdater) {
 
 export function sanitizeViewState(value) {
   if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
-  const dashboardAccountFilter =
-    value.dashboardAccountFilter === "all" || value.dashboardAccountFilter === "unassigned" || typeof value.dashboardAccountFilter === "string"
-      ? value.dashboardAccountFilter
-      : VIEW_DEFAULTS.dashboardAccountFilter;
+  const legacyAccountFilter = typeof value.dashboardAccountFilter === "string" ? value.dashboardAccountFilter : null;
+  const dashboardAccountFilterMode =
+    value.dashboardAccountFilterMode === "custom" || value.dashboardAccountFilterMode === "all"
+      ? value.dashboardAccountFilterMode
+      : legacyAccountFilter === "all" || !legacyAccountFilter
+        ? "all"
+        : "custom";
+  const dashboardSelectedAccountIds = Array.isArray(value.dashboardSelectedAccountIds)
+    ? value.dashboardSelectedAccountIds.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+    : legacyAccountFilter && legacyAccountFilter !== "all" && legacyAccountFilter !== "unassigned"
+      ? [legacyAccountFilter]
+      : [];
+  const dashboardIncludeUnassigned =
+    typeof value.dashboardIncludeUnassigned === "boolean"
+      ? value.dashboardIncludeUnassigned
+      : legacyAccountFilter === "unassigned"
+        ? true
+        : VIEW_DEFAULTS.dashboardIncludeUnassigned;
+  const dashboardTradeTypeFilter =
+    value.dashboardTradeTypeFilter === "live" || value.dashboardTradeTypeFilter === "paper" || value.dashboardTradeTypeFilter === "all"
+      ? value.dashboardTradeTypeFilter
+      : VIEW_DEFAULTS.dashboardTradeTypeFilter;
   return {
     dashboardRange: DASHBOARD_RANGES.includes(value.dashboardRange) ? value.dashboardRange : VIEW_DEFAULTS.dashboardRange,
-    dashboardAccountFilter,
+    dashboardAccountFilterMode,
+    dashboardSelectedAccountIds,
+    dashboardIncludeUnassigned,
+    dashboardTradeTypeFilter,
   };
 }
 

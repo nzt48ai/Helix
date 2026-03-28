@@ -76,8 +76,12 @@ const PROFILE_ACCOUNT_TYPES = [
   { value: "prop", label: "Prop" },
   { value: "sim", label: "Sim" },
 ];
-const DASHBOARD_ACCOUNT_FILTER_ALL = "all";
-const DASHBOARD_ACCOUNT_FILTER_UNASSIGNED = "unassigned";
+const DASHBOARD_ACCOUNT_FILTER_MODE_ALL = "all";
+const DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM = "custom";
+const DASHBOARD_TRADE_TYPE_FILTER_ALL = "all";
+const DASHBOARD_TRADE_TYPE_FILTER_LIVE = "live";
+const DASHBOARD_TRADE_TYPE_FILTER_PAPER = "paper";
+const UNASSIGNED_ACCOUNT_GROUP_ID = "__unassigned__";
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -252,6 +256,9 @@ function sanitizeTrade(value) {
   const pnl = Number(value.pnl);
   const instrument = typeof value.instrument === "string" && value.instrument.trim() ? value.instrument.trim() : "MNQ";
   const accountId = typeof value.accountId === "string" && value.accountId.trim() ? value.accountId.trim() : "";
+  const rMultiple = value.rMultiple === null || value.rMultiple === undefined || value.rMultiple === "" ? null : Number(value.rMultiple);
+  const ruleViolation = typeof value.ruleViolation === "boolean" ? value.ruleViolation : false;
+  const tradeType = value.tradeType === "paper" ? "paper" : "live";
 
   if (!Number.isFinite(timestamp) || !Number.isFinite(pnl)) return null;
 
@@ -261,6 +268,9 @@ function sanitizeTrade(value) {
     pnl,
     instrument,
     accountId,
+    rMultiple: Number.isFinite(rMultiple) ? rMultiple : null,
+    ruleViolation,
+    tradeType,
   };
 }
 
@@ -2215,8 +2225,14 @@ function DashboardScreen({
   onRangeChange,
   trades = [],
   accounts = [],
-  accountFilter = DASHBOARD_ACCOUNT_FILTER_ALL,
-  onAccountFilterChange,
+  accountFilterMode = DASHBOARD_ACCOUNT_FILTER_MODE_ALL,
+  selectedAccountIds = [],
+  includeUnassigned = true,
+  tradeTypeFilter = DASHBOARD_TRADE_TYPE_FILTER_ALL,
+  onAccountFilterModeChange,
+  onSelectedAccountIdsChange,
+  onIncludeUnassignedChange,
+  onTradeTypeFilterChange,
   onSaveTrade,
   debugEnabled = false,
 }) {
@@ -2237,9 +2253,13 @@ function DashboardScreen({
     return {
       pnl: "",
       accountId: firstAccountId,
+      rMultiple: "",
+      tradeType: DASHBOARD_TRADE_TYPE_FILTER_LIVE,
+      ruleViolation: false,
     };
   });
   const [tradeFormError, setTradeFormError] = useState("");
+  const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
 
   useEffect(() => {
     setTradeForm((prev) => {
@@ -2257,14 +2277,24 @@ function DashboardScreen({
       trades.map((trade) => ({
         ...trade,
         accountId: normalizeTradeAccountId(trade.accountId, validAccountIds),
+        tradeType: trade.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
+        ruleViolation: Boolean(trade.ruleViolation),
+        rMultiple: Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : null,
       })),
     [trades, validAccountIds]
   );
   const filteredTrades = useMemo(() => {
-    if (accountFilter === DASHBOARD_ACCOUNT_FILTER_ALL) return normalizedTrades;
-    if (accountFilter === DASHBOARD_ACCOUNT_FILTER_UNASSIGNED) return normalizedTrades.filter((trade) => !trade.accountId);
-    return normalizedTrades.filter((trade) => trade.accountId === accountFilter);
-  }, [accountFilter, normalizedTrades]);
+    const selectedIds = new Set(selectedAccountIds);
+    return normalizedTrades.filter((trade) => {
+      const accountPass =
+        accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_ALL
+          ? true
+          : (trade.accountId && selectedIds.has(trade.accountId)) || (!trade.accountId && includeUnassigned);
+      const tradeTypePass =
+        tradeTypeFilter === DASHBOARD_TRADE_TYPE_FILTER_ALL ? true : trade.tradeType === tradeTypeFilter;
+      return accountPass && tradeTypePass;
+    });
+  }, [accountFilterMode, includeUnassigned, normalizedTrades, selectedAccountIds, tradeTypeFilter]);
   const filteredTradeStats = useMemo(() => {
     const totalTrades = filteredTrades.length;
     const wins = filteredTrades.filter((trade) => trade.pnl > 0).length;
@@ -2277,13 +2307,33 @@ function DashboardScreen({
       winRate,
     };
   }, [filteredTrades]);
-  const groupedTradesByDate = useMemo(() => {
-    return filteredTrades.reduce((acc, trade) => {
-      const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
-      acc.set(dateKey, (acc.get(dateKey) || 0) + 1);
-      return acc;
-    }, new Map());
+  const groupedTradesByDayAndAccount = useMemo(() => {
+    return filteredTrades
+      .slice()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .reduce((acc, trade) => {
+        const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
+        const dateBucket = acc.get(dateKey) || new Map();
+        const accountKey = trade.accountId || UNASSIGNED_ACCOUNT_GROUP_ID;
+        const nextTrades = [...(dateBucket.get(accountKey) || []), trade];
+        dateBucket.set(accountKey, nextTrades);
+        acc.set(dateKey, dateBucket);
+        return acc;
+      }, new Map());
   }, [filteredTrades]);
+  const calendarDailyTotals = useMemo(
+    () =>
+      filteredTrades.reduce((acc, trade) => {
+        const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
+        const previous = acc.get(dateKey) || { netPnl: 0, hasRuleViolation: false };
+        acc.set(dateKey, {
+          netPnl: previous.netPnl + trade.pnl,
+          hasRuleViolation: previous.hasRuleViolation || Boolean(trade.ruleViolation),
+        });
+        return acc;
+      }, new Map()),
+    [filteredTrades]
+  );
   const last14DateKeys = useMemo(() => {
     const keys = [];
     for (let index = 13; index >= 0; index -= 1) {
@@ -2294,14 +2344,31 @@ function DashboardScreen({
     }
     return keys;
   }, []);
-  const accountFilterItems = useMemo(() => {
-    const accountItems = accounts.map((account) => ({ value: account.id, label: account.name }));
-    return [
-      { value: DASHBOARD_ACCOUNT_FILTER_ALL, label: "All" },
-      ...accountItems,
-      { value: DASHBOARD_ACCOUNT_FILTER_UNASSIGNED, label: "Unassigned" },
-    ];
-  }, [accounts]);
+  const dayDetailGroups = useMemo(() => {
+    if (!selectedCalendarDateKey) return [];
+    const dayGroups = groupedTradesByDayAndAccount.get(selectedCalendarDateKey);
+    if (!dayGroups) return [];
+    return Array.from(dayGroups.entries())
+      .map(([accountKey, accountTrades]) => {
+        const totalPnl = accountTrades.reduce((sum, trade) => sum + trade.pnl, 0);
+        const totalR = accountTrades.reduce((sum, trade) => sum + (Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : 0), 0);
+        const hasRuleViolation = accountTrades.some((trade) => trade.ruleViolation);
+        const accountName = accountKey === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(accountKey) || "Unassigned";
+        return {
+          accountKey,
+          accountName,
+          totalPnl,
+          totalR,
+          tradeCount: accountTrades.length,
+          hasRuleViolation,
+        };
+      })
+      .sort((a, b) => {
+        if (a.accountKey === UNASSIGNED_ACCOUNT_GROUP_ID) return 1;
+        if (b.accountKey === UNASSIGNED_ACCOUNT_GROUP_ID) return -1;
+        return a.accountName.localeCompare(b.accountName);
+      });
+  }, [accountNameById, groupedTradesByDayAndAccount, selectedCalendarDateKey]);
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -2322,14 +2389,18 @@ function DashboardScreen({
       return;
     }
     const accountId = normalizeTradeAccountId(tradeForm.accountId, validAccountIds);
+    const parsedRMultiple = tradeForm.rMultiple === "" ? null : Number(tradeForm.rMultiple);
     onSaveTrade({
       id: createTradeId(),
       timestamp: Date.now(),
       pnl: parsedPnl,
       instrument: activeSnapshot.instrument,
       accountId,
+      rMultiple: Number.isFinite(parsedRMultiple) ? parsedRMultiple : null,
+      tradeType: tradeForm.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
+      ruleViolation: Boolean(tradeForm.ruleViolation),
     });
-    setTradeForm((prev) => ({ ...prev, pnl: "" }));
+    setTradeForm((prev) => ({ ...prev, pnl: "", rMultiple: "", ruleViolation: false }));
     setTradeFormError("");
   };
 
@@ -2342,12 +2413,60 @@ function DashboardScreen({
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <TinyLabel>Account Filter</TinyLabel>
+            <TinyLabel>Filters</TinyLabel>
             <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights scope</div>
           </div>
         </div>
-        <div className="mt-3">
-          <SegmentedControl items={accountFilterItems} value={accountFilter} onChange={onAccountFilterChange} />
+        <div className="mt-3 space-y-3">
+          <div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account scope</div>
+            <SegmentedControl
+              items={[
+                { value: DASHBOARD_ACCOUNT_FILTER_MODE_ALL, label: "All Accounts" },
+                { value: DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM, label: "Custom" },
+              ]}
+              value={accountFilterMode}
+              onChange={onAccountFilterModeChange}
+            />
+          </div>
+          {accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM ? (
+            <div className="space-y-2 rounded-[16px] border border-white/70 bg-white/28 px-3 py-2.5">
+              {accounts.map((account) => {
+                const checked = selectedAccountIds.includes(account.id);
+                return (
+                  <label key={account.id} className="flex cursor-pointer items-center justify-between gap-2 text-[13px] text-slate-600">
+                    <span>{account.name}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const nextIds = event.target.checked
+                          ? [...selectedAccountIds, account.id]
+                          : selectedAccountIds.filter((item) => item !== account.id);
+                        onSelectedAccountIdsChange(Array.from(new Set(nextIds)));
+                      }}
+                    />
+                  </label>
+                );
+              })}
+              <label className="flex cursor-pointer items-center justify-between gap-2 border-t border-white/70 pt-2 text-[13px] font-semibold text-slate-700">
+                <span>Include Unassigned</span>
+                <input type="checkbox" checked={includeUnassigned} onChange={(event) => onIncludeUnassignedChange(event.target.checked)} />
+              </label>
+            </div>
+          ) : null}
+          <div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Trade type</div>
+            <SegmentedControl
+              items={[
+                { value: DASHBOARD_TRADE_TYPE_FILTER_ALL, label: "All Types" },
+                { value: DASHBOARD_TRADE_TYPE_FILTER_LIVE, label: "Live" },
+                { value: DASHBOARD_TRADE_TYPE_FILTER_PAPER, label: "Paper" },
+              ]}
+              value={tradeTypeFilter}
+              onChange={onTradeTypeFilterChange}
+            />
+          </div>
         </div>
       </GlassCard>
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
@@ -2379,6 +2498,38 @@ function DashboardScreen({
                 </option>
               ))}
             </select>
+          </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">R Multiple</div>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={tradeForm.rMultiple}
+                onChange={(event) => setTradeForm((prev) => ({ ...prev, rMultiple: event.target.value }))}
+                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                placeholder="e.g. 1.5"
+              />
+            </label>
+            <label className="block">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Trade Type</div>
+              <select
+                value={tradeForm.tradeType}
+                onChange={(event) => setTradeForm((prev) => ({ ...prev, tradeType: event.target.value }))}
+                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
+              >
+                <option value={DASHBOARD_TRADE_TYPE_FILTER_LIVE}>Live</option>
+                <option value={DASHBOARD_TRADE_TYPE_FILTER_PAPER}>Paper</option>
+              </select>
+            </label>
+          </div>
+          <label className="flex items-center justify-between gap-2 rounded-[14px] border border-white/70 bg-white/30 px-3 py-2 text-[13px] font-medium text-slate-600">
+            <span>Prop rule violation</span>
+            <input
+              type="checkbox"
+              checked={tradeForm.ruleViolation}
+              onChange={(event) => setTradeForm((prev) => ({ ...prev, ruleViolation: event.target.checked }))}
+            />
           </label>
           {tradeFormError ? <div className="text-[12px] text-rose-500">{tradeFormError}</div> : null}
           <button
@@ -2444,24 +2595,41 @@ function DashboardScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Trade Feed</TinyLabel>
         <div className="mt-3 space-y-2.5">
-          {filteredTrades.length ? (
-            filteredTrades
-              .slice()
-              .sort((a, b) => b.timestamp - a.timestamp)
+          {groupedTradesByDayAndAccount.size ? (
+            Array.from(groupedTradesByDayAndAccount.entries())
+              .sort((a, b) => b[0].localeCompare(a[0]))
               .slice(0, 12)
-              .map((trade) => (
-                <div key={trade.id} className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-slate-700">{trade.instrument}</div>
-                    <div className={cn("font-semibold", trade.pnl >= 0 ? "text-emerald-600" : "text-rose-500")}>
-                      {trade.pnl >= 0 ? "+" : "-"}
-                      {formatCompactCurrency(Math.abs(trade.pnl))}
-                    </div>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                    <span>{formatLocalDateMmDdYy(trade.timestamp)} · {formatLocalTimeAmPm(trade.timestamp)}</span>
-                    <span>{trade.accountId ? accountNameById.get(trade.accountId) || "Unassigned" : "Unassigned"}</span>
-                  </div>
+              .map(([dateKey, groupedByAccount]) => (
+                <div key={dateKey} className="space-y-2.5">
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-slate-500">{new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
+                  {Array.from(groupedByAccount.entries())
+                    .sort((a, b) => {
+                      const leftName = a[0] === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(a[0]) || "Unassigned";
+                      const rightName = b[0] === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(b[0]) || "Unassigned";
+                      return leftName.localeCompare(rightName);
+                    })
+                    .map(([accountKey, accountTrades]) => (
+                      <div key={`${dateKey}-${accountKey}`} className="space-y-2">
+                        <div className="text-[12px] font-semibold text-slate-700">
+                          [{accountKey === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(accountKey) || "Unassigned"}]
+                        </div>
+                        {accountTrades.map((trade) => (
+                          <div key={trade.id} className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-semibold text-slate-700">{trade.instrument}</div>
+                              <div className={cn("font-semibold", trade.pnl >= 0 ? "text-emerald-600" : "text-rose-500")}>
+                                {trade.pnl >= 0 ? "+" : "-"}
+                                {formatCompactCurrency(Math.abs(trade.pnl))}
+                              </div>
+                            </div>
+                            <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                              <span>{formatLocalDateMmDdYy(trade.timestamp)} · {formatLocalTimeAmPm(trade.timestamp)}</span>
+                              <span>{trade.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? "Paper" : "Live"}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
                 </div>
               ))
           ) : (
@@ -2476,16 +2644,61 @@ function DashboardScreen({
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Last 14 days</div>
         <div className="mt-3 grid grid-cols-7 gap-2">
           {last14DateKeys.map((dateKey) => {
-            const tradeCount = groupedTradesByDate.get(dateKey) || 0;
-            const levelClass = tradeCount >= 3 ? "bg-blue-500/70" : tradeCount >= 2 ? "bg-blue-400/55" : tradeCount >= 1 ? "bg-blue-300/45" : "bg-white/45";
+            const dailySummary = calendarDailyTotals.get(dateKey);
+            const levelClass = dailySummary?.hasRuleViolation
+              ? "bg-amber-300/70"
+              : (dailySummary?.netPnl || 0) > 0
+                ? "bg-emerald-400/55"
+                : (dailySummary?.netPnl || 0) < 0
+                  ? "bg-rose-400/55"
+                  : "bg-white/45";
             return (
-              <div key={dateKey} className={cn("rounded-[10px] border border-white/65 px-1.5 py-2 text-center text-[10px] font-semibold text-slate-600", levelClass)}>
+              <button
+                type="button"
+                onClick={() => setSelectedCalendarDateKey(dateKey)}
+                key={dateKey}
+                className={cn(
+                  "relative rounded-[10px] border border-white/65 px-1.5 py-2 text-center text-[10px] font-semibold text-slate-600",
+                  levelClass,
+                  selectedCalendarDateKey === dateKey ? "ring-1 ring-blue-300" : ""
+                )}
+              >
+                {dailySummary?.hasRuleViolation ? <span className="absolute right-1 top-0.5 text-[11px] leading-none">⚠</span> : null}
                 {Number(dateKey.slice(-2))}
-              </div>
+              </button>
             );
           })}
         </div>
       </GlassCard>
+      {selectedCalendarDateKey ? (
+        <GlassCard className="rounded-[30px] p-5">
+          <TinyLabel>Day Details</TinyLabel>
+          <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">
+            {new Date(`${selectedCalendarDateKey}T00:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+          </div>
+          <div className="mt-3 space-y-2.5">
+            {dayDetailGroups.length ? (
+              dayDetailGroups.map((group) => (
+                <div key={group.accountKey} className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-slate-700">{group.accountName}</div>
+                    {group.hasRuleViolation ? <div className="text-[12px] font-semibold text-amber-600">⚠ Violation</div> : null}
+                  </div>
+                  <div className="mt-1 grid grid-cols-2 gap-2 text-[12px] text-slate-500">
+                    <div>Total P/L: {formatCompactCurrency(group.totalPnl)}</div>
+                    <div>Total R: {group.totalR.toFixed(2)}R</div>
+                    <div>Trades: {group.tradeCount}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                No trades for this day.
+              </div>
+            )}
+          </div>
+        </GlassCard>
+      ) : null}
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Read-only Summary</TinyLabel>
         <div className="mt-4 space-y-3">
@@ -3399,8 +3612,14 @@ export default function App() {
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
         trades={trades}
         accounts={profileState.accounts}
-        accountFilter={viewState.dashboardAccountFilter}
-        onAccountFilterChange={(dashboardAccountFilter) => setViewState((prev) => ({ ...prev, dashboardAccountFilter }))}
+        accountFilterMode={viewState.dashboardAccountFilterMode}
+        selectedAccountIds={viewState.dashboardSelectedAccountIds}
+        includeUnassigned={viewState.dashboardIncludeUnassigned}
+        tradeTypeFilter={viewState.dashboardTradeTypeFilter}
+        onAccountFilterModeChange={(dashboardAccountFilterMode) => setViewState((prev) => ({ ...prev, dashboardAccountFilterMode }))}
+        onSelectedAccountIdsChange={(dashboardSelectedAccountIds) => setViewState((prev) => ({ ...prev, dashboardSelectedAccountIds }))}
+        onIncludeUnassignedChange={(dashboardIncludeUnassigned) => setViewState((prev) => ({ ...prev, dashboardIncludeUnassigned }))}
+        onTradeTypeFilterChange={(dashboardTradeTypeFilter) => setViewState((prev) => ({ ...prev, dashboardTradeTypeFilter }))}
         onSaveTrade={(trade) => setTrades((prev) => [sanitizeTrade(trade), ...prev].filter(Boolean))}
         debugEnabled={debugEnabled}
       />
