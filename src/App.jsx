@@ -71,10 +71,10 @@ const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) =>
       ? { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" }
       : { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" },
 }));
-const PROFILE_PLACEHOLDER_ACCOUNTS = [
-  { name: "Apex Futures 50K", type: "Prop Evaluation", startingBalance: "$50,000", currentBalance: "$52,340" },
-  { name: "Topstep Combine", type: "Sim Funded", startingBalance: "$100,000", currentBalance: "$98,760" },
-  { name: "Personal Brokerage", type: "Cash", startingBalance: "$25,000", currentBalance: "$27,410" },
+const PROFILE_ACCOUNT_TYPES = [
+  { value: "personal", label: "Personal" },
+  { value: "prop", label: "Prop" },
+  { value: "sim", label: "Sim" },
 ];
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
@@ -2534,6 +2534,15 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 }
 
 function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
+  const [accountForm, setAccountForm] = useState({
+    name: "",
+    type: "personal",
+    startingBalance: "",
+    currentBalance: "",
+  });
+  const [editingAccountId, setEditingAccountId] = useState(null);
+  const [accountFormError, setAccountFormError] = useState("");
+
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
     return source
@@ -2565,6 +2574,96 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       );
     },
     [onProfileStateChange]
+  );
+
+  const resetAccountForm = useCallback(() => {
+    setAccountForm({
+      name: "",
+      type: "personal",
+      startingBalance: "",
+      currentBalance: "",
+    });
+    setEditingAccountId(null);
+    setAccountFormError("");
+  }, []);
+
+  const updateAccountFormField = useCallback((key, value) => {
+    setAccountForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const submitAccountForm = useCallback(
+    (event) => {
+      event.preventDefault();
+
+      const name = accountForm.name.trim();
+      const type = String(accountForm.type || "").trim().toLowerCase();
+      const startingBalance = Number(accountForm.startingBalance);
+      const currentBalance = Number(accountForm.currentBalance);
+
+      if (!name) {
+        setAccountFormError("Account name is required.");
+        return;
+      }
+      if (!PROFILE_ACCOUNT_TYPES.some((item) => item.value === type)) {
+        setAccountFormError("Please choose a valid account type.");
+        return;
+      }
+      if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) {
+        setAccountFormError("Balances must be numeric.");
+        return;
+      }
+
+      onProfileStateChange((prev) => {
+        const safePrev = sanitizeProfileState(prev);
+        const nextAccount = {
+          id: editingAccountId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          type,
+          startingBalance,
+          currentBalance,
+        };
+        const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
+        const nextAccounts = editingAccountId
+          ? existingAccounts.map((account) => (account.id === editingAccountId ? nextAccount : account))
+          : [...existingAccounts, nextAccount];
+
+        return sanitizeProfileState({
+          ...safePrev,
+          accounts: nextAccounts,
+        });
+      });
+
+      resetAccountForm();
+    },
+    [accountForm, editingAccountId, onProfileStateChange, resetAccountForm]
+  );
+
+  const startEditAccount = useCallback((account) => {
+    setEditingAccountId(account.id);
+    setAccountForm({
+      name: account.name,
+      type: account.type,
+      startingBalance: String(account.startingBalance),
+      currentBalance: String(account.currentBalance),
+    });
+    setAccountFormError("");
+  }, []);
+
+  const deleteAccount = useCallback(
+    (accountId) => {
+      onProfileStateChange((prev) => {
+        const safePrev = sanitizeProfileState(prev);
+        return sanitizeProfileState({
+          ...safePrev,
+          accounts: safePrev.accounts.filter((account) => account.id !== accountId),
+        });
+      });
+
+      if (editingAccountId === accountId) {
+        resetAccountForm();
+      }
+    },
+    [editingAccountId, onProfileStateChange, resetAccountForm]
   );
 
   return (
@@ -2611,28 +2710,120 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Accounts</TinyLabel>
-        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts (placeholder)</div>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
+        <form onSubmit={submitAccountForm} className="mt-3 space-y-3">
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
+            <input
+              type="text"
+              value={accountForm.name}
+              onChange={(event) => updateAccountFormField("name", event.target.value)}
+              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+              placeholder="Personal account"
+            />
+          </label>
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account type</div>
+            <select
+              value={accountForm.type}
+              onChange={(event) => updateAccountFormField("type", event.target.value)}
+              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
+            >
+              {PROFILE_ACCOUNT_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Starting balance</div>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={accountForm.startingBalance}
+                onChange={(event) => updateAccountFormField("startingBalance", event.target.value)}
+                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                placeholder="0"
+              />
+            </label>
+            <label className="block">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Current balance</div>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={accountForm.currentBalance}
+                onChange={(event) => updateAccountFormField("currentBalance", event.target.value)}
+                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                placeholder="0"
+              />
+            </label>
+          </div>
+          {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="submit"
+              className="w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
+            >
+              {editingAccountId ? "Update account" : "Add account"}
+            </button>
+            {editingAccountId ? (
+              <button
+                type="button"
+                onClick={resetAccountForm}
+                className="w-full rounded-[18px] border border-white/70 bg-white/30 px-4 py-2.5 text-[13px] font-semibold text-slate-600 shadow-[0_8px_20px_rgba(140,158,194,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-colors hover:bg-white/40"
+              >
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+        </form>
         <div className="mt-3 space-y-3">
-          {PROFILE_PLACEHOLDER_ACCOUNTS.map((account) => (
-            <div key={account.name} className="rounded-[20px] border border-white/65 bg-white/35 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[14px] font-semibold text-slate-700">{account.name}</div>
-                  <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{account.type}</div>
+          {profileState.accounts.length ? (
+            profileState.accounts.map((account) => (
+              <div key={account.id} className="rounded-[20px] border border-white/65 bg-white/35 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[14px] font-semibold text-slate-700">{account.name}</div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                      {PROFILE_ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ?? account.type}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => startEditAccount(account)}
+                      className="rounded-[12px] border border-white/70 bg-white/45 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white/55"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteAccount(account.id)}
+                      className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Starting</div>
+                    <div className="font-semibold text-slate-700">{formatCurrency(account.startingBalance)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Current</div>
+                    <div className="font-semibold text-slate-700">{formatCurrency(account.currentBalance)}</div>
+                  </div>
                 </div>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Starting</div>
-                  <div className="font-semibold text-slate-700">{account.startingBalance}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Current</div>
-                  <div className="font-semibold text-slate-700">{account.currentBalance}</div>
-                </div>
-              </div>
+            ))
+          ) : (
+            <div className="rounded-[20px] border border-dashed border-white/70 bg-white/20 px-4 py-3 text-[13px] text-slate-500">
+              No accounts yet. Add your first account above.
             </div>
-          ))}
+          )}
         </div>
       </GlassCard>
 
@@ -2792,7 +2983,7 @@ export default function App() {
     setPositionState({ ...POSITION_DEFAULTS });
     setCompoundState({ ...COMPOUND_DEFAULTS });
     setViewState({ ...VIEW_DEFAULTS });
-    setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } });
+    setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings }, accounts: [] });
   };
 
   const dashboardSnapshot = useMemo(() => {

@@ -4,13 +4,19 @@ import {
   APP_STORAGE_KEY,
   COMPOUND_DEFAULTS,
   POSITION_DEFAULTS,
+  PROFILE_DEFAULTS,
+  PROFILE_STORAGE_KEY,
   VIEW_DEFAULTS,
   clearPersistedAppState,
+  clearPersistedProfileState,
   persistAppState,
+  persistProfileState,
   readStoredAppState,
+  readStoredProfileState,
   resolveTabFromHash,
   sanitizeCompoundState,
   sanitizePositionState,
+  sanitizeProfileState,
   sanitizeViewState,
   updateCompoundStateSafely,
 } from "../src/appState.js";
@@ -90,4 +96,46 @@ test("compound updates preserve required fields for cross-tab rendering", () => 
   assert.equal(updated.tradeFrequency, COMPOUND_DEFAULTS.tradeFrequency);
   assert.equal(updated.durationUnit, COMPOUND_DEFAULTS.durationUnit);
   assert.equal(typeof updated.projectionMode, "boolean");
+});
+
+test("profile state sanitization safely hydrates account lists", () => {
+  const storage = createStorage({
+    [PROFILE_STORAGE_KEY]: JSON.stringify({
+      displayName: "Test User",
+      accounts: [
+        { id: "ok-1", name: "Personal", type: "personal", startingBalance: 1000, currentBalance: 1100 },
+        { id: "", name: "Broken", type: "prop", startingBalance: 100, currentBalance: 100 },
+        { id: "ok-2", name: "Sim", type: "sim", startingBalance: "2000", currentBalance: "1900" },
+      ],
+    }),
+  });
+
+  const profile = sanitizeProfileState(readStoredProfileState(storage));
+
+  assert.equal(profile.displayName, "Test User");
+  assert.equal(profile.accounts.length, 2);
+  assert.equal(profile.accounts[0].id, "ok-1");
+  assert.equal(profile.accounts[1].currentBalance, 1900);
+});
+
+test("profile persistence reset clears profile state and defaults accounts", () => {
+  const storage = createStorage();
+  assert.equal(
+    persistProfileState(
+      {
+        ...PROFILE_DEFAULTS,
+        shareSettings: { ...PROFILE_DEFAULTS.shareSettings },
+        accounts: [{ id: "a1", name: "Acct", type: "prop", startingBalance: 50000, currentBalance: 51000 }],
+      },
+      storage
+    ),
+    true
+  );
+
+  assert.equal(clearPersistedProfileState(storage), true);
+  assert.equal(storage.getItem(PROFILE_STORAGE_KEY), null);
+  assert.deepEqual(sanitizeProfileState(readStoredProfileState(storage)), {
+    ...PROFILE_DEFAULTS,
+    shareSettings: { ...PROFILE_DEFAULTS.shareSettings },
+  });
 });
