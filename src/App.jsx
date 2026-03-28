@@ -76,9 +76,20 @@ const PROFILE_ACCOUNT_TYPES = [
   { value: "personal", label: "Personal" },
   { value: "prop", label: "Prop" },
   { value: "paper", label: "Paper" },
+  { value: "helixTrade", label: "Helix Trade" },
   { value: "sim", label: "Sim (Legacy)" },
 ];
 const ACCOUNT_SOURCE_OPTIONS = PROFILE_ACCOUNT_TYPES.filter((type) => type.value !== "sim");
+const PERSONAL_BROKER_OPTIONS = [
+  { id: "amp", label: "AMP" },
+  { id: "tradovate", label: "Tradovate" },
+  { id: "tradestation", label: "TradeStation" },
+];
+const ADD_ACCOUNT_TYPES = [
+  { value: "personal", label: "Personal", description: "Connect a personal futures broker account." },
+  { value: "prop", label: "Prop", description: "Attach a funded or challenge prop account." },
+  { value: "helixTrade", label: "Helix Trade", description: "Link your Helix Trade app account." },
+];
 const PROP_ACCOUNT_STATUSES = ["active", "breached", "passed", "funded"];
 const DASHBOARD_ACCOUNT_FILTER_MODE_ALL = "all";
 const DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM = "custom";
@@ -254,11 +265,15 @@ function createEmptyAccountForm() {
     type: "personal",
     startingBalance: "",
     currentBalance: "",
+    brokerName: "",
     firmName: "",
     dailyLossLimit: "",
     maxDrawdown: "",
     profitTarget: "",
     status: "active",
+    connectionMethod: "",
+    linkedSource: "",
+    isHelixLinked: false,
   };
 }
 
@@ -3160,14 +3175,55 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   );
 }
 
+function normalizeAccountType(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "helixtrade") return "helixTrade";
+  return normalized;
+}
+
+function getAccountRowMeta(account) {
+  const normalizedType = normalizeAccountType(account?.type);
+  if (normalizedType === "prop") {
+    return {
+      badge: "PROP",
+      logoText: account?.firmName ? account.firmName.slice(0, 2).toUpperCase() : "PF",
+      title: account?.name || "Prop Account",
+      subtitle: account?.firmName || "Prop Firm",
+    };
+  }
+  if (normalizedType === "helixTrade") {
+    return {
+      badge: "HX",
+      logoText: "HX",
+      title: account?.name || "Helix Trade",
+      subtitle: account?.isHelixLinked ? "Helix-synced linked account" : "Helix Trade linked account",
+    };
+  }
+  if (normalizedType === "paper" || normalizedType === "sim") {
+    return {
+      badge: "HX",
+      logoText: "HX",
+      title: account?.name || "Paper Account",
+      subtitle: "Paper",
+    };
+  }
+  return {
+    badge: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
+    logoText: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
+    title: account?.brokerName || account?.name || "Broker",
+    subtitle: "Personal",
+  };
+}
+
 function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
-  const [editingAccountId, setEditingAccountId] = useState(null);
+  const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [accountFormError, setAccountFormError] = useState("");
   const [accountFlowNotice, setAccountFlowNotice] = useState("");
   const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [pendingAccounts, setPendingAccounts] = useState([]);
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3204,7 +3260,6 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
   const resetAccountForm = useCallback(() => {
     setAccountForm(createEmptyAccountForm());
-    setEditingAccountId(null);
     setSelectedPropFirmId("");
     setSelectedTemplateId("");
     setAccountFormError("");
@@ -3213,18 +3268,11 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
   const updateAccountFormField = useCallback((key, value) => {
     setAccountFlowNotice("");
-    if (key === "type" && value !== "prop") {
+    if (key === "type") {
       setSelectedPropFirmId("");
       setSelectedTemplateId("");
-      setAccountForm((prev) => ({
-        ...prev,
-        type: value,
-        firmName: "",
-        dailyLossLimit: "",
-        maxDrawdown: "",
-        profitTarget: "",
-        status: "active",
-      }));
+      setAccountForm(createEmptyAccountForm());
+      setAccountForm((prev) => ({ ...prev, type: value }));
       return;
     }
     setAccountForm((prev) => ({ ...prev, [key]: value }));
@@ -3234,32 +3282,40 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     () => PROP_FIRM_TEMPLATE_CONFIG.find((firm) => firm.id === selectedPropFirmId) || null,
     [selectedPropFirmId]
   );
-  const selectedTemplate = useMemo(
-    () => selectedFirm?.templates.find((template) => template.id === selectedTemplateId) || null,
-    [selectedFirm, selectedTemplateId]
-  );
 
   const buildValidatedAccount = useCallback(() => {
-    const name = accountForm.name.trim();
-    const type = String(accountForm.type || "").trim().toLowerCase();
-    const startingBalance = Number(accountForm.startingBalance);
-    const currentBalance = Number(accountForm.currentBalance);
+    const type = normalizeAccountType(accountForm.type);
     const isProp = type === "prop";
+    const isPersonal = type === "personal";
+    const isHelixTrade = type === "helixTrade";
+    const name = accountForm.name.trim();
+    const startingBalance = Number(accountForm.startingBalance || 0);
+    const currentBalance = Number(accountForm.currentBalance || startingBalance || 0);
+    const brokerName = String(accountForm.brokerName || "").trim();
     const firmName = String(accountForm.firmName || "").trim();
     const dailyLossLimit = Number(accountForm.dailyLossLimit);
     const maxDrawdown = Number(accountForm.maxDrawdown);
     const profitTarget = Number(accountForm.profitTarget);
     const status = String(accountForm.status || "").trim().toLowerCase();
+    const connectionMethod = String(accountForm.connectionMethod || "").trim();
 
-    if (!name) {
-      setAccountFormError("Account name is required.");
+    if (!ACCOUNT_SOURCE_OPTIONS.some((item) => normalizeAccountType(item.value) === type)) {
+      setAccountFormError("Please choose Personal, Prop, or Helix Trade.");
       return null;
     }
-    if (!PROFILE_ACCOUNT_TYPES.some((item) => item.value === type)) {
-      setAccountFormError("Please choose a valid account type.");
+    if (isPersonal && !brokerName) {
+      setAccountFormError("Select a broker for personal accounts.");
       return null;
     }
-    if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) {
+    if (isProp && !name) {
+      setAccountFormError("Account name is required for prop accounts.");
+      return null;
+    }
+    if (isHelixTrade && !name) {
+      setAccountFormError("Linked account name is required.");
+      return null;
+    }
+    if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance) || startingBalance < 0 || currentBalance < 0) {
       setAccountFormError("Balances must be numeric.");
       return null;
     }
@@ -3286,64 +3342,37 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
     setAccountFormError("");
     return {
-      name,
+      name: isPersonal ? `${brokerName} Personal` : name,
       type,
       startingBalance,
       currentBalance,
+      brokerName: isPersonal ? brokerName : null,
       firmName: isProp ? firmName : null,
       dailyLossLimit: isProp ? dailyLossLimit : null,
       maxDrawdown: isProp ? maxDrawdown : null,
       profitTarget: isProp ? profitTarget : null,
       status: isProp ? status : null,
+      connectionMethod: isProp ? connectionMethod || "manual" : null,
+      linkedSource: isHelixTrade ? "helixTrade" : null,
+      isHelixLinked: isHelixTrade,
     };
   }, [accountForm]);
 
-  const submitAccountForm = useCallback(
-    (event) => {
-      event.preventDefault();
-      const validatedAccount = buildValidatedAccount();
-      if (!validatedAccount) return;
-
-      onProfileStateChange((prev) => {
-        const safePrev = sanitizeProfileState(prev);
-        const nextAccount = {
-          id: editingAccountId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          ...validatedAccount,
-        };
-        const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
-        const nextAccounts = editingAccountId
-          ? existingAccounts.map((account) => (account.id === editingAccountId ? nextAccount : account))
-          : [...existingAccounts, nextAccount];
-
-        return sanitizeProfileState({
-          ...safePrev,
-          accounts: nextAccounts,
-        });
+  const createAccountFromFlow = useCallback(() => {
+    const validatedAccount = buildValidatedAccount();
+    if (!validatedAccount) return;
+    onProfileStateChange((prev) => {
+      const safePrev = sanitizeProfileState(prev);
+      const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
+      return sanitizeProfileState({
+        ...safePrev,
+        accounts: [...existingAccounts, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...validatedAccount }],
       });
-
-      resetAccountForm();
-    },
-    [buildValidatedAccount, editingAccountId, onProfileStateChange, resetAccountForm]
-  );
-
-  const startEditAccount = useCallback((account) => {
-    setEditingAccountId(account.id);
-    setAccountForm({
-      name: account.name,
-      type: account.type,
-      startingBalance: String(account.startingBalance),
-      currentBalance: String(account.currentBalance),
-      firmName: account.firmName || "",
-      dailyLossLimit: account.dailyLossLimit ?? "",
-      maxDrawdown: account.maxDrawdown ?? "",
-      profitTarget: account.profitTarget ?? "",
-      status: account.status || "active",
     });
-    setSelectedPropFirmId("");
-    setSelectedTemplateId("");
-    setAccountFlowNotice("");
-    setAccountFormError("");
-  }, []);
+    setAccountFlowNotice("Account added.");
+    setIsAddAccountOpen(false);
+    resetAccountForm();
+  }, [buildValidatedAccount, onProfileStateChange, resetAccountForm]);
 
   const handleSelectPropFirm = useCallback((firmId) => {
     const firm = PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.id === firmId);
@@ -3378,38 +3407,6 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     [selectedFirm]
   );
 
-  const stageAccountForBatch = useCallback(() => {
-    const validatedAccount = buildValidatedAccount();
-    if (!validatedAccount) return;
-    setPendingAccounts((prev) => [...prev, { sessionId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...validatedAccount }]);
-    setAccountForm(createEmptyAccountForm());
-    setSelectedPropFirmId("");
-    setSelectedTemplateId("");
-    setAccountFlowNotice("Account staged. Add another or save the batch.");
-  }, [buildValidatedAccount]);
-
-  const removePendingAccount = useCallback((sessionId) => {
-    setPendingAccounts((prev) => prev.filter((account) => account.sessionId !== sessionId));
-  }, []);
-
-  const commitPendingAccounts = useCallback(() => {
-    if (!pendingAccounts.length) return;
-    onProfileStateChange((prev) => {
-      const safePrev = sanitizeProfileState(prev);
-      const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
-      const stagedAccounts = pendingAccounts.map(({ sessionId: _sessionId, ...account }) => ({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        ...account,
-      }));
-      return sanitizeProfileState({
-        ...safePrev,
-        accounts: [...existingAccounts, ...stagedAccounts],
-      });
-    });
-    setPendingAccounts([]);
-    setAccountFlowNotice("All staged accounts were added.");
-  }, [onProfileStateChange, pendingAccounts]);
-
   const deleteAccount = useCallback(
     (accountId) => {
       onProfileStateChange((prev) => {
@@ -3419,12 +3416,8 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
           accounts: safePrev.accounts.filter((account) => account.id !== accountId),
         });
       });
-
-      if (editingAccountId === accountId) {
-        resetAccountForm();
-      }
     },
-    [editingAccountId, onProfileStateChange, resetAccountForm]
+    [onProfileStateChange]
   );
 
   return (
@@ -3472,293 +3465,180 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Accounts</TinyLabel>
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
-        <form onSubmit={submitAccountForm} className="mt-3 space-y-3">
-          <label className="block">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
-            <input
-              type="text"
-              value={accountForm.name}
-              onChange={(event) => updateAccountFormField("name", event.target.value)}
-              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-              placeholder="Personal account"
-            />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account source</div>
-            <select
-              value={accountForm.type}
-              onChange={(event) => updateAccountFormField("type", event.target.value)}
-              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
-            >
-              {(editingAccountId ? PROFILE_ACCOUNT_TYPES : ACCOUNT_SOURCE_OPTIONS).map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="rounded-[16px] border border-white/65 bg-white/30 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Import options</div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setAccountFlowNotice("Tradovate connection UI placeholder only for this pass.")}
-                className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
-              >
-                Connect Tradovate
-              </button>
-              <button
-                type="button"
-                onClick={() => setAccountFlowNotice("Trade data upload UI placeholder only for this pass.")}
-                className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
-              >
-                Upload trade data
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Starting balance</div>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={accountForm.startingBalance}
-                onChange={(event) => updateAccountFormField("startingBalance", event.target.value)}
-                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                placeholder="0"
-              />
-            </label>
-            <label className="block">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Current balance</div>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={accountForm.currentBalance}
-                onChange={(event) => updateAccountFormField("currentBalance", event.target.value)}
-                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                placeholder="0"
-              />
-            </label>
-          </div>
-          {accountForm.type === "prop" ? (
-            <>
-              <label className="block">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prop firm</div>
-                <select
-                  value={selectedPropFirmId}
-                  onChange={(event) => handleSelectPropFirm(event.target.value)}
-                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
-                >
-                  <option value="">Select a futures prop firm</option>
-                  {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
-                    <option key={firm.id} value={firm.id}>
-                      {firm.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account template</div>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(event) => handleSelectTemplate(event.target.value)}
-                  disabled={!selectedFirm}
-                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-blue-200"
-                >
-                  <option value="">{selectedFirm ? "Select account template" : "Select firm first"}</option>
-                  {selectedFirm?.templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Firm name</div>
-                <input
-                  type="text"
-                  value={accountForm.firmName}
-                  onChange={(event) => updateAccountFormField("firmName", event.target.value)}
-                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                  placeholder="Apex / Topstep / etc."
-                />
-              </label>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Daily loss limit</div>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    value={accountForm.dailyLossLimit}
-                    onChange={(event) => updateAccountFormField("dailyLossLimit", event.target.value)}
-                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                    placeholder="e.g. 1000"
-                  />
-                </label>
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Max drawdown</div>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    value={accountForm.maxDrawdown}
-                    onChange={(event) => updateAccountFormField("maxDrawdown", event.target.value)}
-                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                    placeholder="e.g. 2500"
-                  />
-                </label>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Profit target</div>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    value={accountForm.profitTarget}
-                    onChange={(event) => updateAccountFormField("profitTarget", event.target.value)}
-                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                    placeholder="e.g. 3000"
-                  />
-                </label>
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</div>
-                  <select
-                    value={accountForm.status}
-                    onChange={(event) => updateAccountFormField("status", event.target.value)}
-                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
-                  >
-                    {PROP_ACCOUNT_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </>
-          ) : null}
-          {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
-          {accountFlowNotice ? <div className="text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="submit"
-              className="w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
-            >
-              {editingAccountId ? "Update account" : "Add account now"}
-            </button>
-            {!editingAccountId ? (
-              <button
-                type="button"
-                onClick={stageAccountForBatch}
-                className="w-full rounded-[18px] border border-white/70 bg-white/30 px-4 py-2.5 text-[13px] font-semibold text-slate-600 shadow-[0_8px_20px_rgba(140,158,194,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-colors hover:bg-white/40"
-              >
-                Add to session
-              </button>
-            ) : null}
-            {editingAccountId ? (
-              <button
-                type="button"
-                onClick={resetAccountForm}
-                className="w-full rounded-[18px] border border-white/70 bg-white/30 px-4 py-2.5 text-[13px] font-semibold text-slate-600 shadow-[0_8px_20px_rgba(140,158,194,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-colors hover:bg-white/40"
-              >
-                Cancel edit
-              </button>
-            ) : null}
-          </div>
-          {!editingAccountId && pendingAccounts.length ? (
-            <div className="space-y-2 rounded-[16px] border border-white/65 bg-white/25 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Session batch ({pendingAccounts.length})</div>
-                <button
-                  type="button"
-                  onClick={commitPendingAccounts}
-                  className="rounded-[12px] border border-white/70 bg-white/45 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
-                >
-                  Save all accounts
-                </button>
-              </div>
-              {pendingAccounts.map((account) => (
-                <div key={account.sessionId} className="flex items-center justify-between gap-2 rounded-[12px] border border-white/65 bg-white/35 px-2.5 py-2 text-[12px] text-slate-600">
-                  <span>
-                    {account.name} · {PROFILE_ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ?? account.type}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removePendingAccount(account.sessionId)}
-                    className="rounded-[10px] border border-white/70 bg-white/45 px-2 py-0.5 text-[10px] font-semibold text-slate-600 transition-colors hover:bg-white/55"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </form>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => (
-              <div key={account.id} className="rounded-[20px] border border-white/65 bg-white/35 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[14px] font-semibold text-slate-700">{account.name}</div>
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                      {PROFILE_ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ?? account.type}
+              <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/75 bg-white/55 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      {getAccountRowMeta(account).badge}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-semibold text-slate-700">{getAccountRowMeta(account).title}</div>
+                      <div className="truncate text-[11px] text-slate-500">{getAccountRowMeta(account).subtitle}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => startEditAccount(account)}
-                      className="rounded-[12px] border border-white/70 bg-white/45 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white/55"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteAccount(account.id)}
-                      className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteAccount(account.id)}
+                    className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
+                  >
+                    Delete
+                  </button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Starting</div>
-                    <div className="font-semibold text-slate-700">{formatCurrency(account.startingBalance)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Current</div>
-                    <div className="font-semibold text-slate-700">{formatCurrency(account.currentBalance)}</div>
-                  </div>
-                </div>
-                {account.type === "prop" ? (
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Firm</div>
-                      <div className="font-semibold text-slate-700">{account.firmName || "—"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Status</div>
-                      <div className="font-semibold text-slate-700">{account.status || "active"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Daily loss</div>
-                      <div className="font-semibold text-slate-700">{account.dailyLossLimit ? formatCurrency(account.dailyLossLimit) : "—"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Max DD</div>
-                      <div className="font-semibold text-slate-700">{account.maxDrawdown ? formatCurrency(account.maxDrawdown) : "—"}</div>
-                    </div>
-                  </div>
-                ) : null}
               </div>
             ))
           ) : (
             <div className="rounded-[20px] border border-dashed border-white/70 bg-white/20 px-4 py-3 text-[13px] text-slate-500">
-              No accounts yet. Add your first account above.
+              No attached accounts yet.
             </div>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setIsAddAccountOpen((prev) => !prev);
+            setAccountFormError("");
+            setAccountFlowNotice("");
+            if (!isAddAccountOpen) {
+              resetAccountForm();
+            }
+          }}
+          className="mt-3 w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
+        >
+          + Add Account
+        </button>
+        {isAddAccountOpen ? (
+          <div className="mt-3 space-y-3 rounded-[16px] border border-white/65 bg-white/25 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Account type</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {ADD_ACCOUNT_TYPES.map((item) => {
+                const active = normalizeAccountType(accountForm.type) === normalizeAccountType(item.value);
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => updateAccountFormField("type", item.value)}
+                    className={cn(
+                      "rounded-[14px] border px-3 py-2 text-left transition-colors",
+                      active ? "border-blue-200 bg-blue-50/70" : "border-white/70 bg-white/45 hover:bg-white/55"
+                    )}
+                  >
+                    <div className="text-[12px] font-semibold text-slate-700">{item.label}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">{item.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {normalizeAccountType(accountForm.type) === "personal" ? (
+              <div className="space-y-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select broker</div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {PERSONAL_BROKER_OPTIONS.map((broker) => (
+                    <button
+                      key={broker.id}
+                      type="button"
+                      onClick={() => updateAccountFormField("brokerName", broker.label)}
+                      className={cn(
+                        "rounded-[14px] border px-3 py-2 text-left text-[12px] font-semibold transition-colors",
+                        accountForm.brokerName === broker.label ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600 hover:bg-white/55"
+                      )}
+                    >
+                      {broker.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={createAccountFromFlow}
+                  className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55"
+                >
+                  Attach Personal Account
+                </button>
+              </div>
+            ) : null}
+
+            {normalizeAccountType(accountForm.type) === "prop" ? (
+              <div className="space-y-3">
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Prop firm</div>
+                  <select
+                    value={selectedPropFirmId}
+                    onChange={(event) => handleSelectPropFirm(event.target.value)}
+                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
+                  >
+                    <option value="">Select a futures prop firm</option>
+                    {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
+                      <option key={firm.id} value={firm.id}>
+                        {firm.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Template</div>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(event) => handleSelectTemplate(event.target.value)}
+                    disabled={!selectedFirm}
+                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-blue-200"
+                  >
+                    <option value="">{selectedFirm ? "Select account template" : "Select firm first"}</option>
+                    {selectedFirm?.templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
+                  <input
+                    type="text"
+                    value={accountForm.name}
+                    onChange={(event) => updateAccountFormField("name", event.target.value)}
+                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
+                    placeholder="PA 50K"
+                  />
+                </label>
+                <div className="rounded-[14px] border border-white/65 bg-white/30 p-2.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4 · Connection</div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => updateAccountFormField("connectionMethod", "tradovate")} className={cn("rounded-[12px] border px-2.5 py-1.5 text-[11px] font-semibold", accountForm.connectionMethod === "tradovate" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600")}>Connect Tradovate account</button>
+                    <button type="button" onClick={() => updateAccountFormField("connectionMethod", "csv")} className={cn("rounded-[12px] border px-2.5 py-1.5 text-[11px] font-semibold", accountForm.connectionMethod === "csv" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600")}>Upload CSV</button>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">Connection setup is placeholder UI in this pass; account attachment is supported.</div>
+                </div>
+                <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55">
+                  Attach Prop Account
+                </button>
+              </div>
+            ) : null}
+
+            {normalizeAccountType(accountForm.type) === "helixTrade" ? (
+              <div className="space-y-3">
+                <div className="rounded-[14px] border border-white/65 bg-white/30 p-2.5 text-[12px] text-slate-600">Link a Helix Trade account from the separate app. Sync status is placeholder for this pass.</div>
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linked account name</div>
+                  <input
+                    type="text"
+                    value={accountForm.name}
+                    onChange={(event) => updateAccountFormField("name", event.target.value)}
+                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
+                    placeholder="Helix Trade Primary"
+                  />
+                </label>
+                <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55">
+                  Link Helix Trade Account
+                </button>
+              </div>
+            ) : null}
+            {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
+            {accountFlowNotice ? <div className="text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
+          </div>
+        ) : null}
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">

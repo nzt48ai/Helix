@@ -55,7 +55,7 @@ export const PROFILE_DEFAULTS = {
   accounts: [],
 };
 
-const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper"]);
+const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper", "helixtrade"]);
 const PROP_ACCOUNT_STATUSES = new Set(["active", "breached", "passed", "funded"]);
 
 function sanitizeProfileAccount(value) {
@@ -76,6 +76,10 @@ function sanitizeProfileAccount(value) {
     type,
     startingBalance,
     currentBalance,
+    brokerName: typeof value.brokerName === "string" && value.brokerName.trim() ? value.brokerName.trim() : null,
+    connectionMethod: typeof value.connectionMethod === "string" && value.connectionMethod.trim() ? value.connectionMethod.trim() : null,
+    linkedSource: typeof value.linkedSource === "string" && value.linkedSource.trim() ? value.linkedSource.trim() : null,
+    isHelixLinked: typeof value.isHelixLinked === "boolean" ? value.isHelixLinked : false,
   };
 
   if (type !== "prop") {
