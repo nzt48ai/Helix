@@ -699,7 +699,7 @@ function PositionInstrumentSelector({
             <button
               type="button"
               onClick={onOpenSearch}
-              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4.5 py-2 text-left text-slate-700"
+              className="flex min-h-[42px] w-full appearance-none items-center justify-between gap-3 rounded-[28px] bg-transparent px-4.5 py-2 text-left text-slate-700"
               aria-label="Open futures instrument picker"
             >
               <span className="flex min-w-0 flex-1 items-center gap-3">
