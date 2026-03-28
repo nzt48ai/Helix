@@ -30,6 +30,7 @@ import { isDebugModeEnabled } from "./debugRuntime";
 import { shouldHandleTabPointerUp } from "./navInteractions";
 import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
+import { getDefaultInstrumentShortcuts, getInstrumentBySymbol } from "./instruments.js";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -48,12 +49,14 @@ const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
 const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
 const HERO_NUMBER_TEXT_CLASS =
   "bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text font-semibold leading-[1] tracking-[-0.08em] text-transparent animate-[balanceShimmer_10s_linear_infinite]";
-const POSITION_INSTRUMENTS = [
-  { key: "NQ", pointValue: 20, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
-  { key: "ES", pointValue: 50, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
-  { key: "MNQ", pointValue: 2, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
-  { key: "MES", pointValue: 5, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
-];
+const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) => ({
+  key: instrument.symbol,
+  pointValue: instrument.pointValue ?? 1,
+  defaults:
+    instrument.symbol === "ES" || instrument.symbol === "MES"
+      ? { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" }
+      : { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" },
+}));
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -193,7 +196,8 @@ function formatSecondsLabel(seconds) {
 }
 
 function derivePositionSetupSnapshot(positionState) {
-  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const selectedInstrumentFromCatalog = getInstrumentBySymbol(positionState.instrument || "MNQ");
+  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (selectedInstrumentFromCatalog?.symbol || "MNQ")) || POSITION_INSTRUMENTS[2];
   const entry = parseNullableNumberString(positionState.entry);
   const stop = parseNullableNumberString(positionState.stop);
   const target = parseNullableNumberString(positionState.target);
