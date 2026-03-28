@@ -55,7 +55,8 @@ export const PROFILE_DEFAULTS = {
   accounts: [],
 };
 
-const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim"]);
+const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper"]);
+const PROP_ACCOUNT_STATUSES = new Set(["active", "breached", "passed", "funded"]);
 
 function sanitizeProfileAccount(value) {
   if (!value || typeof value !== "object") return null;
@@ -69,12 +70,38 @@ function sanitizeProfileAccount(value) {
   if (!id || !name || !PROFILE_ACCOUNT_TYPES.has(type)) return null;
   if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) return null;
 
-  return {
+  const baseAccount = {
     id,
     name,
     type,
     startingBalance,
     currentBalance,
+  };
+
+  if (type !== "prop") {
+    return {
+      ...baseAccount,
+      firmName: null,
+      dailyLossLimit: null,
+      maxDrawdown: null,
+      profitTarget: null,
+      status: null,
+    };
+  }
+
+  const firmNameRaw = typeof value.firmName === "string" ? value.firmName.trim() : "";
+  const dailyLossLimit = Number(value.dailyLossLimit);
+  const maxDrawdown = Number(value.maxDrawdown);
+  const profitTarget = Number(value.profitTarget);
+  const statusRaw = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
+
+  return {
+    ...baseAccount,
+    firmName: firmNameRaw || null,
+    dailyLossLimit: Number.isFinite(dailyLossLimit) ? dailyLossLimit : null,
+    maxDrawdown: Number.isFinite(maxDrawdown) ? maxDrawdown : null,
+    profitTarget: Number.isFinite(profitTarget) ? profitTarget : null,
+    status: PROP_ACCOUNT_STATUSES.has(statusRaw) ? statusRaw : "active",
   };
 }
 

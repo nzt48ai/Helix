@@ -74,14 +74,18 @@ const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) =>
 const PROFILE_ACCOUNT_TYPES = [
   { value: "personal", label: "Personal" },
   { value: "prop", label: "Prop" },
-  { value: "sim", label: "Sim" },
+  { value: "paper", label: "Paper" },
+  { value: "sim", label: "Sim (Legacy)" },
 ];
+const PROP_ACCOUNT_STATUSES = ["active", "breached", "passed", "funded"];
 const DASHBOARD_ACCOUNT_FILTER_MODE_ALL = "all";
 const DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM = "custom";
 const DASHBOARD_TRADE_TYPE_FILTER_ALL = "all";
 const DASHBOARD_TRADE_TYPE_FILTER_LIVE = "live";
 const DASHBOARD_TRADE_TYPE_FILTER_PAPER = "paper";
 const UNASSIGNED_ACCOUNT_GROUP_ID = "__unassigned__";
+const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
+const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -258,6 +262,8 @@ function sanitizeTrade(value) {
   const accountId = typeof value.accountId === "string" && value.accountId.trim() ? value.accountId.trim() : "";
   const rMultiple = value.rMultiple === null || value.rMultiple === undefined || value.rMultiple === "" ? null : Number(value.rMultiple);
   const ruleViolation = typeof value.ruleViolation === "boolean" ? value.ruleViolation : false;
+  const ruleViolationReason =
+    typeof value.ruleViolationReason === "string" && value.ruleViolationReason.trim() ? value.ruleViolationReason.trim() : null;
   const tradeType = value.tradeType === "paper" ? "paper" : "live";
 
   if (!Number.isFinite(timestamp) || !Number.isFinite(pnl)) return null;
@@ -270,6 +276,7 @@ function sanitizeTrade(value) {
     accountId,
     rMultiple: Number.isFinite(rMultiple) ? rMultiple : null,
     ruleViolation,
+    ruleViolationReason,
     tradeType,
   };
 }
@@ -277,6 +284,114 @@ function sanitizeTrade(value) {
 function sanitizeTrades(value) {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeTrade).filter(Boolean);
+}
+
+function getTradeDayKey(timestamp) {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function sanitizePropNumeric(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function evaluatePropRuleViolations(trades = [], accounts = []) {
+  const accountMap = new Map(accounts.map((account) => [account.id, account]));
+  const propAccountIds = new Set(accounts.filter((account) => account.type === "prop").map((account) => account.id));
+  const violationsByTradeId = new Map();
+  const propProgressByAccountId = new Map();
+
+  const sortedTrades = [...trades].sort((a, b) => a.timestamp - b.timestamp);
+
+  propAccountIds.forEach((accountId) => {
+    const account = accountMap.get(accountId);
+    const accountTrades = sortedTrades.filter((trade) => trade.accountId === accountId);
+    const dailyLossLimit = sanitizePropNumeric(account?.dailyLossLimit);
+    const maxDrawdown = sanitizePropNumeric(account?.maxDrawdown);
+    const profitTarget = sanitizePropNumeric(account?.profitTarget);
+
+    const tradesByDay = accountTrades.reduce((acc, trade) => {
+      const dateKey = getTradeDayKey(trade.timestamp);
+      const next = [...(acc.get(dateKey) || []), trade];
+      acc.set(dateKey, next);
+      return acc;
+    }, new Map());
+
+    if (dailyLossLimit !== null) {
+      tradesByDay.forEach((dayTrades) => {
+        const dayPnl = dayTrades.reduce((sum, trade) => sum + trade.pnl, 0);
+        if (dayPnl < -dailyLossLimit) {
+          dayTrades.forEach((trade) => {
+            const existing = violationsByTradeId.get(trade.id) || new Set();
+            existing.add(RULE_REASON_DAILY_LOSS);
+            violationsByTradeId.set(trade.id, existing);
+          });
+        }
+      });
+    }
+
+    let cumulativePnl = 0;
+    let peakCumulativePnl = 0;
+    let drawdownBreached = false;
+    let targetReachedAt = null;
+
+    accountTrades.forEach((trade) => {
+      cumulativePnl += trade.pnl;
+      peakCumulativePnl = Math.max(peakCumulativePnl, cumulativePnl);
+      const drawdown = peakCumulativePnl - cumulativePnl;
+
+      if (maxDrawdown !== null && (drawdownBreached || drawdown > maxDrawdown)) {
+        drawdownBreached = true;
+        const existing = violationsByTradeId.get(trade.id) || new Set();
+        existing.add(RULE_REASON_MAX_DRAWDOWN);
+        violationsByTradeId.set(trade.id, existing);
+      }
+
+      if (targetReachedAt === null && profitTarget !== null && cumulativePnl >= profitTarget) {
+        targetReachedAt = trade.timestamp;
+      }
+    });
+
+    propProgressByAccountId.set(accountId, {
+      cumulativePnl,
+      dailyLossLimit,
+      maxDrawdown,
+      profitTarget,
+      targetReached: profitTarget !== null ? cumulativePnl >= profitTarget : false,
+      targetReachedAt,
+      progressToTargetPercent: profitTarget ? Math.max(0, (cumulativePnl / profitTarget) * 100) : null,
+    });
+  });
+
+  const evaluatedTrades = trades.map((trade) => {
+    if (!trade.accountId || !propAccountIds.has(trade.accountId)) {
+      return {
+        ...trade,
+        ruleViolation: false,
+        ruleViolationReason: null,
+      };
+    }
+
+    const reasons = violationsByTradeId.get(trade.id);
+    if (!reasons || reasons.size === 0) {
+      return {
+        ...trade,
+        ruleViolation: false,
+        ruleViolationReason: null,
+      };
+    }
+
+    return {
+      ...trade,
+      ruleViolation: true,
+      ruleViolationReason: Array.from(reasons).join("; "),
+    };
+  });
+
+  return {
+    evaluatedTrades,
+    propProgressByAccountId,
+  };
 }
 
 function AnimatedFormattedNumber({
@@ -2248,6 +2363,13 @@ function DashboardScreen({
     });
     return map;
   }, [accounts]);
+  const accountById = useMemo(() => {
+    const map = new Map();
+    accounts.forEach((account) => {
+      map.set(account.id, account);
+    });
+    return map;
+  }, [accounts]);
   const [tradeForm, setTradeForm] = useState(() => {
     const firstAccountId = accounts[0]?.id || "";
     return {
@@ -2255,7 +2377,6 @@ function DashboardScreen({
       accountId: firstAccountId,
       rMultiple: "",
       tradeType: DASHBOARD_TRADE_TYPE_FILTER_LIVE,
-      ruleViolation: false,
     };
   });
   const [tradeFormError, setTradeFormError] = useState("");
@@ -2279,6 +2400,8 @@ function DashboardScreen({
         accountId: normalizeTradeAccountId(trade.accountId, validAccountIds),
         tradeType: trade.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
         ruleViolation: Boolean(trade.ruleViolation),
+        ruleViolationReason:
+          typeof trade.ruleViolationReason === "string" && trade.ruleViolationReason.trim() ? trade.ruleViolationReason.trim() : null,
         rMultiple: Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : null,
       })),
     [trades, validAccountIds]
@@ -2352,7 +2475,15 @@ function DashboardScreen({
       .map(([accountKey, accountTrades]) => {
         const totalPnl = accountTrades.reduce((sum, trade) => sum + trade.pnl, 0);
         const totalR = accountTrades.reduce((sum, trade) => sum + (Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : 0), 0);
-        const hasRuleViolation = accountTrades.some((trade) => trade.ruleViolation);
+        const violatingTrades = accountTrades.filter((trade) => trade.ruleViolation);
+        const hasRuleViolation = violatingTrades.length > 0;
+        const violationReasonSummary = Array.from(
+          new Set(
+            violatingTrades
+              .map((trade) => (typeof trade.ruleViolationReason === "string" ? trade.ruleViolationReason : ""))
+              .filter(Boolean)
+          )
+        ).join("; ");
         const accountName = accountKey === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(accountKey) || "Unassigned";
         return {
           accountKey,
@@ -2361,6 +2492,7 @@ function DashboardScreen({
           totalR,
           tradeCount: accountTrades.length,
           hasRuleViolation,
+          violationReasonSummary: violationReasonSummary || null,
         };
       })
       .sort((a, b) => {
@@ -2369,6 +2501,14 @@ function DashboardScreen({
         return a.accountName.localeCompare(b.accountName);
       });
   }, [accountNameById, groupedTradesByDayAndAccount, selectedCalendarDateKey]);
+  const singleSelectedAccountId =
+    accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM && selectedAccountIds.length === 1 ? selectedAccountIds[0] : null;
+  const selectedAccountForSummary = singleSelectedAccountId ? accountById.get(singleSelectedAccountId) : null;
+  const propSummary =
+    selectedAccountForSummary?.type === "prop" && selectedAccountForSummary.propProgress
+      ? selectedAccountForSummary.propProgress
+      : null;
+
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -2398,9 +2538,8 @@ function DashboardScreen({
       accountId,
       rMultiple: Number.isFinite(parsedRMultiple) ? parsedRMultiple : null,
       tradeType: tradeForm.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
-      ruleViolation: Boolean(tradeForm.ruleViolation),
     });
-    setTradeForm((prev) => ({ ...prev, pnl: "", rMultiple: "", ruleViolation: false }));
+    setTradeForm((prev) => ({ ...prev, pnl: "", rMultiple: "" }));
     setTradeFormError("");
   };
 
@@ -2523,14 +2662,6 @@ function DashboardScreen({
               </select>
             </label>
           </div>
-          <label className="flex items-center justify-between gap-2 rounded-[14px] border border-white/70 bg-white/30 px-3 py-2 text-[13px] font-medium text-slate-600">
-            <span>Prop rule violation</span>
-            <input
-              type="checkbox"
-              checked={tradeForm.ruleViolation}
-              onChange={(event) => setTradeForm((prev) => ({ ...prev, ruleViolation: event.target.checked }))}
-            />
-          </label>
           {tradeFormError ? <div className="text-[12px] text-rose-500">{tradeFormError}</div> : null}
           <button
             type="submit"
@@ -2549,6 +2680,24 @@ function DashboardScreen({
         <MetricRowCard label="Win Rate (Filtered)" value={formatPercent(filteredTradeStats.winRate)} />
         <MetricRowCard label="Net P/L (Filtered)" value={formatCompactCurrency(filteredTradeStats.netPnl)} tone={filteredTradeStats.netPnl >= 0 ? "positive" : "negative"} />
       </div>
+      {selectedAccountForSummary?.type === "prop" ? (
+        <GlassCard className="rounded-[24px] p-4">
+          <TinyLabel>Prop Account Context</TinyLabel>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
+            <div>Status: <span className="font-semibold text-slate-700">{selectedAccountForSummary.status || "active"}</span></div>
+            <div>
+              Target progress:{" "}
+              <span className="font-semibold text-slate-700">
+                {propSummary?.progressToTargetPercent !== null && propSummary?.progressToTargetPercent !== undefined
+                  ? formatPercent(propSummary.progressToTargetPercent, 1)
+                  : "—"}
+              </span>
+            </div>
+            <div>Daily loss limit: <span className="font-semibold text-slate-700">{selectedAccountForSummary.dailyLossLimit ? formatCurrency(selectedAccountForSummary.dailyLossLimit) : "—"}</span></div>
+            <div>Max drawdown: <span className="font-semibold text-slate-700">{selectedAccountForSummary.maxDrawdown ? formatCurrency(selectedAccountForSummary.maxDrawdown) : "—"}</span></div>
+          </div>
+        </GlassCard>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Instrument" value={activeSnapshot.instrument} />
         <MetricRowCard label="Contracts" value={activeSnapshot.contracts} />
@@ -2626,6 +2775,11 @@ function DashboardScreen({
                               <span>{formatLocalDateMmDdYy(trade.timestamp)} · {formatLocalTimeAmPm(trade.timestamp)}</span>
                               <span>{trade.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? "Paper" : "Live"}</span>
                             </div>
+                            {trade.ruleViolation ? (
+                              <div className="mt-1.5 rounded-[10px] border border-amber-200/80 bg-amber-100/60 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                                ⚠ {trade.ruleViolationReason || "Rule violation detected"}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -2689,6 +2843,7 @@ function DashboardScreen({
                     <div>Total R: {group.totalR.toFixed(2)}R</div>
                     <div>Trades: {group.tradeCount}</div>
                   </div>
+                  {group.violationReasonSummary ? <div className="mt-1 text-[12px] font-medium text-amber-700">Reason: {group.violationReasonSummary}</div> : null}
                 </div>
               ))
             ) : (
@@ -2995,6 +3150,11 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     type: "personal",
     startingBalance: "",
     currentBalance: "",
+    firmName: "",
+    dailyLossLimit: "",
+    maxDrawdown: "",
+    profitTarget: "",
+    status: "active",
   });
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [accountFormError, setAccountFormError] = useState("");
@@ -3038,6 +3198,11 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       type: "personal",
       startingBalance: "",
       currentBalance: "",
+      firmName: "",
+      dailyLossLimit: "",
+      maxDrawdown: "",
+      profitTarget: "",
+      status: "active",
     });
     setEditingAccountId(null);
     setAccountFormError("");
@@ -3055,6 +3220,12 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       const type = String(accountForm.type || "").trim().toLowerCase();
       const startingBalance = Number(accountForm.startingBalance);
       const currentBalance = Number(accountForm.currentBalance);
+      const isProp = type === "prop";
+      const firmName = String(accountForm.firmName || "").trim();
+      const dailyLossLimit = Number(accountForm.dailyLossLimit);
+      const maxDrawdown = Number(accountForm.maxDrawdown);
+      const profitTarget = Number(accountForm.profitTarget);
+      const status = String(accountForm.status || "").trim().toLowerCase();
 
       if (!name) {
         setAccountFormError("Account name is required.");
@@ -3068,6 +3239,26 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
         setAccountFormError("Balances must be numeric.");
         return;
       }
+      if (isProp && !firmName) {
+        setAccountFormError("Firm name is required for prop accounts.");
+        return;
+      }
+      if (isProp && !Number.isFinite(dailyLossLimit)) {
+        setAccountFormError("Daily loss limit must be numeric for prop accounts.");
+        return;
+      }
+      if (isProp && !Number.isFinite(maxDrawdown)) {
+        setAccountFormError("Max drawdown must be numeric for prop accounts.");
+        return;
+      }
+      if (isProp && !Number.isFinite(profitTarget)) {
+        setAccountFormError("Profit target must be numeric for prop accounts.");
+        return;
+      }
+      if (isProp && !PROP_ACCOUNT_STATUSES.includes(status)) {
+        setAccountFormError("Prop status must be active, breached, passed, or funded.");
+        return;
+      }
 
       onProfileStateChange((prev) => {
         const safePrev = sanitizeProfileState(prev);
@@ -3077,6 +3268,11 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
           type,
           startingBalance,
           currentBalance,
+          firmName: isProp ? firmName : null,
+          dailyLossLimit: isProp ? dailyLossLimit : null,
+          maxDrawdown: isProp ? maxDrawdown : null,
+          profitTarget: isProp ? profitTarget : null,
+          status: isProp ? status : null,
         };
         const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
         const nextAccounts = editingAccountId
@@ -3101,6 +3297,11 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       type: account.type,
       startingBalance: String(account.startingBalance),
       currentBalance: String(account.currentBalance),
+      firmName: account.firmName || "",
+      dailyLossLimit: account.dailyLossLimit ?? "",
+      maxDrawdown: account.maxDrawdown ?? "",
+      profitTarget: account.profitTarget ?? "",
+      status: account.status || "active",
     });
     setAccountFormError("");
   }, []);
@@ -3216,6 +3417,71 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
               />
             </label>
           </div>
+          {accountForm.type === "prop" ? (
+            <>
+              <label className="block">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Firm name</div>
+                <input
+                  type="text"
+                  value={accountForm.firmName}
+                  onChange={(event) => updateAccountFormField("firmName", event.target.value)}
+                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                  placeholder="Apex / Topstep / etc."
+                />
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Daily loss limit</div>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={accountForm.dailyLossLimit}
+                    onChange={(event) => updateAccountFormField("dailyLossLimit", event.target.value)}
+                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                    placeholder="e.g. 1000"
+                  />
+                </label>
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Max drawdown</div>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={accountForm.maxDrawdown}
+                    onChange={(event) => updateAccountFormField("maxDrawdown", event.target.value)}
+                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                    placeholder="e.g. 2500"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Profit target</div>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={accountForm.profitTarget}
+                    onChange={(event) => updateAccountFormField("profitTarget", event.target.value)}
+                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+                    placeholder="e.g. 3000"
+                  />
+                </label>
+                <label className="block">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</div>
+                  <select
+                    value={accountForm.status}
+                    onChange={(event) => updateAccountFormField("status", event.target.value)}
+                    className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
+                  >
+                    {PROP_ACCOUNT_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </>
+          ) : null}
           {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
@@ -3273,6 +3539,26 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                     <div className="font-semibold text-slate-700">{formatCurrency(account.currentBalance)}</div>
                   </div>
                 </div>
+                {account.type === "prop" ? (
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Firm</div>
+                      <div className="font-semibold text-slate-700">{account.firmName || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Status</div>
+                      <div className="font-semibold text-slate-700">{account.status || "active"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Daily loss</div>
+                      <div className="font-semibold text-slate-700">{account.dailyLossLimit ? formatCurrency(account.dailyLossLimit) : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Max DD</div>
+                      <div className="font-semibold text-slate-700">{account.maxDrawdown ? formatCurrency(account.maxDrawdown) : "—"}</div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))
           ) : (
@@ -3423,6 +3709,22 @@ export default function App() {
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
   const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
+  const { evaluatedTrades, propProgressByAccountId } = useMemo(
+    () => evaluatePropRuleViolations(trades, profileState.accounts),
+    [trades, profileState.accounts]
+  );
+  const accountsWithPropProgress = useMemo(
+    () =>
+      profileState.accounts.map((account) =>
+        account.type === "prop"
+          ? {
+              ...account,
+              propProgress: propProgressByAccountId.get(account.id) || null,
+            }
+          : account
+      ),
+    [profileState.accounts, propProgressByAccountId]
+  );
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
   const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
     setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
@@ -3586,14 +3888,31 @@ export default function App() {
   }, [syncActiveTabFromLocationHash]);
 
   useEffect(() => {
+    if (trades.length !== evaluatedTrades.length) {
+      setTrades(evaluatedTrades);
+      return;
+    }
+    const changed = trades.some((trade, index) => {
+      const evaluatedTrade = evaluatedTrades[index];
+      if (!evaluatedTrade) return false;
+      return (
+        Boolean(trade.ruleViolation) !== Boolean(evaluatedTrade.ruleViolation) ||
+        (trade.ruleViolationReason || null) !== (evaluatedTrade.ruleViolationReason || null)
+      );
+    });
+    if (!changed) return;
+    setTrades(evaluatedTrades);
+  }, [evaluatedTrades, trades]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     persistAppState({
       positionState,
       compoundState: safeCompoundState,
       viewState,
-      trades,
+      trades: evaluatedTrades,
     });
-  }, [positionState, safeCompoundState, trades, viewState]);
+  }, [evaluatedTrades, positionState, safeCompoundState, viewState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3610,8 +3929,8 @@ export default function App() {
         dashboardSnapshot={dashboardSnapshot}
         range={viewState.dashboardRange}
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
-        trades={trades}
-        accounts={profileState.accounts}
+        trades={evaluatedTrades}
+        accounts={accountsWithPropProgress}
         accountFilterMode={viewState.dashboardAccountFilterMode}
         selectedAccountIds={viewState.dashboardSelectedAccountIds}
         includeUnassigned={viewState.dashboardIncludeUnassigned}

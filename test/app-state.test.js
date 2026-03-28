@@ -118,6 +118,40 @@ test("profile state sanitization safely hydrates account lists", () => {
   assert.equal(profile.accounts[1].currentBalance, 1900);
 });
 
+test("prop account fields are sanitized safely for legacy and malformed payloads", () => {
+  const profile = sanitizeProfileState({
+    accounts: [
+      {
+        id: "prop-1",
+        name: "Prop One",
+        type: "prop",
+        startingBalance: 50000,
+        currentBalance: 50500,
+        firmName: "  Apex  ",
+        dailyLossLimit: "1000",
+        maxDrawdown: "2500",
+        profitTarget: "3000",
+        status: "FUNDED",
+      },
+      {
+        id: "prop-2",
+        name: "Broken Prop",
+        type: "prop",
+        startingBalance: 50000,
+        currentBalance: 49800,
+        dailyLossLimit: "bad",
+        status: "unknown",
+      },
+    ],
+  });
+
+  assert.equal(profile.accounts[0].firmName, "Apex");
+  assert.equal(profile.accounts[0].dailyLossLimit, 1000);
+  assert.equal(profile.accounts[0].status, "funded");
+  assert.equal(profile.accounts[1].dailyLossLimit, null);
+  assert.equal(profile.accounts[1].status, "active");
+});
+
 test("profile persistence reset clears profile state and defaults accounts", () => {
   const storage = createStorage();
   assert.equal(
