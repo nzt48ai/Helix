@@ -1,6 +1,7 @@
 import { SUPPORTED_INSTRUMENT_SYMBOLS } from "./instruments.js";
 
 export const APP_STORAGE_KEY = "helix.app.state.v1";
+export const PROFILE_STORAGE_KEY = "helix.profile.settings.v1";
 
 export const POSITION_INSTRUMENT_KEYS = SUPPORTED_INSTRUMENT_SYMBOLS;
 export const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
@@ -37,6 +38,18 @@ export const VIEW_DEFAULTS = {
   dashboardRange: "Month",
 };
 
+export const PROFILE_DEFAULTS = {
+  displayName: "",
+  username: "",
+  avatar: "",
+  theme: "light",
+  shareSettings: {
+    showAvatar: true,
+    showUsername: true,
+    showAccountName: true,
+  },
+};
+
 export function resolveTabFromHash(hashValue = "") {
   const trimmedHash = String(hashValue).replace(/^#/, "").trim().toLowerCase();
   if (!trimmedHash) return "position";
@@ -52,6 +65,19 @@ export function readStoredAppState(storage) {
   if (!safeStorage) return null;
   try {
     const raw = safeStorage.getItem(APP_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readStoredProfileState(storage) {
+  const safeStorage = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
+  if (!safeStorage) return null;
+  try {
+    const raw = safeStorage.getItem(PROFILE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -116,6 +142,22 @@ export function sanitizeViewState(value) {
   };
 }
 
+export function sanitizeProfileState(value) {
+  if (!value || typeof value !== "object") return { ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } };
+  const shareSettings = value.shareSettings && typeof value.shareSettings === "object" ? value.shareSettings : {};
+  return {
+    displayName: typeof value.displayName === "string" ? value.displayName : PROFILE_DEFAULTS.displayName,
+    username: typeof value.username === "string" ? value.username.replace(/^@+/, "") : PROFILE_DEFAULTS.username,
+    avatar: typeof value.avatar === "string" ? value.avatar : PROFILE_DEFAULTS.avatar,
+    theme: value.theme === "dark" ? "dark" : PROFILE_DEFAULTS.theme,
+    shareSettings: {
+      showAvatar: typeof shareSettings.showAvatar === "boolean" ? shareSettings.showAvatar : PROFILE_DEFAULTS.shareSettings.showAvatar,
+      showUsername: typeof shareSettings.showUsername === "boolean" ? shareSettings.showUsername : PROFILE_DEFAULTS.shareSettings.showUsername,
+      showAccountName: typeof shareSettings.showAccountName === "boolean" ? shareSettings.showAccountName : PROFILE_DEFAULTS.shareSettings.showAccountName,
+    },
+  };
+}
+
 export function persistAppState(nextState, storage) {
   const safeStorage = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
   if (!safeStorage) return false;
@@ -127,11 +169,33 @@ export function persistAppState(nextState, storage) {
   }
 }
 
+export function persistProfileState(nextState, storage) {
+  const safeStorage = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
+  if (!safeStorage) return false;
+  try {
+    safeStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(nextState));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function clearPersistedAppState(storage) {
   const safeStorage = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
   if (!safeStorage) return false;
   try {
     safeStorage.removeItem(APP_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPersistedProfileState(storage) {
+  const safeStorage = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
+  if (!safeStorage) return false;
+  try {
+    safeStorage.removeItem(PROFILE_STORAGE_KEY);
     return true;
   } catch {
     return false;
