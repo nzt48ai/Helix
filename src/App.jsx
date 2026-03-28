@@ -5,7 +5,7 @@ import {
   Calculator,
   ChartColumn,
   LineChart,
-  LayoutGrid,
+  Undo2,
   Search,
   Plus,
   Sparkles,
@@ -766,14 +766,15 @@ function PositionInstrumentSelector({
               type="button"
               onClick={onOpenSearch}
               whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
-              className="flex min-h-[42px] w-full appearance-none items-center justify-between gap-3 rounded-[28px] bg-transparent px-4.5 py-2 text-left text-slate-700"
+              className="grid min-h-[42px] w-full appearance-none grid-cols-[34px_minmax(0,1fr)_34px] items-center rounded-[28px] bg-transparent px-4.5 py-2 text-slate-700"
               aria-label="Open futures instrument picker"
             >
-              <span className="flex min-w-0 flex-1 items-center gap-3">
+              <span aria-hidden="true" className="inline-flex h-[34px] w-[34px]" />
+              <span className="flex min-w-0 items-center justify-center gap-3 text-center">
                 <span className="shrink-0 text-[13px] font-semibold leading-none tracking-[0.02em] text-slate-700">{customInstrument?.symbol || value}</span>
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
+                <span className="min-w-0 truncate text-[13px] font-medium leading-none text-slate-500">{customInstrument?.name || "Custom futures instrument"}</span>
               </span>
-              <span className="shrink-0">
+              <span className="inline-flex h-[34px] w-[34px] items-center justify-center">
                 <motion.span
                   role="button"
                   tabIndex={0}
@@ -789,9 +790,9 @@ function PositionInstrumentSelector({
                   }}
                   whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
                   className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-slate-200/65 bg-white/35 text-slate-400 transition-colors hover:border-slate-300/80 hover:bg-slate-100/70 hover:text-slate-600 active:bg-slate-200/70"
-                  aria-label="Return to compact favorite instruments"
+                  aria-label="Return to default instrument shortcuts"
                 >
-                  <LayoutGrid size={17} />
+                  <Undo2 size={17} />
                 </motion.span>
               </span>
             </motion.button>
