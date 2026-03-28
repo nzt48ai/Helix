@@ -46,6 +46,8 @@ const NAV_META = {
 const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
 
 const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
+const HERO_NUMBER_TEXT_CLASS =
+  "bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text font-semibold leading-[1] tracking-[-0.08em] text-transparent animate-[balanceShimmer_10s_linear_infinite]";
 const POSITION_INSTRUMENTS = [
   { key: "NQ", pointValue: 20, defaults: { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" } },
   { key: "ES", pointValue: 50, defaults: { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" } },
@@ -493,8 +495,8 @@ function SharePortraitCard({
         <div className="mt-6 min-w-0 text-center">
           <div
             className={cn(
-              "overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(42px,10.5vw,62px)] font-semibold leading-[1] tracking-[-0.04em] tabular-nums",
-              shareType === "REPLAY" ? "text-cyan-700" : "text-slate-700"
+              "mx-auto mt-3 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
+              HERO_NUMBER_TEXT_CLASS
             )}
           >
             {heroMetric}
@@ -680,19 +682,23 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="inline-flex items-center justify-center gap-1.5"
+            className="grid w-full max-w-[420px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5"
           >
-            {prefix ? <span className="pointer-events-none text-[26px] font-semibold leading-none tracking-[-0.04em] text-slate-400/90">{prefix}</span> : null}
+            <div className="flex justify-end">
+              {prefix ? <span className="pointer-events-none text-[26px] font-semibold leading-none tracking-[-0.04em] text-slate-400/90">{prefix}</span> : null}
+            </div>
             <input
               type="text"
               inputMode="numeric"
               value={value ?? ""}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className="h-full w-auto min-w-0 bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text text-center font-semibold leading-[1] tracking-[-0.08em] text-transparent outline-none animate-[balanceShimmer_10s_linear_infinite] caret-slate-500"
+              className={cn("h-full w-auto min-w-0 text-center outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
               aria-label={label}
             />
-            {suffix ? <span className="pointer-events-none text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
+            <div className="flex justify-start">
+              {suffix ? <span className="pointer-events-none text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
+            </div>
           </motion.div>
         </div>
 
