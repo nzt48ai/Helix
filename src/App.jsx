@@ -654,6 +654,8 @@ function BalanceHeroCard({
 }) {
   const reduceMotion = useReducedMotion();
   const computedFontSizeClass = fixedFontSize ? undefined : "text-[clamp(30px,10vw,52px)]";
+  const inputValue = value ?? "";
+  const inputWidthCh = Math.max(1, String(inputValue).length);
 
   return (
     <GlassCard
@@ -698,11 +700,15 @@ function BalanceHeroCard({
             <input
               type="text"
               inputMode="numeric"
-              value={value ?? ""}
+              value={inputValue}
               onChange={(e) => onChange?.(e.target.value)}
-              style={fixedFontSize ? { fontSize: `${fixedFontSize}px`, lineHeight: 1 } : { lineHeight: 1 }}
+              style={
+                fixedFontSize
+                  ? { fontSize: `${fixedFontSize}px`, lineHeight: 1, width: `${inputWidthCh}ch` }
+                  : { lineHeight: 1, width: `${inputWidthCh}ch` }
+              }
               className={cn(
-                "h-full w-auto min-w-0 max-w-full text-center outline-none caret-slate-500",
+                "h-full min-w-0 max-w-full text-center outline-none caret-slate-500",
                 computedFontSizeClass,
                 HERO_NUMBER_TEXT_CLASS
               )}
