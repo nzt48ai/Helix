@@ -132,6 +132,12 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
         maxDrawdown: "2500",
         profitTarget: "3000",
         status: "FUNDED",
+        linkedProvider: {
+          provider: "tradovate",
+          providerAccountId: "12345",
+          providerAccountName: "Main Eval",
+          connectionStatus: "connected",
+        },
       },
       {
         id: "prop-2",
@@ -148,8 +154,11 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
   assert.equal(profile.accounts[0].firmName, "Apex");
   assert.equal(profile.accounts[0].dailyLossLimit, 1000);
   assert.equal(profile.accounts[0].status, "funded");
+  assert.equal(profile.accounts[0].linkedProvider?.provider, "tradovate");
+  assert.equal(profile.accounts[0].linkedProvider?.providerAccountId, "12345");
   assert.equal(profile.accounts[1].dailyLossLimit, null);
   assert.equal(profile.accounts[1].status, "active");
+  assert.equal(profile.accounts[1].linkedProvider, null);
 });
 
 test("profile persistence reset clears profile state and defaults accounts", () => {

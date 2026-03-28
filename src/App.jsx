@@ -41,6 +41,16 @@ import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } fro
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
 import { PROP_FIRM_TEMPLATE_CONFIG } from "./accountTemplates";
+import {
+  clearTradovateOAuthParamsFromLocation,
+  consumePendingPropTradovateFlow,
+  createReturnToUrl,
+  disconnectTradovateSession,
+  fetchTradovateSessionAccounts,
+  persistPendingPropTradovateFlow,
+  readTradovateOAuthResultFromLocation,
+  startTradovateOAuth,
+} from "./tradovateConnection";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -272,6 +282,9 @@ function createEmptyAccountForm() {
     profitTarget: "",
     status: "active",
     connectionMethod: "",
+    tradovateSessionId: "",
+    linkedProviderAccountId: "",
+    linkedProviderAccountName: "",
     linkedSource: "",
     isHelixLinked: false,
   };
@@ -3186,11 +3199,15 @@ function normalizeAccountType(value = "") {
 function getAccountRowMeta(account) {
   const normalizedType = normalizeAccountType(account?.type);
   if (normalizedType === "prop") {
+    const linkedTradovateName =
+      account?.linkedProvider?.provider === "tradovate" && account?.linkedProvider?.providerAccountName
+        ? ` · Tradovate ${account.linkedProvider.providerAccountName}`
+        : "";
     return {
       badge: "PROP",
       logoText: account?.firmName ? account.firmName.slice(0, 2).toUpperCase() : "PF",
       title: account?.name || "Prop Account",
-      subtitle: account?.firmName || "Prop Firm",
+      subtitle: `${account?.firmName || "Prop Firm"}${linkedTradovateName}`,
     };
   }
   if (normalizedType === "helixTrade") {
@@ -3225,6 +3242,8 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
   const [accountFlowNotice, setAccountFlowNotice] = useState("");
   const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [tradovateAccounts, setTradovateAccounts] = useState([]);
+  const [isTradovateBusy, setIsTradovateBusy] = useState(false);
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3264,6 +3283,8 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     setAccountFlowStep(1);
     setSelectedPropFirmId("");
     setSelectedTemplateId("");
+    setTradovateAccounts([]);
+    setIsTradovateBusy(false);
     setAccountFormError("");
     setAccountFlowNotice("");
   }, []);
@@ -3301,6 +3322,93 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     [selectedPropFirmId]
   );
 
+  const loadTradovateAccountsForSession = useCallback(async (sessionId) => {
+    if (!sessionId) return;
+    setIsTradovateBusy(true);
+    try {
+      const response = await fetchTradovateSessionAccounts(sessionId);
+      setTradovateAccounts(Array.isArray(response.accounts) ? response.accounts : []);
+      setAccountForm((prev) => ({ ...prev, tradovateSessionId: sessionId }));
+      setAccountFlowNotice("Tradovate connected. Select an account to continue.");
+      setAccountFormError("");
+    } catch (error) {
+      setAccountFormError(error.message || "Unable to load Tradovate accounts.");
+      setTradovateAccounts([]);
+    } finally {
+      setIsTradovateBusy(false);
+    }
+  }, []);
+
+  const startTradovateConnection = useCallback(async () => {
+    if (isTradovateBusy) return;
+    setIsTradovateBusy(true);
+    setAccountFormError("");
+    setAccountFlowNotice("");
+
+    try {
+      persistPendingPropTradovateFlow({
+        isAddAccountOpen: true,
+        accountFlowStep: 5,
+        selectedPropFirmId,
+        selectedTemplateId,
+        accountForm,
+      });
+      const { authorizeUrl } = await startTradovateOAuth(createReturnToUrl());
+      if (!authorizeUrl) throw new Error("Missing Tradovate authorization URL.");
+      window.location.assign(authorizeUrl);
+    } catch (error) {
+      setAccountFormError(error.message || "Unable to start Tradovate connection.");
+      setIsTradovateBusy(false);
+    }
+  }, [accountForm, isTradovateBusy, selectedPropFirmId, selectedTemplateId]);
+
+  const handleDisconnectTradovate = useCallback(async () => {
+    const sessionId = accountForm.tradovateSessionId;
+    if (!sessionId) return;
+    setIsTradovateBusy(true);
+    try {
+      await disconnectTradovateSession(sessionId);
+    } catch {
+      // Best effort disconnect for in-memory session cleanup.
+    } finally {
+      setAccountForm((prev) => ({
+        ...prev,
+        tradovateSessionId: "",
+        linkedProviderAccountId: "",
+        linkedProviderAccountName: "",
+      }));
+      setTradovateAccounts([]);
+      setIsTradovateBusy(false);
+      setAccountFlowNotice("Tradovate disconnected.");
+    }
+  }, [accountForm.tradovateSessionId]);
+
+  useEffect(() => {
+    const oauthResult = readTradovateOAuthResultFromLocation();
+    if (!oauthResult) return;
+
+    const pendingFlow = consumePendingPropTradovateFlow();
+    if (pendingFlow?.isAddAccountOpen) {
+      setIsAddAccountOpen(true);
+      setAccountFlowStep(pendingFlow.accountFlowStep || 5);
+      setSelectedPropFirmId(pendingFlow.selectedPropFirmId || "");
+      setSelectedTemplateId(pendingFlow.selectedTemplateId || "");
+      setAccountForm((prev) => ({ ...prev, ...(pendingFlow.accountForm || {}) }));
+    }
+
+    if (oauthResult.status === "success" && oauthResult.sessionId) {
+      setIsAddAccountOpen(true);
+      setAccountFlowStep(5);
+      loadTradovateAccountsForSession(oauthResult.sessionId);
+    } else if (oauthResult.status === "error") {
+      setIsAddAccountOpen(true);
+      setAccountFlowStep(5);
+      setAccountFormError(`Tradovate connection failed: ${oauthResult.error || "Unknown error"}.`);
+    }
+
+    clearTradovateOAuthParamsFromLocation();
+  }, [loadTradovateAccountsForSession]);
+
   const buildValidatedAccount = useCallback(() => {
     const type = normalizeAccountType(accountForm.type);
     const isProp = type === "prop";
@@ -3316,6 +3424,8 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     const profitTarget = Number(accountForm.profitTarget);
     const status = String(accountForm.status || "").trim().toLowerCase();
     const connectionMethod = String(accountForm.connectionMethod || "").trim();
+    const linkedProviderAccountId = String(accountForm.linkedProviderAccountId || "").trim();
+    const linkedProviderAccountName = String(accountForm.linkedProviderAccountName || "").trim();
 
     if (!ACCOUNT_SOURCE_OPTIONS.some((item) => normalizeAccountType(item.value) === type)) {
       setAccountFormError("Please choose Personal, Prop, or Helix Trade.");
@@ -3357,6 +3467,14 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       setAccountFormError("Prop status must be active, breached, passed, or funded.");
       return null;
     }
+    if (isProp && connectionMethod === "tradovate" && !accountForm.tradovateSessionId) {
+      setAccountFormError("Connect Tradovate before attaching this account.");
+      return null;
+    }
+    if (isProp && connectionMethod === "tradovate" && !linkedProviderAccountId) {
+      setAccountFormError("Select a Tradovate account to link.");
+      return null;
+    }
 
     setAccountFormError("");
     return {
@@ -3371,6 +3489,15 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       profitTarget: isProp ? profitTarget : null,
       status: isProp ? status : null,
       connectionMethod: isProp ? connectionMethod || "manual" : null,
+      linkedProvider:
+        isProp && connectionMethod === "tradovate"
+          ? {
+              provider: "tradovate",
+              providerAccountId: linkedProviderAccountId,
+              providerAccountName: linkedProviderAccountName || linkedProviderAccountId,
+              connectionStatus: "connected",
+            }
+          : null,
       linkedSource: isHelixTrade ? "helixTrade" : null,
       isHelixLinked: isHelixTrade,
     };
@@ -3660,7 +3787,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                     <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "tradovate"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "tradovate" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Connect Tradovate account</button>
                     <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "csv" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Upload CSV</button>
                   </div>
-                  <div className="text-[11px] text-slate-500">Connection setup is placeholder UI in this pass; account attachment is supported.</div>
+                  <div className="text-[11px] text-slate-500">Choose how this prop account will be attached.</div>
                 </div>
               ) : null}
 
@@ -3677,6 +3804,71 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                       placeholder="PA 50K"
                     />
                   </label>
+                  {accountForm.connectionMethod === "tradovate" ? (
+                    <div className="space-y-2 rounded-[14px] border border-white/70 bg-white/40 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tradovate link</div>
+                        {accountForm.tradovateSessionId ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                            Connected
+                          </span>
+                        ) : null}
+                      </div>
+                      {!accountForm.tradovateSessionId ? (
+                        <button
+                          type="button"
+                          onClick={startTradovateConnection}
+                          disabled={isTradovateBusy}
+                          className="w-full rounded-[12px] border border-white/70 bg-white/65 px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isTradovateBusy ? "Redirecting to Tradovate..." : "Connect Tradovate"}
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="text-[11px] text-slate-500">Select the Tradovate account to link.</div>
+                          {isTradovateBusy ? <div className="text-[11px] text-slate-500">Loading accounts…</div> : null}
+                          {tradovateAccounts.length ? (
+                            <div className="grid max-h-[30dvh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
+                              {tradovateAccounts.map((item) => (
+                                <button
+                                  key={item.providerAccountId}
+                                  type="button"
+                                  onClick={() => {
+                                    updateAccountFormField("linkedProviderAccountId", item.providerAccountId);
+                                    updateAccountFormField("linkedProviderAccountName", item.providerAccountName);
+                                    if (!String(accountForm.name || "").trim()) {
+                                      updateAccountFormField("name", item.providerAccountName);
+                                    }
+                                  }}
+                                  className={cn(
+                                    "rounded-[12px] border px-2.5 py-2 text-left text-[11px] font-semibold",
+                                    accountForm.linkedProviderAccountId === item.providerAccountId
+                                      ? "border-blue-200 bg-blue-50/70 text-slate-700"
+                                      : "border-white/70 bg-white/55 text-slate-700"
+                                  )}
+                                >
+                                  <div>{item.providerAccountName}</div>
+                                  <div className="mt-0.5 text-[10px] font-medium text-slate-500">ID: {item.providerAccountId}</div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={handleDisconnectTradovate}
+                            className="w-full rounded-[12px] border border-white/70 bg-white/55 px-3 py-1.5 text-[11px] font-semibold text-slate-600"
+                          >
+                            Disconnect Tradovate
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  {accountForm.connectionMethod === "csv" ? (
+                    <div className="rounded-[14px] border border-white/70 bg-white/40 px-3 py-2 text-[11px] text-slate-500">
+                      CSV linking remains placeholder in this pass. You can still attach the prop account manually.
+                    </div>
+                  ) : null}
                   <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
                     Attach Prop Account
                   </button>

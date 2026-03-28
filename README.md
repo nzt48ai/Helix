@@ -16,6 +16,42 @@ npm run dev
 
 Then open the local Vite URL shown in the terminal (usually `http://localhost:5173`).
 
+### Tradovate OAuth backend (required for Prop → Connect Tradovate)
+
+Tradovate OAuth secrets are handled server-side only. Start the backend in a second terminal:
+
+```bash
+npm run dev:tradovate-server
+```
+
+Required environment variables for the backend:
+
+```bash
+TRADOVATE_CLIENT_ID=...
+TRADOVATE_CLIENT_SECRET=...
+```
+
+Optional environment variables:
+
+```bash
+# Frontend origin allowed by backend CORS and OAuth callback return.
+HELIX_FRONTEND_ORIGIN=http://localhost:5173
+# Backend listen port.
+TRADOVATE_SERVER_PORT=8787
+# Backend OAuth callback URI registered with Tradovate.
+TRADOVATE_REDIRECT_URI=http://localhost:8787/api/tradovate/oauth/callback
+# Tradovate endpoints (override for different environments if needed).
+TRADOVATE_AUTH_URL=https://trader.tradovate.com/oauth
+TRADOVATE_TOKEN_URL=https://live-api-d.tradovate.com/auth/oauthtoken
+TRADOVATE_API_BASE_URL=https://live-api-d.tradovate.com/v1
+```
+
+Optional frontend environment variable:
+
+```bash
+VITE_TRADOVATE_BACKEND_URL=http://localhost:8787
+```
+
 ## Build for static deployment
 
 ```bash
