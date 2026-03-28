@@ -1252,7 +1252,10 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   };
 
   const resolvePriceValue = (key, persistedValue) => (activePriceField === key ? priceDrafts[key] : persistedValue);
-  const pickerResults = useMemo(() => searchInstruments(instrumentQuery, { limit: 120 }), [instrumentQuery]);
+  const pickerResults = useMemo(() => {
+    const defaultShortcutSymbols = new Set(POSITION_INSTRUMENTS.map((item) => item.key));
+    return searchInstruments(instrumentQuery, { limit: 120 }).filter((instrumentOption) => !defaultShortcutSymbols.has(instrumentOption.symbol) && instrumentOption.category !== "Rates");
+  }, [instrumentQuery]);
 
   return (
     <div className="space-y-4 pb-4">
