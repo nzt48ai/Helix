@@ -48,7 +48,31 @@ export const PROFILE_DEFAULTS = {
     showUsername: true,
     showAccountName: true,
   },
+  accounts: [],
 };
+
+const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim"]);
+
+function sanitizeProfileAccount(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : null;
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  const type = typeof value.type === "string" ? value.type.trim().toLowerCase() : "";
+  const startingBalance = Number(value.startingBalance);
+  const currentBalance = Number(value.currentBalance);
+
+  if (!id || !name || !PROFILE_ACCOUNT_TYPES.has(type)) return null;
+  if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) return null;
+
+  return {
+    id,
+    name,
+    type,
+    startingBalance,
+    currentBalance,
+  };
+}
 
 export function resolveTabFromHash(hashValue = "") {
   const trimmedHash = String(hashValue).replace(/^#/, "").trim().toLowerCase();
@@ -145,6 +169,7 @@ export function sanitizeViewState(value) {
 export function sanitizeProfileState(value) {
   if (!value || typeof value !== "object") return { ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } };
   const shareSettings = value.shareSettings && typeof value.shareSettings === "object" ? value.shareSettings : {};
+  const accounts = Array.isArray(value.accounts) ? value.accounts.map(sanitizeProfileAccount).filter(Boolean) : PROFILE_DEFAULTS.accounts;
   return {
     displayName: typeof value.displayName === "string" ? value.displayName : PROFILE_DEFAULTS.displayName,
     username: typeof value.username === "string" ? value.username.replace(/^@+/, "") : PROFILE_DEFAULTS.username,
@@ -155,6 +180,7 @@ export function sanitizeProfileState(value) {
       showUsername: typeof shareSettings.showUsername === "boolean" ? shareSettings.showUsername : PROFILE_DEFAULTS.shareSettings.showUsername,
       showAccountName: typeof shareSettings.showAccountName === "boolean" ? shareSettings.showAccountName : PROFILE_DEFAULTS.shareSettings.showAccountName,
     },
+    accounts,
   };
 }
 
