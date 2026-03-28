@@ -50,6 +50,11 @@ const NAV_META = {
 const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
 
 const SPRING = { type: "spring", stiffness: 430, damping: 34, mass: 0.7 };
+const IOS_FADE_EASE = [0.22, 1, 0.36, 1];
+const SHARE_CARD_TRANSITION = { type: "spring", stiffness: 320, damping: 30, mass: 0.9 };
+const FUTURES_PICKER_TRANSITION = { type: "spring", stiffness: 300, damping: 28, mass: 0.95 };
+const OVERLAY_FADE_TRANSITION = { duration: 0.18, ease: IOS_FADE_EASE };
+const TAB_CONTENT_TRANSITION = { duration: 0.2, ease: IOS_FADE_EASE };
 const HERO_NUMBER_TEXT_CLASS =
   "bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text font-semibold leading-[1] tracking-[-0.08em] text-transparent animate-[balanceShimmer_10s_linear_infinite]";
 const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) => ({
@@ -329,7 +334,9 @@ function SharePortraitCard({
   secondaryMetrics,
   footerLabel,
   setupMissingMessage = "",
+  disableMotion = false,
 }) {
+  const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
   const directionPillClassName = cn(
     "shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
@@ -364,10 +371,22 @@ function SharePortraitCard({
   const directionalStoryLine = hasDirectionalStoryLine
     ? `${normalizedDirection} from ${entryValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → ${targetValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
     : "";
+  const shouldReduce = reduceMotion || disableMotion;
+  const shareContentInitial = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 };
+  const shareContentAnimate = shouldReduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 };
+  const shareContentExit = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 4 };
 
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
-      <div className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={`share-content-${shareType}`}
+          className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700"
+          initial={shareContentInitial}
+          animate={shareContentAnimate}
+          exit={shareContentExit}
+          transition={shouldReduce ? TAB_CONTENT_TRANSITION : SHARE_CARD_TRANSITION}
+        >
         <div className="flex items-center justify-between gap-3">
           <div className="shrink-0 inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
             {shareType}
@@ -533,8 +552,9 @@ function SharePortraitCard({
           <div className="mt-3 rounded-[16px] border border-slate-200/80 bg-white/45 px-4 py-2.5 text-center text-[12px] text-slate-500">{setupMissingMessage}</div>
         ) : null}
 
-        <div className="mt-auto pt-4 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
-      </div>
+          <div className="mt-auto pt-4 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -770,41 +790,62 @@ function PositionInstrumentSelector({
 }
 
 function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose, onSelect }) {
-  if (!open) return null;
+  const reduceMotion = useReducedMotion();
+  const pickerInitial = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.985 };
+  const pickerAnimate = reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 };
+  const pickerExit = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.99 };
+
   return (
-    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-slate-900/30 p-4 sm:items-center" role="dialog" aria-modal="true" aria-label="Futures instrument picker">
-      <div className="w-full max-w-[460px] overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.9))] shadow-[0_18px_42px_rgba(120,140,190,0.25)]">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200/75 px-4 py-3">
-          <div className="text-[13px] font-semibold tracking-[-0.015em] text-slate-700">Futures Instrument Picker</div>
-          <button type="button" onClick={onClose} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close futures picker">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="px-4 py-3">
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search by symbol or name"
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[14px] font-medium text-slate-700 outline-none ring-blue-200 transition focus:ring-2"
-            aria-label="Search futures instruments"
+    <AnimatePresence initial={false}>
+      {open ? (
+        <div className="fixed inset-0 z-[1200] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true" aria-label="Futures instrument picker">
+          <motion.div
+            className="absolute inset-0 bg-slate-900/30"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={OVERLAY_FADE_TRANSITION}
           />
+          <motion.div
+            className="relative w-full max-w-[460px] overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.9))] shadow-[0_18px_42px_rgba(120,140,190,0.25)]"
+            initial={pickerInitial}
+            animate={pickerAnimate}
+            exit={pickerExit}
+            transition={reduceMotion ? TAB_CONTENT_TRANSITION : FUTURES_PICKER_TRANSITION}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/75 px-4 py-3">
+              <div className="text-[13px] font-semibold tracking-[-0.015em] text-slate-700">Futures Instrument Picker</div>
+              <button type="button" onClick={onClose} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close futures picker">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-4 py-3">
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder="Search by symbol or name"
+                className="w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[14px] font-medium text-slate-700 outline-none ring-blue-200 transition focus:ring-2"
+                aria-label="Search futures instruments"
+              />
+            </div>
+            <div className="max-h-[52vh] overflow-y-auto px-2 pb-2">
+              {results.map((instrument) => (
+                <button
+                  key={instrument.symbol}
+                  type="button"
+                  onClick={() => onSelect(instrument.symbol)}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100/70"
+                >
+                  <span className="w-[44px] shrink-0 text-[13px] font-semibold tracking-[0.02em] text-slate-700">{instrument.symbol}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-500">{instrument.name}</span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
         </div>
-        <div className="max-h-[52vh] overflow-y-auto px-2 pb-2">
-          {results.map((instrument) => (
-            <button
-              key={instrument.symbol}
-              type="button"
-              onClick={() => onSelect(instrument.symbol)}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100/70"
-            >
-              <span className="w-[44px] shrink-0 text-[13px] font-semibold tracking-[0.02em] text-slate-700">{instrument.symbol}</span>
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-500">{instrument.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 
@@ -2280,6 +2321,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            disableMotion={false}
           />
         </div>
         <SegmentedControl
@@ -2326,6 +2368,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            disableMotion
           />
         </div>
       </div>
@@ -2748,10 +2791,10 @@ export default function App() {
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={activeTab}
-                initial={reduceMotion ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(3px)" }}
-                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 10, scale: 0.995 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, x: 0, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -10, scale: 0.995 }}
+                transition={TAB_CONTENT_TRANSITION}
               >
                 {screen}
               </motion.div>
