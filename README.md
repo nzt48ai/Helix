@@ -52,6 +52,13 @@ Optional frontend environment variable:
 VITE_TRADOVATE_BACKEND_URL=http://localhost:8787
 ```
 
+Backend route scaffold implemented:
+
+- `POST /api/tradovate/connect/start`
+- `GET /api/tradovate/oauth/callback`
+- `GET /api/tradovate/accounts`
+- `POST /api/tradovate/disconnect`
+
 ## Build for static deployment
 
 ```bash

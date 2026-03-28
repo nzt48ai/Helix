@@ -46,7 +46,7 @@ import {
   consumePendingPropTradovateFlow,
   createReturnToUrl,
   disconnectTradovateSession,
-  fetchTradovateSessionAccounts,
+  fetchTradovateAccounts,
   persistPendingPropTradovateFlow,
   readTradovateOAuthResultFromLocation,
   startTradovateOAuth,
@@ -3199,9 +3199,10 @@ function normalizeAccountType(value = "") {
 function getAccountRowMeta(account) {
   const normalizedType = normalizeAccountType(account?.type);
   if (normalizedType === "prop") {
+    const providerConnection = account?.connection || account?.linkedProvider || null;
     const linkedTradovateName =
-      account?.linkedProvider?.provider === "tradovate" && account?.linkedProvider?.providerAccountName
-        ? ` · Tradovate ${account.linkedProvider.providerAccountName}`
+      providerConnection?.provider === "tradovate" && providerConnection?.providerAccountName
+        ? ` · Tradovate ${providerConnection.providerAccountName}`
         : "";
     return {
       badge: "PROP",
@@ -3322,13 +3323,12 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     [selectedPropFirmId]
   );
 
-  const loadTradovateAccountsForSession = useCallback(async (sessionId) => {
-    if (!sessionId) return;
+  const loadTradovateAccounts = useCallback(async () => {
     setIsTradovateBusy(true);
     try {
-      const response = await fetchTradovateSessionAccounts(sessionId);
+      const response = await fetchTradovateAccounts();
       setTradovateAccounts(Array.isArray(response.accounts) ? response.accounts : []);
-      setAccountForm((prev) => ({ ...prev, tradovateSessionId: sessionId }));
+      setAccountForm((prev) => ({ ...prev, tradovateSessionId: "connected" }));
       setAccountFlowNotice("Tradovate connected. Select an account to continue.");
       setAccountFormError("");
     } catch (error) {
@@ -3367,7 +3367,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     if (!sessionId) return;
     setIsTradovateBusy(true);
     try {
-      await disconnectTradovateSession(sessionId);
+      await disconnectTradovateSession();
     } catch {
       // Best effort disconnect for in-memory session cleanup.
     } finally {
@@ -3396,10 +3396,10 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       setAccountForm((prev) => ({ ...prev, ...(pendingFlow.accountForm || {}) }));
     }
 
-    if (oauthResult.status === "success" && oauthResult.sessionId) {
+    if (oauthResult.status === "success") {
       setIsAddAccountOpen(true);
-      setAccountFlowStep(5);
-      loadTradovateAccountsForSession(oauthResult.sessionId);
+      setAccountFlowStep(6);
+      loadTradovateAccounts();
     } else if (oauthResult.status === "error") {
       setIsAddAccountOpen(true);
       setAccountFlowStep(5);
@@ -3407,7 +3407,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     }
 
     clearTradovateOAuthParamsFromLocation();
-  }, [loadTradovateAccountsForSession]);
+  }, [loadTradovateAccounts]);
 
   const buildValidatedAccount = useCallback(() => {
     const type = normalizeAccountType(accountForm.type);
@@ -3490,6 +3490,15 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       status: isProp ? status : null,
       connectionMethod: isProp ? connectionMethod || "manual" : null,
       linkedProvider:
+        isProp && connectionMethod === "tradovate"
+          ? {
+              provider: "tradovate",
+              providerAccountId: linkedProviderAccountId,
+              providerAccountName: linkedProviderAccountName || linkedProviderAccountId,
+              connectionStatus: "connected",
+            }
+          : null,
+      connection:
         isProp && connectionMethod === "tradovate"
           ? {
               provider: "tradovate",
@@ -3793,7 +3802,9 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 5 ? (
                 <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 5 · Confirm prop account</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {accountForm.connectionMethod === "tradovate" ? "Step 5 · Connect Tradovate" : "Step 5 · Confirm prop account"}
+                  </div>
                   <label className="block">
                     <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
                     <input
@@ -3825,34 +3836,15 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                         </button>
                       ) : (
                         <div className="space-y-2">
-                          <div className="text-[11px] text-slate-500">Select the Tradovate account to link.</div>
-                          {isTradovateBusy ? <div className="text-[11px] text-slate-500">Loading accounts…</div> : null}
-                          {tradovateAccounts.length ? (
-                            <div className="grid max-h-[30dvh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
-                              {tradovateAccounts.map((item) => (
-                                <button
-                                  key={item.providerAccountId}
-                                  type="button"
-                                  onClick={() => {
-                                    updateAccountFormField("linkedProviderAccountId", item.providerAccountId);
-                                    updateAccountFormField("linkedProviderAccountName", item.providerAccountName);
-                                    if (!String(accountForm.name || "").trim()) {
-                                      updateAccountFormField("name", item.providerAccountName);
-                                    }
-                                  }}
-                                  className={cn(
-                                    "rounded-[12px] border px-2.5 py-2 text-left text-[11px] font-semibold",
-                                    accountForm.linkedProviderAccountId === item.providerAccountId
-                                      ? "border-blue-200 bg-blue-50/70 text-slate-700"
-                                      : "border-white/70 bg-white/55 text-slate-700"
-                                  )}
-                                >
-                                  <div>{item.providerAccountName}</div>
-                                  <div className="mt-0.5 text-[10px] font-medium text-slate-500">ID: {item.providerAccountId}</div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
+                          {isTradovateBusy ? <div className="text-[11px] text-slate-500">Loading linked session…</div> : null}
+                          <button
+                            type="button"
+                            onClick={() => setAccountFlowStep(6)}
+                            disabled={isTradovateBusy}
+                            className="w-full rounded-[12px] border border-white/70 bg-white/65 px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Continue to account picker
+                          </button>
                           <button
                             type="button"
                             onClick={handleDisconnectTradovate}
@@ -3869,6 +3861,54 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                       CSV linking remains placeholder in this pass. You can still attach the prop account manually.
                     </div>
                   ) : null}
+                  {accountForm.connectionMethod !== "tradovate" ? (
+                    <button
+                      type="button"
+                      onClick={createAccountFromFlow}
+                      className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70"
+                    >
+                      Attach Prop Account
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 6 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 6 · Pick Tradovate account</div>
+                  <div className="rounded-[14px] border border-white/70 bg-white/40 p-2.5">
+                    <div className="text-[11px] text-slate-500">Select the Tradovate account to link.</div>
+                    {isTradovateBusy ? <div className="mt-2 text-[11px] text-slate-500">Loading accounts…</div> : null}
+                    {!isTradovateBusy && !tradovateAccounts.length ? (
+                      <div className="mt-2 text-[11px] text-slate-500">No Tradovate accounts were returned for this session.</div>
+                    ) : null}
+                    {tradovateAccounts.length ? (
+                      <div className="mt-2 grid max-h-[30dvh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
+                        {tradovateAccounts.map((item) => (
+                          <button
+                            key={item.providerAccountId}
+                            type="button"
+                            onClick={() => {
+                              updateAccountFormField("linkedProviderAccountId", item.providerAccountId);
+                              updateAccountFormField("linkedProviderAccountName", item.providerAccountName);
+                              if (!String(accountForm.name || "").trim()) {
+                                updateAccountFormField("name", item.providerAccountName);
+                              }
+                            }}
+                            className={cn(
+                              "rounded-[12px] border px-2.5 py-2 text-left text-[11px] font-semibold",
+                              accountForm.linkedProviderAccountId === item.providerAccountId
+                                ? "border-blue-200 bg-blue-50/70 text-slate-700"
+                                : "border-white/70 bg-white/55 text-slate-700"
+                            )}
+                          >
+                            <div>{item.providerAccountName}</div>
+                            <div className="mt-0.5 text-[10px] font-medium text-slate-500">ID: {item.providerAccountId}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
                     Attach Prop Account
                   </button>

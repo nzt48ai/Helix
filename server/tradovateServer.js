@@ -19,6 +19,7 @@ function json(res, statusCode, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Access-Control-Allow-Origin": FRONTEND_ORIGIN,
+    "Access-Control-Allow-Credentials": "true",
     Vary: "Origin",
   });
   res.end(JSON.stringify(payload));
@@ -30,6 +31,30 @@ function redirect(res, location) {
     "Cache-Control": "no-store",
   });
   res.end();
+}
+
+function parseCookies(cookieHeader = "") {
+  return String(cookieHeader || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((acc, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex <= 0) return acc;
+      const key = part.slice(0, separatorIndex).trim();
+      const value = decodeURIComponent(part.slice(separatorIndex + 1));
+      if (key) acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function buildSessionCookie(sessionId, maxAgeMs = SESSION_TTL_MS) {
+  const maxAgeSec = Math.max(0, Math.floor(maxAgeMs / 1000));
+  return `helix_tradovate_session=${encodeURIComponent(sessionId)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}`;
+}
+
+function clearSessionCookie() {
+  return "helix_tradovate_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
 }
 
 function readRequestBody(req) {
@@ -149,6 +174,7 @@ const server = http.createServer(async (req, res) => {
       "Access-Control-Allow-Origin": FRONTEND_ORIGIN,
       "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Credentials": "true",
       Vary: "Origin",
     });
     res.end();
@@ -163,7 +189,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && requestUrl.pathname === "/api/tradovate/oauth/start") {
+  if (req.method === "POST" && ["/api/tradovate/oauth/start", "/api/tradovate/connect/start"].includes(requestUrl.pathname)) {
     if (!validateServerConfiguration()) {
       json(res, 503, {
         error: "Tradovate backend is not configured. Set TRADOVATE_CLIENT_ID and TRADOVATE_CLIENT_SECRET.",
@@ -255,13 +281,12 @@ const server = http.createServer(async (req, res) => {
       });
 
       // TODO: Replace in-memory session storage with encrypted persistent storage per user.
-      redirect(
-        res,
-        buildFrontendCallbackUrl(returnTo, {
-          tvStatus: "success",
-          tvSession: sessionId,
-        })
-      );
+      res.writeHead(302, {
+        Location: buildFrontendCallbackUrl(returnTo, { tvStatus: "success" }),
+        "Set-Cookie": buildSessionCookie(sessionId),
+        "Cache-Control": "no-store",
+      });
+      res.end();
     } catch (error) {
       redirect(
         res,
@@ -275,8 +300,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   const sessionMatch = requestUrl.pathname.match(/^\/api\/tradovate\/sessions\/([^/]+)\/accounts$/);
-  if (req.method === "GET" && sessionMatch) {
-    const sessionId = decodeURIComponent(sessionMatch[1]);
+  if (req.method === "GET" && (requestUrl.pathname === "/api/tradovate/accounts" || Boolean(sessionMatch))) {
+    const cookies = parseCookies(req.headers.cookie || "");
+    const sessionId =
+      requestUrl.pathname === "/api/tradovate/accounts"
+        ? String(cookies.helix_tradovate_session || "").trim()
+        : decodeURIComponent(sessionMatch[1]);
     const session = tradovateSessions.get(sessionId);
     if (!session) {
       json(res, 404, { error: "Tradovate session not found or expired." });
@@ -291,10 +320,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   const disconnectMatch = requestUrl.pathname.match(/^\/api\/tradovate\/sessions\/([^/]+)$/);
-  if (req.method === "DELETE" && disconnectMatch) {
-    const sessionId = decodeURIComponent(disconnectMatch[1]);
+  if (
+    (req.method === "POST" && requestUrl.pathname === "/api/tradovate/disconnect") ||
+    (req.method === "DELETE" && disconnectMatch)
+  ) {
+    const cookies = parseCookies(req.headers.cookie || "");
+    const sessionId =
+      req.method === "POST" ? String(cookies.helix_tradovate_session || "").trim() : decodeURIComponent(disconnectMatch[1]);
     tradovateSessions.delete(sessionId);
-    json(res, 200, { ok: true });
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": FRONTEND_ORIGIN,
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin",
+      "Set-Cookie": clearSessionCookie(),
+    });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 

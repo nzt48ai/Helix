@@ -27,26 +27,30 @@ export function createReturnToUrl() {
 }
 
 export async function startTradovateOAuth(returnTo) {
-  const response = await fetch(buildEndpoint("/api/tradovate/oauth/start"), {
+  const response = await fetch(buildEndpoint("/api/tradovate/connect/start"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ returnTo }),
   });
 
   return parseJson(response);
 }
 
-export async function fetchTradovateSessionAccounts(sessionId) {
-  const response = await fetch(buildEndpoint(`/api/tradovate/sessions/${encodeURIComponent(sessionId)}/accounts`), {
+export async function fetchTradovateAccounts() {
+  const response = await fetch(buildEndpoint("/api/tradovate/accounts"), {
     method: "GET",
+    credentials: "include",
   });
 
   return parseJson(response);
 }
 
-export async function disconnectTradovateSession(sessionId) {
-  const response = await fetch(buildEndpoint(`/api/tradovate/sessions/${encodeURIComponent(sessionId)}`), {
-    method: "DELETE",
+export async function disconnectTradovateSession() {
+  const response = await fetch(buildEndpoint("/api/tradovate/disconnect"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   });
 
   return parseJson(response);
