@@ -40,6 +40,7 @@ import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
+import { PROP_FIRM_TEMPLATE_CONFIG } from "./accountTemplates";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -77,6 +78,7 @@ const PROFILE_ACCOUNT_TYPES = [
   { value: "paper", label: "Paper" },
   { value: "sim", label: "Sim (Legacy)" },
 ];
+const ACCOUNT_SOURCE_OPTIONS = PROFILE_ACCOUNT_TYPES.filter((type) => type.value !== "sim");
 const PROP_ACCOUNT_STATUSES = ["active", "breached", "passed", "funded"];
 const DASHBOARD_ACCOUNT_FILTER_MODE_ALL = "all";
 const DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM = "custom";
@@ -244,6 +246,20 @@ function formatSecondsLabel(seconds) {
 
 function createTradeId() {
   return `trade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createEmptyAccountForm() {
+  return {
+    name: "",
+    type: "personal",
+    startingBalance: "",
+    currentBalance: "",
+    firmName: "",
+    dailyLossLimit: "",
+    maxDrawdown: "",
+    profitTarget: "",
+    status: "active",
+  };
 }
 
 function normalizeTradeAccountId(accountId, validAccountIds) {
@@ -3145,19 +3161,13 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 }
 
 function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
-  const [accountForm, setAccountForm] = useState({
-    name: "",
-    type: "personal",
-    startingBalance: "",
-    currentBalance: "",
-    firmName: "",
-    dailyLossLimit: "",
-    maxDrawdown: "",
-    profitTarget: "",
-    status: "active",
-  });
+  const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [accountFormError, setAccountFormError] = useState("");
+  const [accountFlowNotice, setAccountFlowNotice] = useState("");
+  const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [pendingAccounts, setPendingAccounts] = useState([]);
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3193,86 +3203,112 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
   );
 
   const resetAccountForm = useCallback(() => {
-    setAccountForm({
-      name: "",
-      type: "personal",
-      startingBalance: "",
-      currentBalance: "",
-      firmName: "",
-      dailyLossLimit: "",
-      maxDrawdown: "",
-      profitTarget: "",
-      status: "active",
-    });
+    setAccountForm(createEmptyAccountForm());
     setEditingAccountId(null);
+    setSelectedPropFirmId("");
+    setSelectedTemplateId("");
     setAccountFormError("");
+    setAccountFlowNotice("");
   }, []);
 
   const updateAccountFormField = useCallback((key, value) => {
+    setAccountFlowNotice("");
+    if (key === "type" && value !== "prop") {
+      setSelectedPropFirmId("");
+      setSelectedTemplateId("");
+      setAccountForm((prev) => ({
+        ...prev,
+        type: value,
+        firmName: "",
+        dailyLossLimit: "",
+        maxDrawdown: "",
+        profitTarget: "",
+        status: "active",
+      }));
+      return;
+    }
     setAccountForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const selectedFirm = useMemo(
+    () => PROP_FIRM_TEMPLATE_CONFIG.find((firm) => firm.id === selectedPropFirmId) || null,
+    [selectedPropFirmId]
+  );
+  const selectedTemplate = useMemo(
+    () => selectedFirm?.templates.find((template) => template.id === selectedTemplateId) || null,
+    [selectedFirm, selectedTemplateId]
+  );
+
+  const buildValidatedAccount = useCallback(() => {
+    const name = accountForm.name.trim();
+    const type = String(accountForm.type || "").trim().toLowerCase();
+    const startingBalance = Number(accountForm.startingBalance);
+    const currentBalance = Number(accountForm.currentBalance);
+    const isProp = type === "prop";
+    const firmName = String(accountForm.firmName || "").trim();
+    const dailyLossLimit = Number(accountForm.dailyLossLimit);
+    const maxDrawdown = Number(accountForm.maxDrawdown);
+    const profitTarget = Number(accountForm.profitTarget);
+    const status = String(accountForm.status || "").trim().toLowerCase();
+
+    if (!name) {
+      setAccountFormError("Account name is required.");
+      return null;
+    }
+    if (!PROFILE_ACCOUNT_TYPES.some((item) => item.value === type)) {
+      setAccountFormError("Please choose a valid account type.");
+      return null;
+    }
+    if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) {
+      setAccountFormError("Balances must be numeric.");
+      return null;
+    }
+    if (isProp && !firmName) {
+      setAccountFormError("Firm name is required for prop accounts.");
+      return null;
+    }
+    if (isProp && !Number.isFinite(dailyLossLimit)) {
+      setAccountFormError("Daily loss limit must be numeric for prop accounts.");
+      return null;
+    }
+    if (isProp && !Number.isFinite(maxDrawdown)) {
+      setAccountFormError("Max drawdown must be numeric for prop accounts.");
+      return null;
+    }
+    if (isProp && !Number.isFinite(profitTarget)) {
+      setAccountFormError("Profit target must be numeric for prop accounts.");
+      return null;
+    }
+    if (isProp && !PROP_ACCOUNT_STATUSES.includes(status)) {
+      setAccountFormError("Prop status must be active, breached, passed, or funded.");
+      return null;
+    }
+
+    setAccountFormError("");
+    return {
+      name,
+      type,
+      startingBalance,
+      currentBalance,
+      firmName: isProp ? firmName : null,
+      dailyLossLimit: isProp ? dailyLossLimit : null,
+      maxDrawdown: isProp ? maxDrawdown : null,
+      profitTarget: isProp ? profitTarget : null,
+      status: isProp ? status : null,
+    };
+  }, [accountForm]);
 
   const submitAccountForm = useCallback(
     (event) => {
       event.preventDefault();
-
-      const name = accountForm.name.trim();
-      const type = String(accountForm.type || "").trim().toLowerCase();
-      const startingBalance = Number(accountForm.startingBalance);
-      const currentBalance = Number(accountForm.currentBalance);
-      const isProp = type === "prop";
-      const firmName = String(accountForm.firmName || "").trim();
-      const dailyLossLimit = Number(accountForm.dailyLossLimit);
-      const maxDrawdown = Number(accountForm.maxDrawdown);
-      const profitTarget = Number(accountForm.profitTarget);
-      const status = String(accountForm.status || "").trim().toLowerCase();
-
-      if (!name) {
-        setAccountFormError("Account name is required.");
-        return;
-      }
-      if (!PROFILE_ACCOUNT_TYPES.some((item) => item.value === type)) {
-        setAccountFormError("Please choose a valid account type.");
-        return;
-      }
-      if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) {
-        setAccountFormError("Balances must be numeric.");
-        return;
-      }
-      if (isProp && !firmName) {
-        setAccountFormError("Firm name is required for prop accounts.");
-        return;
-      }
-      if (isProp && !Number.isFinite(dailyLossLimit)) {
-        setAccountFormError("Daily loss limit must be numeric for prop accounts.");
-        return;
-      }
-      if (isProp && !Number.isFinite(maxDrawdown)) {
-        setAccountFormError("Max drawdown must be numeric for prop accounts.");
-        return;
-      }
-      if (isProp && !Number.isFinite(profitTarget)) {
-        setAccountFormError("Profit target must be numeric for prop accounts.");
-        return;
-      }
-      if (isProp && !PROP_ACCOUNT_STATUSES.includes(status)) {
-        setAccountFormError("Prop status must be active, breached, passed, or funded.");
-        return;
-      }
+      const validatedAccount = buildValidatedAccount();
+      if (!validatedAccount) return;
 
       onProfileStateChange((prev) => {
         const safePrev = sanitizeProfileState(prev);
         const nextAccount = {
           id: editingAccountId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name,
-          type,
-          startingBalance,
-          currentBalance,
-          firmName: isProp ? firmName : null,
-          dailyLossLimit: isProp ? dailyLossLimit : null,
-          maxDrawdown: isProp ? maxDrawdown : null,
-          profitTarget: isProp ? profitTarget : null,
-          status: isProp ? status : null,
+          ...validatedAccount,
         };
         const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
         const nextAccounts = editingAccountId
@@ -3287,7 +3323,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
       resetAccountForm();
     },
-    [accountForm, editingAccountId, onProfileStateChange, resetAccountForm]
+    [buildValidatedAccount, editingAccountId, onProfileStateChange, resetAccountForm]
   );
 
   const startEditAccount = useCallback((account) => {
@@ -3303,8 +3339,76 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       profitTarget: account.profitTarget ?? "",
       status: account.status || "active",
     });
+    setSelectedPropFirmId("");
+    setSelectedTemplateId("");
+    setAccountFlowNotice("");
     setAccountFormError("");
   }, []);
+
+  const handleSelectPropFirm = useCallback((firmId) => {
+    const firm = PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.id === firmId);
+    setSelectedPropFirmId(firmId);
+    setSelectedTemplateId("");
+    if (firm) {
+      setAccountForm((prev) => ({
+        ...prev,
+        firmName: firm.label,
+      }));
+    }
+  }, []);
+
+  const handleSelectTemplate = useCallback(
+    (templateId) => {
+      setSelectedTemplateId(templateId);
+      if (!selectedFirm) return;
+      const template = selectedFirm.templates.find((item) => item.id === templateId);
+      if (!template) return;
+      setAccountForm((prev) => ({
+        ...prev,
+        name: prev.name || template.label,
+        firmName: template.firmName,
+        dailyLossLimit: String(template.dailyLossLimit),
+        maxDrawdown: String(template.maxDrawdown),
+        profitTarget: String(template.profitTarget),
+        status: template.status,
+      }));
+      setAccountFormError("");
+      setAccountFlowNotice(`Template "${template.label}" applied. You can still edit any field.`);
+    },
+    [selectedFirm]
+  );
+
+  const stageAccountForBatch = useCallback(() => {
+    const validatedAccount = buildValidatedAccount();
+    if (!validatedAccount) return;
+    setPendingAccounts((prev) => [...prev, { sessionId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...validatedAccount }]);
+    setAccountForm(createEmptyAccountForm());
+    setSelectedPropFirmId("");
+    setSelectedTemplateId("");
+    setAccountFlowNotice("Account staged. Add another or save the batch.");
+  }, [buildValidatedAccount]);
+
+  const removePendingAccount = useCallback((sessionId) => {
+    setPendingAccounts((prev) => prev.filter((account) => account.sessionId !== sessionId));
+  }, []);
+
+  const commitPendingAccounts = useCallback(() => {
+    if (!pendingAccounts.length) return;
+    onProfileStateChange((prev) => {
+      const safePrev = sanitizeProfileState(prev);
+      const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
+      const stagedAccounts = pendingAccounts.map(({ sessionId: _sessionId, ...account }) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...account,
+      }));
+      return sanitizeProfileState({
+        ...safePrev,
+        accounts: [...existingAccounts, ...stagedAccounts],
+      });
+    });
+    setPendingAccounts([]);
+    setAccountFlowNotice("All staged accounts were added.");
+  }, [onProfileStateChange, pendingAccounts]);
 
   const deleteAccount = useCallback(
     (accountId) => {
@@ -3380,19 +3484,38 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
             />
           </label>
           <label className="block">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account type</div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account source</div>
             <select
               value={accountForm.type}
               onChange={(event) => updateAccountFormField("type", event.target.value)}
               className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
             >
-              {PROFILE_ACCOUNT_TYPES.map((type) => (
+              {(editingAccountId ? PROFILE_ACCOUNT_TYPES : ACCOUNT_SOURCE_OPTIONS).map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
                 </option>
               ))}
             </select>
           </label>
+          <div className="rounded-[16px] border border-white/65 bg-white/30 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Import options</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setAccountFlowNotice("Tradovate connection UI placeholder only for this pass.")}
+                className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
+              >
+                Connect Tradovate
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountFlowNotice("Trade data upload UI placeholder only for this pass.")}
+                className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
+              >
+                Upload trade data
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Starting balance</div>
@@ -3419,6 +3542,37 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
           </div>
           {accountForm.type === "prop" ? (
             <>
+              <label className="block">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prop firm</div>
+                <select
+                  value={selectedPropFirmId}
+                  onChange={(event) => handleSelectPropFirm(event.target.value)}
+                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
+                >
+                  <option value="">Select a futures prop firm</option>
+                  {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
+                    <option key={firm.id} value={firm.id}>
+                      {firm.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account template</div>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(event) => handleSelectTemplate(event.target.value)}
+                  disabled={!selectedFirm}
+                  className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-blue-200"
+                >
+                  <option value="">{selectedFirm ? "Select account template" : "Select firm first"}</option>
+                  {selectedFirm?.templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="block">
                 <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Firm name</div>
                 <input
@@ -3483,13 +3637,23 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
             </>
           ) : null}
           {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
+          {accountFlowNotice ? <div className="text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="submit"
               className="w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
             >
-              {editingAccountId ? "Update account" : "Add account"}
+              {editingAccountId ? "Update account" : "Add account now"}
             </button>
+            {!editingAccountId ? (
+              <button
+                type="button"
+                onClick={stageAccountForBatch}
+                className="w-full rounded-[18px] border border-white/70 bg-white/30 px-4 py-2.5 text-[13px] font-semibold text-slate-600 shadow-[0_8px_20px_rgba(140,158,194,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] transition-colors hover:bg-white/40"
+              >
+                Add to session
+              </button>
+            ) : null}
             {editingAccountId ? (
               <button
                 type="button"
@@ -3500,6 +3664,34 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
               </button>
             ) : null}
           </div>
+          {!editingAccountId && pendingAccounts.length ? (
+            <div className="space-y-2 rounded-[16px] border border-white/65 bg-white/25 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Session batch ({pendingAccounts.length})</div>
+                <button
+                  type="button"
+                  onClick={commitPendingAccounts}
+                  className="rounded-[12px] border border-white/70 bg-white/45 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-white/55"
+                >
+                  Save all accounts
+                </button>
+              </div>
+              {pendingAccounts.map((account) => (
+                <div key={account.sessionId} className="flex items-center justify-between gap-2 rounded-[12px] border border-white/65 bg-white/35 px-2.5 py-2 text-[12px] text-slate-600">
+                  <span>
+                    {account.name} · {PROFILE_ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ?? account.type}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removePendingAccount(account.sessionId)}
+                    className="rounded-[10px] border border-white/70 bg-white/45 px-2 py-0.5 text-[10px] font-semibold text-slate-600 transition-colors hover:bg-white/55"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </form>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
