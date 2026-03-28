@@ -76,6 +76,8 @@ const PROFILE_ACCOUNT_TYPES = [
   { value: "prop", label: "Prop" },
   { value: "sim", label: "Sim" },
 ];
+const DASHBOARD_ACCOUNT_FILTER_ALL = "all";
+const DASHBOARD_ACCOUNT_FILTER_UNASSIGNED = "unassigned";
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -230,6 +232,41 @@ function formatSecondsLabel(seconds) {
   const safeSeconds = Number(seconds);
   if (!Number.isFinite(safeSeconds) || safeSeconds <= 0) return "0.0s";
   return `${safeSeconds.toFixed(1)}s`;
+}
+
+function createTradeId() {
+  return `trade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeTradeAccountId(accountId, validAccountIds) {
+  if (typeof accountId !== "string" || !accountId.trim()) return "";
+  const trimmed = accountId.trim();
+  if (!validAccountIds || !validAccountIds.size) return trimmed;
+  return validAccountIds.has(trimmed) ? trimmed : "";
+}
+
+function sanitizeTrade(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : createTradeId();
+  const timestamp = Number(value.timestamp);
+  const pnl = Number(value.pnl);
+  const instrument = typeof value.instrument === "string" && value.instrument.trim() ? value.instrument.trim() : "MNQ";
+  const accountId = typeof value.accountId === "string" && value.accountId.trim() ? value.accountId.trim() : "";
+
+  if (!Number.isFinite(timestamp) || !Number.isFinite(pnl)) return null;
+
+  return {
+    id,
+    timestamp,
+    pnl,
+    instrument,
+    accountId,
+  };
+}
+
+function sanitizeTrades(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(sanitizeTrade).filter(Boolean);
 }
 
 function AnimatedFormattedNumber({
@@ -2172,11 +2209,99 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
   );
 }
 
-function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled = false }) {
+function DashboardScreen({
+  dashboardSnapshot,
+  range,
+  onRangeChange,
+  trades = [],
+  accounts = [],
+  accountFilter = DASHBOARD_ACCOUNT_FILTER_ALL,
+  onAccountFilterChange,
+  onSaveTrade,
+  debugEnabled = false,
+}) {
   const fallbackSnapshot = createFallbackDashboardSnapshot(formatCurrency(0));
   const activeSnapshot = ensureDashboardSnapshot(dashboardSnapshot?.byRange?.[range] || dashboardSnapshot?.byRange?.Month, fallbackSnapshot);
   const performanceSeries = activeSnapshot.performanceSeries;
   const sessionMix = activeSnapshot.sessionMix;
+  const validAccountIds = useMemo(() => new Set(accounts.map((account) => account.id)), [accounts]);
+  const accountNameById = useMemo(() => {
+    const map = new Map();
+    accounts.forEach((account) => {
+      map.set(account.id, account.name);
+    });
+    return map;
+  }, [accounts]);
+  const [tradeForm, setTradeForm] = useState(() => {
+    const firstAccountId = accounts[0]?.id || "";
+    return {
+      pnl: "",
+      accountId: firstAccountId,
+    };
+  });
+  const [tradeFormError, setTradeFormError] = useState("");
+
+  useEffect(() => {
+    setTradeForm((prev) => {
+      const normalizedAccountId = normalizeTradeAccountId(prev.accountId, validAccountIds);
+      if (normalizedAccountId === prev.accountId) return prev;
+      return {
+        ...prev,
+        accountId: accounts[0]?.id || "",
+      };
+    });
+  }, [accounts, validAccountIds]);
+
+  const normalizedTrades = useMemo(
+    () =>
+      trades.map((trade) => ({
+        ...trade,
+        accountId: normalizeTradeAccountId(trade.accountId, validAccountIds),
+      })),
+    [trades, validAccountIds]
+  );
+  const filteredTrades = useMemo(() => {
+    if (accountFilter === DASHBOARD_ACCOUNT_FILTER_ALL) return normalizedTrades;
+    if (accountFilter === DASHBOARD_ACCOUNT_FILTER_UNASSIGNED) return normalizedTrades.filter((trade) => !trade.accountId);
+    return normalizedTrades.filter((trade) => trade.accountId === accountFilter);
+  }, [accountFilter, normalizedTrades]);
+  const filteredTradeStats = useMemo(() => {
+    const totalTrades = filteredTrades.length;
+    const wins = filteredTrades.filter((trade) => trade.pnl > 0).length;
+    const netPnl = filteredTrades.reduce((sum, trade) => sum + trade.pnl, 0);
+    const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+    return {
+      totalTrades,
+      wins,
+      netPnl,
+      winRate,
+    };
+  }, [filteredTrades]);
+  const groupedTradesByDate = useMemo(() => {
+    return filteredTrades.reduce((acc, trade) => {
+      const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
+      acc.set(dateKey, (acc.get(dateKey) || 0) + 1);
+      return acc;
+    }, new Map());
+  }, [filteredTrades]);
+  const last14DateKeys = useMemo(() => {
+    const keys = [];
+    for (let index = 13; index >= 0; index -= 1) {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - index);
+      keys.push(date.toISOString().slice(0, 10));
+    }
+    return keys;
+  }, []);
+  const accountFilterItems = useMemo(() => {
+    const accountItems = accounts.map((account) => ({ value: account.id, label: account.name }));
+    return [
+      { value: DASHBOARD_ACCOUNT_FILTER_ALL, label: "All" },
+      ...accountItems,
+      { value: DASHBOARD_ACCOUNT_FILTER_UNASSIGNED, label: "Unassigned" },
+    ];
+  }, [accounts]);
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -2189,6 +2314,24 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled
     })
     .join(" ");
   const hasMeaningfulContent = performanceSeries.length > 0 && sessionMix.length > 0 && Boolean(activeSnapshot.accountBalance);
+  const submitTrade = (event) => {
+    event.preventDefault();
+    const parsedPnl = Number(tradeForm.pnl);
+    if (!Number.isFinite(parsedPnl) || parsedPnl === 0) {
+      setTradeFormError("Enter a valid non-zero P/L.");
+      return;
+    }
+    const accountId = normalizeTradeAccountId(tradeForm.accountId, validAccountIds);
+    onSaveTrade({
+      id: createTradeId(),
+      timestamp: Date.now(),
+      pnl: parsedPnl,
+      instrument: activeSnapshot.instrument,
+      accountId,
+    });
+    setTradeForm((prev) => ({ ...prev, pnl: "" }));
+    setTradeFormError("");
+  };
 
   return (
     <div className="space-y-4 pb-4">
@@ -2196,9 +2339,64 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Dashboard rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
+      <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <TinyLabel>Account Filter</TinyLabel>
+            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights scope</div>
+          </div>
+        </div>
+        <div className="mt-3">
+          <SegmentedControl items={accountFilterItems} value={accountFilter} onChange={onAccountFilterChange} />
+        </div>
+      </GlassCard>
+      <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+        <TinyLabel>Save Trade</TinyLabel>
+        <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Log a result to Insights</div>
+        <form onSubmit={submitTrade} className="mt-3 space-y-3">
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">P/L</div>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={tradeForm.pnl}
+              onChange={(event) => setTradeForm((prev) => ({ ...prev, pnl: event.target.value }))}
+              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+              placeholder="e.g. 250 or -120"
+            />
+          </label>
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account</div>
+            <select
+              value={tradeForm.accountId}
+              onChange={(event) => setTradeForm((prev) => ({ ...prev, accountId: event.target.value }))}
+              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
+            >
+              <option value="">Unassigned</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {tradeFormError ? <div className="text-[12px] text-rose-500">{tradeFormError}</div> : null}
+          <button
+            type="submit"
+            className="w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
+          >
+            Save trade
+          </button>
+        </form>
+      </GlassCard>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
         <MetricRowCard label="Win Rate" value={activeSnapshot.winRate} tone={activeSnapshot.winRateTone} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <MetricRowCard label="Trades" value={String(filteredTradeStats.totalTrades)} />
+        <MetricRowCard label="Win Rate (Filtered)" value={formatPercent(filteredTradeStats.winRate)} />
+        <MetricRowCard label="Net P/L (Filtered)" value={formatCompactCurrency(filteredTradeStats.netPnl)} tone={filteredTradeStats.netPnl >= 0 ? "positive" : "negative"} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Instrument" value={activeSnapshot.instrument} />
@@ -2241,6 +2439,51 @@ function DashboardScreen({ dashboardSnapshot, range, onRangeChange, debugEnabled
               <div key={index} className="flex-1 rounded-t-[12px] bg-[linear-gradient(180deg,rgba(136,173,255,0.72),rgba(255,255,255,0.22))]" style={{ height: `${height}%` }} />
             ))}
           </div>
+        </div>
+      </GlassCard>
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Trade Feed</TinyLabel>
+        <div className="mt-3 space-y-2.5">
+          {filteredTrades.length ? (
+            filteredTrades
+              .slice()
+              .sort((a, b) => b.timestamp - a.timestamp)
+              .slice(0, 12)
+              .map((trade) => (
+                <div key={trade.id} className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-slate-700">{trade.instrument}</div>
+                    <div className={cn("font-semibold", trade.pnl >= 0 ? "text-emerald-600" : "text-rose-500")}>
+                      {trade.pnl >= 0 ? "+" : "-"}
+                      {formatCompactCurrency(Math.abs(trade.pnl))}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span>{formatLocalDateMmDdYy(trade.timestamp)} · {formatLocalTimeAmPm(trade.timestamp)}</span>
+                    <span>{trade.accountId ? accountNameById.get(trade.accountId) || "Unassigned" : "Unassigned"}</span>
+                  </div>
+                </div>
+              ))
+          ) : (
+            <div className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+              No trades for this account filter yet.
+            </div>
+          )}
+        </div>
+      </GlassCard>
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Calendar</TinyLabel>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Last 14 days</div>
+        <div className="mt-3 grid grid-cols-7 gap-2">
+          {last14DateKeys.map((dateKey) => {
+            const tradeCount = groupedTradesByDate.get(dateKey) || 0;
+            const levelClass = tradeCount >= 3 ? "bg-blue-500/70" : tradeCount >= 2 ? "bg-blue-400/55" : tradeCount >= 1 ? "bg-blue-300/45" : "bg-white/45";
+            return (
+              <div key={dateKey} className={cn("rounded-[10px] border border-white/65 px-1.5 py-2 text-center text-[10px] font-semibold text-slate-600", levelClass)}>
+                {Number(dateKey.slice(-2))}
+              </div>
+            );
+          })}
         </div>
       </GlassCard>
       <GlassCard className="rounded-[30px] p-5">
@@ -2966,6 +3209,7 @@ export default function App() {
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
   const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
+  const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
   const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
     setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
@@ -2984,6 +3228,7 @@ export default function App() {
     setCompoundState({ ...COMPOUND_DEFAULTS });
     setViewState({ ...VIEW_DEFAULTS });
     setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings }, accounts: [] });
+    setTrades([]);
   };
 
   const dashboardSnapshot = useMemo(() => {
@@ -3133,8 +3378,9 @@ export default function App() {
       positionState,
       compoundState: safeCompoundState,
       viewState,
+      trades,
     });
-  }, [positionState, safeCompoundState, viewState]);
+  }, [positionState, safeCompoundState, trades, viewState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3151,6 +3397,11 @@ export default function App() {
         dashboardSnapshot={dashboardSnapshot}
         range={viewState.dashboardRange}
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
+        trades={trades}
+        accounts={profileState.accounts}
+        accountFilter={viewState.dashboardAccountFilter}
+        onAccountFilterChange={(dashboardAccountFilter) => setViewState((prev) => ({ ...prev, dashboardAccountFilter }))}
+        onSaveTrade={(trade) => setTrades((prev) => [sanitizeTrade(trade), ...prev].filter(Boolean))}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
