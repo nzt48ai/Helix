@@ -1,6 +1,8 @@
+import { SUPPORTED_INSTRUMENT_SYMBOLS } from "./instruments.js";
+
 export const APP_STORAGE_KEY = "helix.app.state.v1";
 
-export const POSITION_INSTRUMENT_KEYS = ["NQ", "ES", "MNQ", "MES"];
+export const POSITION_INSTRUMENT_KEYS = SUPPORTED_INSTRUMENT_SYMBOLS;
 export const KELLY_OPTIONS = ["Full", "½", "¼", "Off"];
 export const DASHBOARD_RANGES = ["Week", "Month", "Quarter", "Year"];
 export const TAB_KEYS = ["position", "compound", "share", "dashboard", "journal"];
