@@ -682,9 +682,9 @@ function BalanceHeroCard({
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="grid w-full max-w-[420px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5"
+            className="flex w-full max-w-[420px] items-center justify-center"
           >
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end">
               {prefix ? <span className="pointer-events-none text-[26px] font-semibold leading-none tracking-[-0.04em] text-slate-400/90">{prefix}</span> : null}
             </div>
             <input
@@ -693,10 +693,10 @@ function BalanceHeroCard({
               value={value ?? ""}
               onChange={(e) => onChange?.(e.target.value)}
               style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className={cn("h-full w-auto min-w-0 text-center outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
+              className={cn("h-full w-auto min-w-0 text-left outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
               aria-label={label}
             />
-            <div className="flex justify-start">
+            <div className="flex items-center justify-start">
               {suffix ? <span className="pointer-events-none text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
             </div>
           </motion.div>
