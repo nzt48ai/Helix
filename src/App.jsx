@@ -284,7 +284,6 @@ function derivePositionSetupSnapshot(positionState) {
     direction,
     setupIsValid: setupValidation.isValid,
     setupValidationMessage: setupValidation.message,
-    setupValidationReason: setupValidation.reason,
     setupTimestamp,
     setupContext,
   };
