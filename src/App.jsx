@@ -655,7 +655,8 @@ function BalanceHeroCard({
   const reduceMotion = useReducedMotion();
   const computedFontSizeClass = fixedFontSize ? undefined : "text-[clamp(30px,10vw,52px)]";
   const inputValue = value ?? "";
-  const inputWidthCh = Math.max(1, String(inputValue).length);
+  const displayValue = `${prefix || ""}${inputValue}${suffix || ""}`;
+  const inputWidthCh = Math.max(1, String(displayValue).length);
 
   return (
     <GlassCard
@@ -685,23 +686,15 @@ function BalanceHeroCard({
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="inline-flex max-w-full items-baseline justify-center overflow-hidden text-ellipsis whitespace-nowrap"
           >
-            {prefix ? (
-              <span
-                style={fixedFontSize ? { fontSize: `${fixedFontSize}px`, lineHeight: 1 } : { lineHeight: 1 }}
-                className={cn(
-                  "pointer-events-none mr-[0.02em] shrink-0 leading-none tracking-[-0.07em]",
-                  computedFontSizeClass,
-                  HERO_NUMBER_TEXT_CLASS
-                )}
-              >
-                {prefix}
-              </span>
-            ) : null}
             <input
               type="text"
               inputMode="numeric"
-              value={inputValue}
-              onChange={(e) => onChange?.(e.target.value)}
+              value={displayValue}
+              onChange={(e) => {
+                const rawValue = String(e.target.value ?? "");
+                const strippedValue = rawValue.replace(/[$%]/g, "");
+                onChange?.(strippedValue);
+              }}
               style={
                 fixedFontSize
                   ? { fontSize: `${fixedFontSize}px`, lineHeight: 1, width: `${inputWidthCh}ch` }
@@ -714,7 +707,6 @@ function BalanceHeroCard({
               )}
               aria-label={label}
             />
-            {suffix ? <span className="pointer-events-none ml-1 text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
           </motion.div>
         </div>
 
