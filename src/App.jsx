@@ -686,7 +686,7 @@ function BalanceHeroCard({
             {prefix ? (
               <span
                 className={cn(
-                  "pointer-events-none mr-1 shrink-0 text-[0.78em] leading-none tracking-[-0.07em]",
+                  "pointer-events-none mr-1 shrink-0 leading-none tracking-[-0.07em]",
                   HERO_NUMBER_TEXT_CLASS
                 )}
               >
