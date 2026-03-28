@@ -144,6 +144,24 @@ function formatLocalDateMmDdYy(value = Date.now()) {
   });
 }
 
+function formatTimeInTimeZoneAmPm(value = Date.now(), timeZone = "America/New_York") {
+  return new Date(value).toLocaleTimeString("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatDateInTimeZoneMmDdYy(value = Date.now(), timeZone = "America/New_York") {
+  return new Date(value).toLocaleDateString("en-US", {
+    timeZone,
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+  });
+}
+
 function formatAbbreviatedNumber(value, { suffix = "", prefix = "", threshold = 99999 } = {}) {
   const safeValue = Number(value);
   if (!Number.isFinite(safeValue)) return `${prefix}0${suffix}`;
@@ -388,10 +406,25 @@ function SharePortraitCard({
 }) {
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
+  const premiumPillBaseClassName =
+    "relative shrink-0 inline-flex items-center justify-center overflow-hidden rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-center text-slate-800 shadow-[0_0_0_1px_rgba(255,255,255,0.22),0_8px_16px_rgba(15,23,42,0.10),0_0_16px_rgba(148,163,184,0.20),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(255,255,255,0.08)]";
+  const premiumPillSheenClassName = "before:pointer-events-none before:absolute before:inset-x-[9%] before:top-[12%] before:h-[44%] before:rounded-full before:bg-[linear-gradient(180deg,rgba(255,255,255,0.70),rgba(255,255,255,0.08))]";
+  const premiumPillToneClassNameByKey = {
+    REPLAY:
+      "border-amber-200/65 bg-[linear-gradient(180deg,rgba(254,243,199,0.76),rgba(252,211,77,0.20))] text-amber-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(217,119,6,0.18),0_0_18px_rgba(251,191,36,0.30),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(245,158,11,0.12)]",
+    SETUP:
+      "border-emerald-200/70 bg-[linear-gradient(180deg,rgba(209,250,229,0.76),rgba(16,185,129,0.20))] text-emerald-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(5,150,105,0.16),0_0_18px_rgba(16,185,129,0.28),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(4,120,87,0.12)]",
+    JOURNAL:
+      "border-rose-200/70 bg-[linear-gradient(180deg,rgba(254,226,226,0.80),rgba(244,63,94,0.20))] text-rose-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(190,24,93,0.16),0_0_18px_rgba(244,63,94,0.28),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(190,24,93,0.12)]",
+    LONG:
+      "border-emerald-200/70 bg-[linear-gradient(180deg,rgba(220,252,231,0.78),rgba(34,197,94,0.18))] text-emerald-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(5,150,105,0.14),0_0_16px_rgba(34,197,94,0.24),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(4,120,87,0.11)]",
+    SHORT:
+      "border-rose-200/70 bg-[linear-gradient(180deg,rgba(255,228,230,0.80),rgba(244,63,94,0.20))] text-rose-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(190,24,93,0.14),0_0_16px_rgba(244,63,94,0.24),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(190,24,93,0.11)]",
+  };
+  const getPremiumPillClassName = (pillKey) =>
+    cn(premiumPillBaseClassName, premiumPillSheenClassName, premiumPillToneClassNameByKey[pillKey]);
   const directionPillClassName = cn(
-    "shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
-    normalizedDirection === "LONG" && "bg-emerald-400/15 text-emerald-700",
-    normalizedDirection === "SHORT" && "bg-rose-400/15 text-rose-700"
+    getPremiumPillClassName(normalizedDirection)
   );
   const chartTargetY = 22;
   const chartEntryY = 50;
@@ -438,11 +471,11 @@ function SharePortraitCard({
           transition={shouldReduce ? TAB_CONTENT_TRANSITION : SHARE_CARD_TRANSITION}
         >
         <div className="flex items-center justify-between gap-3">
-          <div className="shrink-0 inline-flex items-center rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
-            {shareType}
+          <div className={getPremiumPillClassName(shareType)}>
+            <span className="relative z-10">{shareType}</span>
           </div>
           <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
-          {normalizedDirection ? <div className={directionPillClassName}>{normalizedDirection}</div> : null}
+          {normalizedDirection ? <div className={directionPillClassName}><span className="relative z-10">{normalizedDirection}</span></div> : null}
         </div>
 
         <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
@@ -2289,7 +2322,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
   const contextLine = useMemo(() => {
     if (shareType === "SETUP") {
-      return `Called at ${formatLocalTimeAmPm(setupCardTimeMs)} (${formatLocalDateMmDdYy(setupCardTimeMs)})`;
+      return `Called at ${formatTimeInTimeZoneAmPm(setupCardTimeMs, "America/New_York")} ET (${formatDateInTimeZoneMmDdYy(setupCardTimeMs, "America/New_York")})`;
     }
     if (shareType === "REPLAY") {
       return "Replay timestamp · 9:41 AM EST";
