@@ -5,9 +5,11 @@ import {
   Calculator,
   ChartColumn,
   LineChart,
+  Search,
   Plus,
   Sparkles,
   TrendingUp,
+  X,
 } from "lucide-react";
 import {
   COMPOUND_DEFAULTS,
@@ -30,7 +32,7 @@ import { isDebugModeEnabled } from "./debugRuntime";
 import { shouldHandleTabPointerUp } from "./navInteractions";
 import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
-import { getDefaultInstrumentShortcuts, getInstrumentBySymbol } from "./instruments.js";
+import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -196,8 +198,12 @@ function formatSecondsLabel(seconds) {
 }
 
 function derivePositionSetupSnapshot(positionState) {
-  const selectedInstrumentFromCatalog = getInstrumentBySymbol(positionState.instrument || "MNQ");
-  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (selectedInstrumentFromCatalog?.symbol || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const selectedInstrumentFromCatalog = getInstrumentBySymbol(positionState.instrument || "MNQ") || getInstrumentBySymbol("MNQ");
+  const selectedShortcutInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (selectedInstrumentFromCatalog?.symbol || "MNQ")) || POSITION_INSTRUMENTS[2];
+  const selectedInstrument = {
+    key: selectedInstrumentFromCatalog?.symbol || selectedShortcutInstrument.key,
+    pointValue: selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1,
+  };
   const entry = parseNullableNumberString(positionState.entry);
   const stop = parseNullableNumberString(positionState.stop);
   const target = parseNullableNumberString(positionState.target);
@@ -208,8 +214,8 @@ function derivePositionSetupSnapshot(positionState) {
   const riskPoints = hasEntry && hasStop ? Math.max(0, Math.abs(entry - stop)) : 0;
   const rewardPoints = hasEntry && hasTarget ? Math.max(0, Math.abs(target - entry)) : 0;
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
-  const projectedRisk = riskPoints * selectedInstrument.pointValue * contracts;
-  const projectedReward = rewardPoints * selectedInstrument.pointValue * contracts;
+  const projectedRisk = riskPoints * (selectedInstrument.pointValue || 1) * contracts;
+  const projectedReward = rewardPoints * (selectedInstrument.pointValue || 1) * contracts;
   const direction = hasEntry && hasStop && hasTarget
     ? target > entry && stop < entry
       ? "LONG"
@@ -644,6 +650,89 @@ function SegmentedControl({ items, value, onChange }) {
   );
 }
 
+function PositionInstrumentSelector({ items, value, onChange, onOpenSearch }) {
+  const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
+
+  return (
+    <GlassCard
+      className="relative overflow-hidden rounded-[32px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.12))] p-[4px] shadow-[0_4px_10px_rgba(120,140,190,0.05),0_1px_4px_rgba(166,180,209,0.03),inset_0_1px_0_rgba(255,255,255,0.84)]"
+      padded={false}
+    >
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: "22% 22% 22% 22% 12%" }}>
+        {normalizedItems.map((item) => {
+          const active = item.value === value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChange(item.value)}
+              className={cn(
+                "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
+                active ? "text-blue-600" : "text-slate-500"
+              )}
+            >
+              {active ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
+                />
+              ) : null}
+              <span className="relative z-10">{item.label}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-2 py-2 text-slate-500 transition-colors hover:text-slate-600"
+          aria-label="Search futures instruments"
+        >
+          <Search size={16} />
+        </button>
+      </div>
+    </GlassCard>
+  );
+}
+
+function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose, onSelect }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-slate-900/30 p-4 sm:items-center" role="dialog" aria-modal="true" aria-label="Futures instrument picker">
+      <div className="w-full max-w-[460px] overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.9))] shadow-[0_18px_42px_rgba(120,140,190,0.25)]">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200/75 px-4 py-3">
+          <div className="text-[13px] font-semibold tracking-[-0.015em] text-slate-700">Futures Instrument Picker</div>
+          <button type="button" onClick={onClose} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close futures picker">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-3">
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search by symbol or name"
+            className="w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[14px] font-medium text-slate-700 outline-none ring-blue-200 transition focus:ring-2"
+            aria-label="Search futures instruments"
+          />
+        </div>
+        <div className="max-h-[52vh] overflow-y-auto px-2 pb-2">
+          {results.map((instrument) => (
+            <button
+              key={instrument.symbol}
+              type="button"
+              onClick={() => onSelect(instrument.symbol)}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100/70"
+            >
+              <span className="w-[44px] shrink-0 text-[13px] font-semibold tracking-[0.02em] text-slate-700">{instrument.symbol}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-500">{instrument.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BalanceHeroCard({
   label,
   value,
@@ -952,6 +1041,8 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const lastManualContractsRef = useRef("1");
   const hasMountedContractsEffectRef = useRef(false);
   const [activePriceField, setActivePriceField] = useState(null);
+  const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
+  const [instrumentQuery, setInstrumentQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
     stop: sanitizePriceInputString(positionState.stop),
@@ -964,8 +1055,9 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const winRate = positionState.winRate ?? 55;
   const kelly = positionState.kelly || "½";
 
-  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === instrument) || POSITION_INSTRUMENTS[2];
-  const pointValue = selectedInstrument.pointValue || 1;
+  const selectedInstrumentFromCatalog = getInstrumentBySymbol(instrument) || getInstrumentBySymbol("MNQ");
+  const selectedShortcutInstrument = POSITION_INSTRUMENTS.find((item) => item.key === instrument) || POSITION_INSTRUMENTS[2];
+  const pointValue = selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
   const parsedAccountBalance = parseNullableNumberString(positionState.accountBalance);
@@ -1078,12 +1170,29 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   };
 
   const resolvePriceValue = (key, persistedValue) => (activePriceField === key ? priceDrafts[key] : persistedValue);
+  const pickerResults = useMemo(() => searchInstruments(instrumentQuery, { limit: 120 }), [instrumentQuery]);
 
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="POSITION SCREEN" />
       <ScreenHeader />
-      <SegmentedControl items={POSITION_INSTRUMENTS.map((item) => item.key)} value={instrument} onChange={handleInstrumentChange} />
+      <PositionInstrumentSelector
+        items={POSITION_INSTRUMENTS.map((item) => item.key)}
+        value={instrument}
+        onChange={handleInstrumentChange}
+        onOpenSearch={() => setInstrumentPickerOpen(true)}
+      />
+      <FuturesInstrumentPicker
+        open={instrumentPickerOpen}
+        query={instrumentQuery}
+        onQueryChange={setInstrumentQuery}
+        results={pickerResults}
+        onClose={() => setInstrumentPickerOpen(false)}
+        onSelect={(symbol) => {
+          handleInstrumentChange(symbol);
+          setInstrumentPickerOpen(false);
+        }}
+      />
       <BalanceHeroCard label="Account Balance" value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
