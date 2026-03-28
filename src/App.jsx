@@ -653,8 +653,7 @@ function BalanceHeroCard({
   fixedFontSize,
 }) {
   const reduceMotion = useReducedMotion();
-  const digitsLength = String(value ?? "").replace(/\D/g, "").length;
-  const fontSize = fixedFontSize ?? (digitsLength > 11 ? 30 : digitsLength > 9 ? 36 : digitsLength > 7 ? 44 : 52);
+  const computedFontSizeClass = fixedFontSize ? undefined : "text-[clamp(30px,10vw,52px)]";
 
   return (
     <GlassCard
@@ -676,13 +675,13 @@ function BalanceHeroCard({
 
       <div className="relative text-center">
         <TinyLabel className="justify-center">{label}</TinyLabel>
-        <div className="mt-3 flex min-h-[74px] items-center justify-center overflow-visible px-2">
+        <div className="mx-auto mt-3 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-center tabular-nums">
           <motion.div
             key={`${prefix}-${suffix}`}
             initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="inline-flex max-w-full items-baseline justify-center"
+            className="inline-flex max-w-full items-baseline justify-center overflow-hidden text-ellipsis whitespace-nowrap"
           >
             {prefix ? (
               <span
@@ -699,8 +698,12 @@ function BalanceHeroCard({
               inputMode="numeric"
               value={value ?? ""}
               onChange={(e) => onChange?.(e.target.value)}
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1 }}
-              className={cn("h-full w-auto min-w-0 max-w-full text-center outline-none caret-slate-500", HERO_NUMBER_TEXT_CLASS)}
+              style={fixedFontSize ? { fontSize: `${fixedFontSize}px`, lineHeight: 1 } : { lineHeight: 1 }}
+              className={cn(
+                "h-full w-auto min-w-0 max-w-full text-center outline-none caret-slate-500",
+                computedFontSizeClass,
+                HERO_NUMBER_TEXT_CLASS
+              )}
               aria-label={label}
             />
             {suffix ? <span className="pointer-events-none ml-1 text-[20px] font-semibold leading-none tracking-[-0.03em] text-slate-400/90">{suffix}</span> : null}
