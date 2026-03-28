@@ -34,6 +34,7 @@ import { shouldHandleTabPointerUp } from "./navInteractions";
 import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
+import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -688,7 +689,7 @@ function TopIconPill({ icon: Icon }) {
   );
 }
 
-function SegmentedControl({ items, value, onChange }) {
+function SegmentedControl({ items, value, onChange, onInteraction }) {
   const reduceMotion = useReducedMotion();
   const normalizedItems = items.map((item) => (typeof item === "string" ? { value: item, label: item } : item));
   const activeIndex = getActiveIndex(
@@ -716,7 +717,10 @@ function SegmentedControl({ items, value, onChange }) {
             <motion.button
               key={item.value}
               type="button"
-              onClick={() => onChange(item.value)}
+              onClick={() => {
+                onChange(item.value);
+                onInteraction?.(item.value);
+              }}
               whileTap={reduceMotion ? undefined : { scale: 0.98, opacity: 0.85 }}
               className={cn(
                 "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
@@ -1313,8 +1317,10 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   }, [activePriceField, entry, stop, target]);
 
   const handleInstrumentChange = (nextInstrument) => {
+    let didChange = false;
     setPositionState((prev) => {
       if (prev.instrument === nextInstrument) return prev;
+      didChange = true;
       const selected = POSITION_INSTRUMENTS.find((item) => item.key === nextInstrument) || POSITION_INSTRUMENTS[2];
       const defaults = selected.defaults || POSITION_INSTRUMENTS[2].defaults;
       return {
@@ -1325,6 +1331,8 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
         target: defaults.target,
       };
     });
+
+    if (didChange) triggerLightHaptic();
   };
 
   useEffect(() => {
@@ -1374,7 +1382,10 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
         items={POSITION_INSTRUMENTS.map((item) => item.key)}
         value={instrument}
         onChange={handleInstrumentChange}
-        onOpenSearch={() => setInstrumentPickerOpen(true)}
+        onOpenSearch={() => {
+          triggerLightHaptic();
+          setInstrumentPickerOpen(true);
+        }}
         customInstrument={selectedInstrumentFromCatalog}
         isCustomMode={!isDefaultInstrument}
         onReturnToCompact={() => handleInstrumentChange(lastDefaultInstrumentRef.current || POSITION_INSTRUMENTS[0].key)}
@@ -2229,6 +2240,11 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   const compoundModeLabel = compoundState.projectionMode ? "Forecast" : "Compound";
   const frequencySummary = buildCompoundFrequencySummary(compoundState);
   const [shareType, setShareType] = useState("SETUP");
+
+  const handleShareTypeChange = useCallback((nextShareType) => {
+    setShareType(nextShareType);
+    triggerLightHaptic();
+  }, []);
   const [displayMode, setDisplayMode] = useState("dollar");
   const [journalPeriod, setJournalPeriod] = useState("Month");
   const [isExporting, setIsExporting] = useState(false);
@@ -2253,6 +2269,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
 
   const handleShareExport = useCallback(async () => {
     if (!shareCardExportRef.current || isExporting) return;
+    triggerMediumHaptic();
     setIsExporting(true);
     setExportError("");
     try {
@@ -2390,7 +2407,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
       <ScreenHeader right={<TopIconPill icon={Sparkles} />} />
 
       <div className="mt-4 space-y-3">
-        <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={setShareType} />
+        <SegmentedControl items={["SETUP", "REPLAY", "JOURNAL"]} value={shareType} onChange={handleShareTypeChange} />
         {shareType === "JOURNAL" ? <SegmentedControl items={["Week", "Month", "Quarter"]} value={journalPeriod} onChange={setJournalPeriod} /> : null}
         <div className="mx-auto w-full max-w-[420px] shrink-0">
           <SharePortraitCard
