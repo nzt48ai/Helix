@@ -721,33 +721,42 @@ function PositionInstrumentSelector({
             className="relative overflow-hidden rounded-[32px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.12))] p-[4px] shadow-[0_4px_10px_rgba(120,140,190,0.05),0_1px_4px_rgba(166,180,209,0.03),inset_0_1px_0_rgba(255,255,255,0.84)]"
             padded={false}
           >
-            <div className="grid gap-1.5" style={{ gridTemplateColumns: "22% 22% 22% 22% 12%" }}>
-              {normalizedItems.map((item) => {
-                const active = item.value === value;
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => onChange(item.value)}
-                    className={cn(
-                      "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
-                      active ? "text-blue-600" : "text-slate-500"
-                    )}
-                  >
-                    {active ? (
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
-                      />
-                    ) : null}
-                    <span className="relative z-10">{item.label}</span>
-                  </button>
-                );
-              })}
+            <div className="flex items-center gap-1.5">
+              <div className="relative grid flex-1 gap-1.5" style={{ gridTemplateColumns: `repeat(${normalizedItems.length}, minmax(0, 1fr))` }}>
+                <motion.span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bottom-0 top-0 z-0 rounded-full bg-[linear-gradient(180deg,rgba(241,246,255,1),rgba(223,233,255,0.82))] shadow-[0_14px_30px_rgba(96,135,233,0.26),0_0_14px_rgba(120,150,255,0.22),inset_0_1px_0_rgba(255,255,255,0.98)] ring-1 ring-blue-200/90"
+                  initial={false}
+                  animate={getSegmentedIndicatorStyle(
+                    normalizedItems.length,
+                    getActiveIndex(
+                      normalizedItems.map((item) => item.value),
+                      value
+                    )
+                  )}
+                  transition={SPRING}
+                />
+                {normalizedItems.map((item) => {
+                  const active = item.value === value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => onChange(item.value)}
+                      className={cn(
+                        "relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-4 py-2 text-center text-[13px] font-semibold leading-none tracking-[-0.012em] transition-colors",
+                        active ? "text-blue-600" : "text-slate-500"
+                      )}
+                    >
+                      <span className="relative z-10">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
               <button
                 type="button"
                 onClick={onOpenSearch}
-                className="relative z-10 flex min-h-[42px] items-center justify-center rounded-full px-2 py-2 text-slate-500 transition-colors hover:text-slate-600"
+                className="relative z-10 flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:text-slate-600"
                 aria-label="Search futures instruments"
               >
                 <Search size={16} />
