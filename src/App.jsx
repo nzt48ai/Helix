@@ -282,8 +282,6 @@ function SharePortraitCard({
   replayPathCurve,
   GIF_PREVIEW_DURATION_SECONDS,
   heroMetric,
-  compoundModeLabel,
-  frequencySummary,
   secondaryMetrics,
   footerLabel,
   setupMissingMessage = "",
@@ -318,6 +316,10 @@ function SharePortraitCard({
   const journalCurve = "M 26 70 C 34 67, 40 60, 46 56 C 52 52, 57 57, 62 48 C 66 41, 70 33, 74 26";
   const chartModeLabel = shareType === "SETUP" ? "PROJECTED PATH" : shareType === "REPLAY" ? "TRUE PATH" : "EQUITY CURVE";
   const pathEase = [0.23, 1, 0.32, 1];
+  const hasDirectionalStoryLine = !isJournalCard && (normalizedDirection === "LONG" || normalizedDirection === "SHORT");
+  const directionalStoryLine = hasDirectionalStoryLine
+    ? `${normalizedDirection} from ${entryValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → ${targetValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+    : "";
 
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
@@ -466,12 +468,12 @@ function SharePortraitCard({
           >
             {heroMetric}
           </div>
-          <div className="mt-3 text-[12px] text-slate-500">{`${compoundModeLabel} • ${frequencySummary}`}</div>
+          {hasDirectionalStoryLine ? <div className="mt-3 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
         </div>
 
         <div
           className={cn(
-            "mt-4 grid gap-4",
+            hasDirectionalStoryLine ? "mt-4 grid gap-4" : "mt-3 grid gap-4",
             secondaryMetrics.length === 3 ? "grid-cols-3" : secondaryMetrics.length === 2 ? "grid-cols-2" : "grid-cols-2"
           )}
         >
@@ -1961,7 +1963,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
           <SharePortraitCard
             shareType={shareType}
             selectedInstrumentKey={setupCardInstrumentLabel}
-            directionLabel={isSetupCard ? setupDirectionLabel : "LONG"}
+            directionLabel={setupDirectionLabel}
             contextLine={contextLine}
             entryValue={setupCardEntry}
             stopValue={setupCardStop}
@@ -1974,8 +1976,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
-            compoundModeLabel={compoundModeLabel}
-            frequencySummary={frequencySummary}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
@@ -2009,7 +2009,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
           <SharePortraitCard
             shareType={shareType}
             selectedInstrumentKey={setupCardInstrumentLabel}
-            directionLabel={isSetupCard ? setupDirectionLabel : "LONG"}
+            directionLabel={setupDirectionLabel}
             contextLine={contextLine}
             entryValue={setupCardEntry}
             stopValue={setupCardStop}
@@ -2022,8 +2022,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
-            compoundModeLabel={compoundModeLabel}
-            frequencySummary={frequencySummary}
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
