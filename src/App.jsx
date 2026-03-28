@@ -294,6 +294,21 @@ function SharePortraitCard({
     normalizedDirection === "LONG" && "bg-emerald-400/15 text-emerald-700",
     normalizedDirection === "SHORT" && "bg-rose-400/15 text-rose-700"
   );
+  const chartTargetY = 24;
+  const chartEntryY = 58;
+  const chartStopY = 84;
+  const zoneLines = [
+    { label: "TARGET", y: chartTargetY, tone: "rgba(16,185,129,0.34)", rValue: `${rewardRiskRatio.toFixed(1)}R` },
+    { label: "ENTRY", y: chartEntryY, tone: "rgba(100,116,139,0.30)", rValue: "0.0R" },
+    { label: "STOP", y: chartStopY, tone: "rgba(244,63,94,0.32)", rValue: "-1.0R" },
+  ];
+  const truePathCurve = isReplayCard
+    ? replayPathCurve
+    : "M 18 58 C 27 57, 34 52, 42 49 C 52 45, 58 40, 66 35 C 73 31, 79 27, 84 24";
+  const markerKeyframes = isReplayCard
+    ? { cx: [18, 34, 52, 68, 84], cy: [58, 56, 48, 36, 24] }
+    : { cx: [18, 32, 48, 66, 84], cy: [58, 56, 50, 36, 24] };
+  const pathEase = [0.23, 1, 0.32, 1];
 
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
@@ -323,55 +338,82 @@ function SharePortraitCard({
           ))}
         </div>
 
-        <div className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.38))] p-4" style={{ height: `${visualPanelHeight}px` }}>
+        <div
+          className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.70),rgba(255,255,255,0.40))] px-4 pb-4 pt-3.5"
+          style={{ height: `${visualPanelHeight}px` }}
+        >
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.16em] text-slate-500">
               {shareType === "SETUP" ? "Projected Path" : shareType === "REPLAY" ? replayPathLabel : "Equity Curve"}
             </div>
             <div className="shrink-0 whitespace-nowrap text-[16px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
           </div>
-          <svg viewBox="0 0 100 100" className="h-[calc(100%-40px)] w-full rounded-[20px] bg-white/42 p-3">
-            {[20, 50, 80].map((line) => (
-              <line key={line} x1="8" x2="92" y1={line} y2={line} stroke="rgba(148,163,184,0.32)" strokeDasharray="2 3" />
+          <svg viewBox="0 0 100 100" className="h-[calc(100%-36px)] w-full rounded-[22px]">
+            <defs>
+              <linearGradient id="share-chart-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.82)" />
+                <stop offset="100%" stopColor="rgba(244,250,255,0.56)" />
+              </linearGradient>
+              <linearGradient id="share-chart-path" x1="18%" y1="20%" x2="82%" y2="76%">
+                <stop offset="0%" stopColor="#7C8CFF" />
+                <stop offset="100%" stopColor="#56D8FF" />
+              </linearGradient>
+              <filter id="endpoint-glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="1.8" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-bg)" />
+            {zoneLines.map((zone) => (
+              <g key={zone.label}>
+                <line x1="22" x2="82" y1={zone.y} y2={zone.y} stroke={zone.tone} strokeWidth="1.2" />
+                <text x="6" y={zone.y + 1.5} fill="rgba(71,85,105,0.72)" fontSize="4" letterSpacing="0.8" fontWeight="600">
+                  {zone.label}
+                </text>
+                <text x="94" y={zone.y + 1.5} fill="rgba(71,85,105,0.70)" fontSize="4" textAnchor="end" fontWeight="600">
+                  {zone.rValue}
+                </text>
+              </g>
             ))}
             {isJournalCard ? (
               <motion.path
                 d="M 8 74 C 20 70, 24 66, 34 58 C 48 46, 57 50, 68 40 C 78 31, 86 28, 92 24"
                 fill="none"
-                stroke="rgba(96,165,250,1)"
+                stroke="url(#share-chart-path)"
                 strokeWidth="2.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 initial={{ pathLength: 0 }}
                 animate={{ pathLength: 1 }}
-                transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: Infinity, repeatDelay: 0.35 }}
               />
             ) : (
               <>
-                <path d="M 8 74 L 92 74" fill="none" stroke="rgba(148,163,184,0.5)" />
-                <path d="M 8 20 L 92 20" fill="none" stroke="rgba(52,211,153,0.45)" strokeDasharray="4 3" />
-                <path d="M 8 86 L 92 86" fill="none" stroke="rgba(251,113,133,0.45)" strokeDasharray="4 3" />
                 <motion.path
-                  d={isReplayCard ? replayPathCurve : "M 8 74 C 20 73, 24 64, 33 61 C 43 58, 46 66, 53 58 C 60 50, 66 44, 75 40 C 84 35, 89 31, 92 28"}
+                  d={truePathCurve}
                   fill="none"
-                  stroke="rgba(129,140,248,1)"
-                  strokeWidth="2.7"
+                  stroke="url(#share-chart-path)"
+                  strokeWidth="2.9"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
-                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.25 }}
+                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
                 />
-                {isReplayCard ? (
-                  <motion.circle
-                    cx="8"
-                    cy="74"
-                    r="2.5"
-                    fill="rgba(191,219,254,1)"
-                    animate={{ cx: [8, 30, 62, 92], cy: [74, 62, 48, 26] }}
-                    transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
-                  />
-                ) : null}
+                <motion.circle
+                  cx="18"
+                  cy="58"
+                  r="1.8"
+                  fill="rgba(229,246,255,0.98)"
+                  stroke="rgba(125,211,252,0.9)"
+                  strokeWidth="0.8"
+                  filter="url(#endpoint-glow)"
+                  animate={markerKeyframes}
+                  transition={{ duration: GIF_PREVIEW_DURATION_SECONDS, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
+                />
               </>
             )}
           </svg>
@@ -1856,7 +1898,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
     GIF_PREVIEW_DURATION_SECONDS,
   ]);
 
-  const visualPanelHeight = shareType === "JOURNAL" ? 280 : 320;
+  const visualPanelHeight = shareType === "JOURNAL" ? 312 : 358;
   const isReplayCard = shareType === "REPLAY";
   const isJournalCard = shareType === "JOURNAL";
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
