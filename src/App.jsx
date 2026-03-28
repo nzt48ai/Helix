@@ -17,11 +17,16 @@ import {
   DASHBOARD_RANGES,
   KELLY_OPTIONS,
   POSITION_DEFAULTS,
+  PROFILE_DEFAULTS,
   VIEW_DEFAULTS,
   clearPersistedAppState,
+  clearPersistedProfileState,
   persistAppState,
+  persistProfileState,
+  readStoredProfileState,
   readStoredAppState,
   resolveTabFromHash,
+  sanitizeProfileState,
   TAB_KEYS,
   sanitizeCompoundState,
   sanitizePositionState,
@@ -66,6 +71,11 @@ const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) =>
       ? { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" }
       : { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" },
 }));
+const PROFILE_PLACEHOLDER_ACCOUNTS = [
+  { name: "Apex Futures 50K", type: "Prop Evaluation", startingBalance: "$50,000", currentBalance: "$52,340" },
+  { name: "Topstep Combine", type: "Sim Funded", startingBalance: "$100,000", currentBalance: "$98,760" },
+  { name: "Personal Brokerage", type: "Cash", startingBalance: "$25,000", currentBalance: "$27,410" },
+];
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -2523,98 +2533,149 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
   );
 }
 
-function JournalScreen({ positionState, compoundState, onResetPreferences, debugEnabled = false }) {
-  const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-  const instrument = selectedInstrument.key;
-  const entry = parseNumberString(positionState.entry || "0");
-  const stop = parseNumberString(positionState.stop || "0");
-  const target = parseNumberString(positionState.target || "0");
-  const winRate = Math.max(0, Math.min(100, Number(positionState.winRate) || 0));
-  const contracts = Math.max(0, parseNumberString(positionState.contracts || "0"));
-  const kellyMode = positionState.kelly || "Off";
-  const riskPoints = Math.max(0, Math.abs(entry - stop));
-  const rewardPoints = Math.max(0, Math.abs(target - entry));
-  const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
-  const riskPerContract = riskPoints * (selectedInstrument.pointValue || 1);
-  const projectedRisk = riskPerContract * contracts;
-  const projectedReturn = rewardPoints * (selectedInstrument.pointValue || 1) * contracts;
+function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
+  const profileInitials = useMemo(() => {
+    const source = profileState.displayName || profileState.username || "HX";
+    return source
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "HX";
+  }, [profileState.displayName, profileState.username]);
 
-  const frequencyValue = Math.max(1, parseNumberString(compoundState.tradeFrequencyValue || "1"));
-  const tradeFrequency = compoundState.tradeFrequency || "Per Day";
-  const durationValue = Math.max(1, parseNumberString(compoundState.durationInput || "1"));
-  const durationUnit = toSafeString(compoundState.durationUnit, "Months") || "Months";
-  const projectionMode = compoundState.projectionMode ? "Forecast" : "Compound";
-  const projectionWinRate = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
-  const projectionGain = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
+  const updateField = useCallback(
+    (key, value) => {
+      onProfileStateChange((prev) => sanitizeProfileState({ ...prev, [key]: value }));
+    },
+    [onProfileStateChange]
+  );
 
-  const projectedTrades = useMemo(() => {
-    if (tradeFrequency === "Per Day") return frequencyValue * durationValue;
-    if (tradeFrequency === "Per Week") {
-      const weeks = durationUnit === "Days" ? durationValue / 7 : durationUnit === "Weeks" ? durationValue : durationValue * 4;
-      return Math.max(1, Math.round(weeks * frequencyValue));
-    }
-    const months = durationUnit === "Days" ? durationValue / 30 : durationUnit === "Weeks" ? durationValue / 4 : durationValue;
-    return Math.max(1, Math.round(months * frequencyValue));
-  }, [tradeFrequency, frequencyValue, durationValue, durationUnit]);
-
-  const outlookTone = projectedReturn >= projectedRisk ? "text-emerald-600/90" : "text-rose-500/90";
-  const outcomeContext = `${projectionMode}: ${frequencyValue} ${tradeFrequency} for ${durationValue} ${toSafeLower(durationUnit, "months")}`;
-  const hasMeaningfulContent = Boolean(instrument) && Boolean(outcomeContext) && Number.isFinite(projectedTrades);
+  const updateShareSetting = useCallback(
+    (key, checked) => {
+      onProfileStateChange((prev) =>
+        sanitizeProfileState({
+          ...prev,
+          shareSettings: {
+            ...prev.shareSettings,
+            [key]: checked,
+          },
+        })
+      );
+    },
+    [onProfileStateChange]
+  );
 
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
-      {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Journal rendered empty" /> : null}
       <ScreenHeader right={<TopIconPill icon={Crown} />} />
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Profile</TinyLabel>
-        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Trade setup snapshot</div>
-        <div className="mt-1 text-[13px] text-slate-500">Read-only entries generated from current Position + Compound state.</div>
-      </GlassCard>
-
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Current Entry</TinyLabel>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Instrument</div>
-            <div className="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-slate-700">{instrument}</div>
+        <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Your profile</div>
+        <div className="mt-4 flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[20px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
+            {profileInitials}
           </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Contracts</div>
-            <div className="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-slate-700">{contracts}</div>
+          <div className="text-[12px] text-slate-500">
+            Avatar placeholder for this first pass.
           </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Entry / Stop / Target</div>
-            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">
-              {`${entry.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${stop.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${target.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+        </div>
+        <div className="mt-4 space-y-3">
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Display name</div>
+            <input
+              type="text"
+              value={profileState.displayName}
+              onChange={(event) => updateField("displayName", event.target.value)}
+              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
+              placeholder="Your name"
+            />
+          </label>
+          <label className="block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Username</div>
+            <div className="flex items-center rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+              <span className="pr-1 text-[14px] font-semibold text-slate-500">@</span>
+              <input
+                type="text"
+                value={profileState.username}
+                onChange={(event) => updateField("username", event.target.value.replace(/^@+/, ""))}
+                className="w-full bg-transparent text-[14px] font-medium text-slate-700 outline-none placeholder:text-slate-400"
+                placeholder="username"
+              />
             </div>
-          </div>
-          <div className="rounded-[20px] bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500/85">Win Rate / Kelly</div>
-            <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">{`${formatPercent(winRate)} • ${kellyMode}`}</div>
-          </div>
+          </label>
         </div>
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Projected Outcome Context</TinyLabel>
-        <div className="mt-3 space-y-2">
-          <div className={cn("text-[16px] font-semibold tracking-[-0.02em]", outlookTone)}>
-            {`Projected R:R ${rewardRiskRatio > 0 ? `${rewardRiskRatio.toFixed(1)}R` : "—"} • ${formatCurrency(projectedReturn)} vs ${formatCurrency(projectedRisk)}`}
-          </div>
-          <div className="text-[13px] text-slate-600">{outcomeContext}</div>
-          <div className="text-[13px] text-slate-500">{`Compound assumptions: ${formatPercent(projectionWinRate)} win rate, ${formatPercent(projectionGain)} gain input, ~${projectedTrades} modeled trades.`}</div>
-          {/* Heuristic note: there is no persisted historical trade log yet, so journal rows are synthesized from current app state and modeled projection assumptions only. */}
-          <div className="rounded-[18px] bg-white/24 px-3 py-2 text-[12px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]">
-            Entries are read-only and reflect the current setup, not executed historical fills.
-          </div>
+        <TinyLabel>Accounts</TinyLabel>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts (placeholder)</div>
+        <div className="mt-3 space-y-3">
+          {PROFILE_PLACEHOLDER_ACCOUNTS.map((account) => (
+            <div key={account.name} className="rounded-[20px] border border-white/65 bg-white/35 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[14px] font-semibold text-slate-700">{account.name}</div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{account.type}</div>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Starting</div>
+                  <div className="font-semibold text-slate-700">{account.startingBalance}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Current</div>
+                  <div className="font-semibold text-slate-700">{account.currentBalance}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Theme settings</TinyLabel>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Appearance</div>
+        <div className="mt-3">
+          <SegmentedControl
+            items={[
+              { value: "light", label: "Light mode" },
+              { value: "dark", label: "Dark mode" },
+            ]}
+            value={profileState.theme}
+            onChange={(theme) => updateField("theme", theme)}
+          />
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-[30px] p-5">
+        <TinyLabel>Share identity settings</TinyLabel>
+        <div className="mt-3 space-y-3">
+          {[
+            { key: "showAvatar", label: "Show avatar on share cards" },
+            { key: "showUsername", label: "Show @username on share cards" },
+            { key: "showAccountName", label: "Show account name on share cards" },
+          ].map((item) => (
+            <label key={item.key} className="flex items-center justify-between gap-3 rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5">
+              <span className="text-[13px] font-medium text-slate-600">{item.label}</span>
+              <input
+                type="checkbox"
+                checked={profileState.shareSettings[item.key]}
+                onChange={(event) => updateShareSetting(item.key, event.target.checked)}
+                className="h-4 w-4 accent-blue-500"
+              />
+            </label>
+          ))}
         </div>
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Preferences</TinyLabel>
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Reset local data</div>
-        <div className="mt-1 text-[13px] text-slate-500">Clear saved app state and return to default values.</div>
+        <div className="mt-1 text-[13px] text-slate-500">Clear saved app state and profile settings.</div>
         <button
           type="button"
           onClick={onResetPreferences}
@@ -2713,6 +2774,7 @@ export default function App() {
   const [positionState, setPositionState] = useState(() => sanitizePositionState(readStoredAppState()?.positionState));
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
+  const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
   const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
     setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
@@ -2725,10 +2787,12 @@ export default function App() {
     }
 
     clearPersistedAppState();
+    clearPersistedProfileState();
 
     setPositionState({ ...POSITION_DEFAULTS });
     setCompoundState({ ...COMPOUND_DEFAULTS });
     setViewState({ ...VIEW_DEFAULTS });
+    setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } });
   };
 
   const dashboardSnapshot = useMemo(() => {
@@ -2881,6 +2945,11 @@ export default function App() {
     });
   }, [positionState, safeCompoundState, viewState]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    persistProfileState(profileState);
+  }, [profileState]);
+
   const screen =
     activeTab === "position" ? (
       <PositionScreen positionState={positionState} setPositionState={setPositionState} debugEnabled={debugEnabled} />
@@ -2894,7 +2963,7 @@ export default function App() {
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen positionState={positionState} compoundState={safeCompoundState} onResetPreferences={resetPreferences} debugEnabled={debugEnabled} />
+      <JournalScreen profileState={profileState} onProfileStateChange={setProfileState} onResetPreferences={resetPreferences} debugEnabled={debugEnabled} />
     ) : (
       <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} debugEnabled={debugEnabled} />
     );
