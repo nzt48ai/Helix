@@ -699,7 +699,7 @@ function PositionInstrumentSelector({
             <button
               type="button"
               onClick={onOpenSearch}
-              className="flex min-h-[42px] w-full items-center justify-between gap-3 rounded-[28px] px-4.5 py-2 text-left text-slate-700"
+              className="flex min-h-[42px] w-full appearance-none items-center justify-between gap-3 rounded-[28px] bg-transparent px-4.5 py-2 text-left text-slate-700"
               aria-label="Open futures instrument picker"
             >
               <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -800,14 +800,14 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
       {open ? (
         <div className="fixed inset-0 z-[1200] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true" aria-label="Futures instrument picker">
           <motion.div
-            className="absolute inset-0 bg-slate-900/30"
+            className="absolute inset-0 bg-transparent"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={OVERLAY_FADE_TRANSITION}
           />
           <motion.div
-            className="relative w-full max-w-[460px] overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.9))] shadow-[0_18px_42px_rgba(120,140,190,0.25)]"
+            className="relative flex max-h-[min(680px,calc(100dvh-2rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,255,0.9))] shadow-[0_18px_42px_rgba(120,140,190,0.25)] sm:max-h-[min(720px,calc(100dvh-3rem))]"
             initial={pickerInitial}
             animate={pickerAnimate}
             exit={pickerExit}
@@ -829,7 +829,7 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
                 aria-label="Search futures instruments"
               />
             </div>
-            <div className="max-h-[52vh] overflow-y-auto px-2 pb-2">
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
               {results.map((instrument) => (
                 <button
                   key={instrument.symbol}
