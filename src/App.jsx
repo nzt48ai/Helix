@@ -163,19 +163,13 @@ function validateSetupValues({ entryInput, stopInput, targetInput }) {
   const entry = parseSetupInputNumber(entryInput);
   const stop = parseSetupInputNumber(stopInput);
   const target = parseSetupInputNumber(targetInput);
-  const hasEntry = entry !== null;
-  const hasStop = stop !== null;
-  const hasTarget = target !== null;
+  const hasAllValues = entry !== null && stop !== null && target !== null;
 
-  if (!hasEntry || !hasStop || !hasTarget) {
+  if (!hasAllValues) {
     return {
       isValid: false,
       direction: "",
-      reason: "incomplete",
       message: "Enter valid entry, stop, and target.",
-      hasEntry,
-      hasStop,
-      hasTarget,
       entry,
       stop,
       target,
@@ -186,11 +180,7 @@ function validateSetupValues({ entryInput, stopInput, targetInput }) {
     return {
       isValid: false,
       direction: "",
-      reason: "equal-to-entry",
       message: "Stop/target cannot equal entry.",
-      hasEntry,
-      hasStop,
-      hasTarget,
       entry,
       stop,
       target,
@@ -204,11 +194,7 @@ function validateSetupValues({ entryInput, stopInput, targetInput }) {
     return {
       isValid: true,
       direction: "LONG",
-      reason: "valid-long",
       message: "",
-      hasEntry,
-      hasStop,
-      hasTarget,
       entry,
       stop,
       target,
@@ -219,11 +205,7 @@ function validateSetupValues({ entryInput, stopInput, targetInput }) {
     return {
       isValid: true,
       direction: "SHORT",
-      reason: "valid-short",
       message: "",
-      hasEntry,
-      hasStop,
-      hasTarget,
       entry,
       stop,
       target,
@@ -233,11 +215,7 @@ function validateSetupValues({ entryInput, stopInput, targetInput }) {
   return {
     isValid: false,
     direction: "",
-    reason: "same-side",
     message: "Stop and target must be on opposite sides of entry.",
-    hasEntry,
-    hasStop,
-    hasTarget,
     entry,
     stop,
     target,
@@ -253,9 +231,9 @@ function derivePositionSetupSnapshot(positionState) {
     targetInput: positionState.target,
   });
   const { entry, stop, target } = setupValidation;
-  const hasEntry = setupValidation.hasEntry;
-  const hasStop = setupValidation.hasStop;
-  const hasTarget = setupValidation.hasTarget;
+  const hasEntry = entry !== null;
+  const hasStop = stop !== null;
+  const hasTarget = target !== null;
   const riskPoints = hasEntry && hasStop ? Math.max(0, Math.abs(entry - stop)) : 0;
   const rewardPoints = hasEntry && hasTarget ? Math.max(0, Math.abs(target - entry)) : 0;
   const rewardRiskRatio = riskPoints > 0 ? rewardPoints / riskPoints : 0;
