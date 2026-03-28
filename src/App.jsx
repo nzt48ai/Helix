@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
-  BookOpen,
+  Crown,
   Calculator,
   Eye,
   LineChart,
@@ -45,7 +45,7 @@ const NAV_META = {
   compound: { label: "Compound", icon: TrendingUp },
   share: { label: "Share", icon: Plus },
   dashboard: { label: "Insights", icon: Eye },
-  journal: { label: "Journal", icon: BookOpen },
+  journal: { label: "Profile", icon: Crown },
 };
 
 const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
@@ -2565,9 +2565,9 @@ function JournalScreen({ positionState, compoundState, onResetPreferences, debug
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Journal rendered empty" /> : null}
-      <ScreenHeader right={<TopIconPill icon={BookOpen} />} />
+      <ScreenHeader right={<TopIconPill icon={Crown} />} />
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Journal</TinyLabel>
+        <TinyLabel>Profile</TinyLabel>
         <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Trade setup snapshot</div>
         <div className="mt-1 text-[13px] text-slate-500">Read-only entries generated from current Position + Compound state.</div>
       </GlassCard>
