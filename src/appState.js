@@ -70,19 +70,23 @@ function sanitizeProfileAccount(value) {
   if (!id || !name || !PROFILE_ACCOUNT_TYPES.has(type)) return null;
   if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) return null;
 
+  const rawConnection = value.connection && typeof value.connection === "object" ? value.connection : null;
+  const rawLinkedProvider = value.linkedProvider && typeof value.linkedProvider === "object" ? value.linkedProvider : null;
   const normalizedLinkedProvider =
-    value.linkedProvider && typeof value.linkedProvider === "object"
+    (rawConnection || rawLinkedProvider)
       ? {
-          provider: value.linkedProvider.provider === "tradovate" ? "tradovate" : null,
+          provider: (rawConnection || rawLinkedProvider).provider === "tradovate" ? "tradovate" : null,
           providerAccountId:
-            typeof value.linkedProvider.providerAccountId === "string" && value.linkedProvider.providerAccountId.trim()
-              ? value.linkedProvider.providerAccountId.trim()
+            typeof (rawConnection || rawLinkedProvider).providerAccountId === "string" &&
+            (rawConnection || rawLinkedProvider).providerAccountId.trim()
+              ? (rawConnection || rawLinkedProvider).providerAccountId.trim()
               : null,
           providerAccountName:
-            typeof value.linkedProvider.providerAccountName === "string" && value.linkedProvider.providerAccountName.trim()
-              ? value.linkedProvider.providerAccountName.trim()
+            typeof (rawConnection || rawLinkedProvider).providerAccountName === "string" &&
+            (rawConnection || rawLinkedProvider).providerAccountName.trim()
+              ? (rawConnection || rawLinkedProvider).providerAccountName.trim()
               : null,
-          connectionStatus: value.linkedProvider.connectionStatus === "connected" ? "connected" : null,
+          connectionStatus: (rawConnection || rawLinkedProvider).connectionStatus === "connected" ? "connected" : null,
         }
       : null;
   const linkedProvider =
@@ -101,6 +105,7 @@ function sanitizeProfileAccount(value) {
     linkedSource: typeof value.linkedSource === "string" && value.linkedSource.trim() ? value.linkedSource.trim() : null,
     isHelixLinked: typeof value.isHelixLinked === "boolean" ? value.isHelixLinked : false,
     linkedProvider,
+    connection: linkedProvider,
   };
 
   if (type !== "prop") {
