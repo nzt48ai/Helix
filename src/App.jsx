@@ -50,6 +50,7 @@ import {
   persistPendingPropTradovateFlow,
   readTradovateOAuthResultFromLocation,
   startTradovateOAuth,
+  syncTradovateTrades,
 } from "./tradovateConnection";
 
 function cn(...classes) {
@@ -269,6 +270,20 @@ function createTradeId() {
   return `trade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function buildStableTradeFingerprint(value) {
+  const source = String(value?.source || "manual").trim().toLowerCase();
+  const providerTradeId = String(value?.providerTradeId || "").trim();
+  if (source && providerTradeId) return `${source}:${providerTradeId}`;
+  const accountId = String(value?.accountId || "").trim();
+  const instrument = String(value?.instrument || value?.symbol || "").trim().toUpperCase();
+  const timestamp = Number(value?.timestamp || 0);
+  const pnl = Number(value?.pnl || 0);
+  const quantity = Number(value?.quantity || 0);
+  const entryPrice = Number(value?.entryPrice || 0);
+  const exitPrice = Number(value?.exitPrice || 0);
+  return `fallback:${accountId}|${instrument}|${timestamp}|${pnl}|${quantity}|${entryPrice}|${exitPrice}`;
+}
+
 function createEmptyAccountForm() {
   return {
     name: "",
@@ -309,6 +324,17 @@ function sanitizeTrade(value) {
   const ruleViolationReason =
     typeof value.ruleViolationReason === "string" && value.ruleViolationReason.trim() ? value.ruleViolationReason.trim() : null;
   const tradeType = value.tradeType === "paper" ? "paper" : "live";
+  const source = typeof value.source === "string" && value.source.trim() ? value.source.trim().toLowerCase() : "manual";
+  const providerTradeId = typeof value.providerTradeId === "string" && value.providerTradeId.trim() ? value.providerTradeId.trim() : null;
+  const side = value.side === "short" ? "short" : value.side === "long" ? "long" : null;
+  const entryPrice = Number(value.entryPrice);
+  const exitPrice = Number(value.exitPrice);
+  const quantity = Number(value.quantity);
+  const openedAt = typeof value.openedAt === "string" && value.openedAt.trim() ? value.openedAt.trim() : null;
+  const closedAt = typeof value.closedAt === "string" && value.closedAt.trim() ? value.closedAt.trim() : null;
+  const commission = Number(value.commission);
+  const fees = Number(value.fees);
+  const netPnl = Number(value.netPnl);
 
   if (!Number.isFinite(timestamp) || !Number.isFinite(pnl)) return null;
 
@@ -322,12 +348,90 @@ function sanitizeTrade(value) {
     ruleViolation,
     ruleViolationReason,
     tradeType,
+    source,
+    providerTradeId,
+    side,
+    entryPrice: Number.isFinite(entryPrice) ? entryPrice : null,
+    exitPrice: Number.isFinite(exitPrice) ? exitPrice : null,
+    quantity: Number.isFinite(quantity) ? quantity : null,
+    openedAt,
+    closedAt,
+    commission: Number.isFinite(commission) ? commission : 0,
+    fees: Number.isFinite(fees) ? fees : 0,
+    netPnl: Number.isFinite(netPnl) ? netPnl : pnl,
   };
 }
 
 function sanitizeTrades(value) {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeTrade).filter(Boolean);
+}
+
+function deriveTradovateTradeSide(providerTrade = {}) {
+  const normalized = String(providerTrade.side || providerTrade.action || providerTrade.direction || "")
+    .trim()
+    .toLowerCase();
+  if (["sell", "short", "s"].includes(normalized)) return "short";
+  if (["buy", "long", "b"].includes(normalized)) return "long";
+  return null;
+}
+
+function normalizeTradovateTrade(providerTrade, helixAccountId) {
+  if (!providerTrade || typeof providerTrade !== "object") return null;
+  const providerTradeIdCandidate = providerTrade.providerTradeId ?? providerTrade.id ?? providerTrade.fillPairId ?? providerTrade.tradeId ?? null;
+  const providerTradeId = providerTradeIdCandidate === null || providerTradeIdCandidate === undefined ? null : String(providerTradeIdCandidate).trim() || null;
+  const symbol = String(providerTrade.symbol || providerTrade.contractSymbol || providerTrade.instrument || "MNQ").trim().toUpperCase();
+  const openedAtCandidate = providerTrade.openedAt || providerTrade.entryTimestamp || providerTrade.entryTime || providerTrade.timestamp || null;
+  const closedAtCandidate = providerTrade.closedAt || providerTrade.exitTimestamp || providerTrade.exitTime || providerTrade.timestamp || openedAtCandidate || null;
+  const openedAtDate = openedAtCandidate ? new Date(openedAtCandidate) : null;
+  const closedAtDate = closedAtCandidate ? new Date(closedAtCandidate) : null;
+  const openedAt = openedAtDate && !Number.isNaN(openedAtDate.getTime()) ? openedAtDate.toISOString() : null;
+  const closedAt = closedAtDate && !Number.isNaN(closedAtDate.getTime()) ? closedAtDate.toISOString() : openedAt;
+  const timestamp = closedAt ? new Date(closedAt).getTime() : openedAt ? new Date(openedAt).getTime() : null;
+  const pnl = Number(providerTrade.pnl ?? providerTrade.realizedPnl ?? 0);
+  const commission = Number(providerTrade.commission ?? 0);
+  const fees = Number(providerTrade.fees ?? providerTrade.fee ?? 0);
+  const netPnl = Number.isFinite(Number(providerTrade.netPnl)) ? Number(providerTrade.netPnl) : (Number.isFinite(pnl) ? pnl - commission - fees : 0);
+
+  if (!Number.isFinite(timestamp)) return null;
+
+  return sanitizeTrade({
+    id: providerTradeId ? `tv-${helixAccountId}-${providerTradeId}` : `tv-${helixAccountId}-${buildStableTradeFingerprint(providerTrade)}`,
+    accountId: helixAccountId,
+    source: "tradovate",
+    providerTradeId,
+    instrument: symbol || "MNQ",
+    side: deriveTradovateTradeSide(providerTrade),
+    entryPrice: Number(providerTrade.entryPrice ?? providerTrade.avgEntryPrice ?? providerTrade.price ?? 0),
+    exitPrice: Number(providerTrade.exitPrice ?? providerTrade.avgExitPrice ?? providerTrade.price ?? 0),
+    quantity: Number(providerTrade.quantity ?? providerTrade.qty ?? providerTrade.contracts ?? 0),
+    openedAt,
+    closedAt,
+    timestamp,
+    pnl: Number.isFinite(pnl) ? pnl : 0,
+    commission: Number.isFinite(commission) ? commission : 0,
+    fees: Number.isFinite(fees) ? fees : 0,
+    netPnl: Number.isFinite(netPnl) ? netPnl : 0,
+    tradeType: "live",
+    ruleViolation: false,
+    ruleViolationReason: null,
+  });
+}
+
+function mergeTradesWithDedupe(existingTrades = [], incomingTrades = []) {
+  const normalizedExisting = sanitizeTrades(existingTrades);
+  const normalizedIncoming = sanitizeTrades(incomingTrades);
+  const deduped = [];
+  const seen = new Set();
+
+  [...normalizedExisting, ...normalizedIncoming].forEach((trade) => {
+    const key = buildStableTradeFingerprint(trade);
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(trade);
+  });
+
+  return deduped.sort((a, b) => b.timestamp - a.timestamp);
 }
 
 function getTradeDayKey(timestamp) {
@@ -3235,7 +3339,7 @@ function getAccountRowMeta(account) {
   };
 }
 
-function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
+function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, onSyncTradovateAccountTrades, debugEnabled = false }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [accountFlowStep, setAccountFlowStep] = useState(1);
@@ -3245,6 +3349,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [tradovateAccounts, setTradovateAccounts] = useState([]);
   const [isTradovateBusy, setIsTradovateBusy] = useState(false);
+  const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3576,6 +3681,33 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     [onProfileStateChange]
   );
 
+  const handleSyncTrades = useCallback(
+    async (account) => {
+      if (!account?.id || typeof onSyncTradovateAccountTrades !== "function") return;
+      const accountId = account.id;
+      setSyncStateByAccountId((prev) => ({
+        ...prev,
+        [accountId]: { status: "syncing", message: "Syncing trades…" },
+      }));
+      try {
+        const result = await onSyncTradovateAccountTrades(account);
+        const importedCount = Number(result?.importedCount || 0);
+        const dedupedCount = Number(result?.dedupedCount || 0);
+        const summary = `Imported ${importedCount} trade${importedCount === 1 ? "" : "s"}${dedupedCount > 0 ? ` · ${dedupedCount} duplicate${dedupedCount === 1 ? "" : "s"} skipped` : ""}.`;
+        setSyncStateByAccountId((prev) => ({
+          ...prev,
+          [accountId]: { status: "success", message: summary, syncedAt: Date.now() },
+        }));
+      } catch (error) {
+        setSyncStateByAccountId((prev) => ({
+          ...prev,
+          [accountId]: { status: "error", message: error?.message || "Sync failed." },
+        }));
+      }
+    },
+    [onSyncTradovateAccountTrades]
+  );
+
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
@@ -3623,7 +3755,23 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
-            profileState.accounts.map((account) => (
+            profileState.accounts.map((account) => {
+              const providerConnection = account?.connection || account?.linkedProvider || null;
+              const isLinkedTradovate =
+                account?.type === "prop" &&
+                providerConnection?.provider === "tradovate" &&
+                providerConnection?.providerAccountId &&
+                providerConnection?.connectionStatus === "connected";
+              const syncState = syncStateByAccountId[account.id] || null;
+              const lastSyncAt = account?.tradeSync?.lastSyncAt ? new Date(account.tradeSync.lastSyncAt) : null;
+              const lastSyncLabel =
+                lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
+                  ? `Last sync: ${lastSyncAt.toLocaleDateString("en-US")} ${lastSyncAt.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}`
+                  : null;
+              return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -3643,8 +3791,24 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                     Delete
                   </button>
                 </div>
+                {isLinkedTradovate ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSyncTrades(account)}
+                      disabled={syncState?.status === "syncing"}
+                      className="rounded-[11px] border border-blue-200/80 bg-blue-50/70 px-2.5 py-1 text-[11px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {syncState?.status === "syncing" ? "Syncing…" : "Sync Trades"}
+                    </button>
+                    <div className="text-[11px] text-slate-500">
+                      {syncState?.message || account?.tradeSync?.lastSyncMessage || lastSyncLabel || "Manual sync required to import trades."}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            ))
+              );
+            })
           ) : (
             <div className="rounded-[20px] border border-dashed border-white/70 bg-white/20 px-4 py-3 text-[13px] text-slate-500">
               No attached accounts yet.
@@ -4143,6 +4307,82 @@ export default function App() {
     setTrades([]);
   };
 
+  const syncTradovateTradesForAccount = useCallback(
+    async (account) => {
+      const providerConnection = account?.connection || account?.linkedProvider || null;
+      if (
+        !account?.id ||
+        account?.type !== "prop" ||
+        providerConnection?.provider !== "tradovate" ||
+        !providerConnection?.providerAccountId
+      ) {
+        throw new Error("Only linked Tradovate prop accounts can be synced.");
+      }
+
+      try {
+        const response = await syncTradovateTrades({
+          helixAccountId: account.id,
+          providerAccountId: providerConnection.providerAccountId,
+        });
+        const providerTrades = Array.isArray(response?.trades) ? response.trades : [];
+        const normalizedTrades = providerTrades
+          .map((trade) => normalizeTradovateTrade(trade, account.id))
+          .filter(Boolean);
+
+        const existingTrades = sanitizeTrades(trades);
+        const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
+        const dedupedIncoming = normalizedTrades.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
+        const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
+        setTrades(mergedTrades);
+
+        const nowIso = new Date().toISOString();
+        setProfileState((prev) =>
+          sanitizeProfileState({
+            ...prev,
+            accounts: (prev?.accounts || []).map((item) =>
+              item.id === account.id
+                ? {
+                    ...item,
+                    tradeSync: {
+                      lastSyncAt: nowIso,
+                      lastSyncStatus: "success",
+                      lastSyncMessage: `Imported ${dedupedIncoming.length} trade${dedupedIncoming.length === 1 ? "" : "s"}.`,
+                    },
+                  }
+                : item
+            ),
+          })
+        );
+
+        return {
+          importedCount: dedupedIncoming.length,
+          dedupedCount: Math.max(0, normalizedTrades.length - dedupedIncoming.length),
+        };
+      } catch (error) {
+        const nowIso = new Date().toISOString();
+        setProfileState((prev) =>
+          sanitizeProfileState({
+            ...prev,
+            accounts: (prev?.accounts || []).map((item) =>
+              item.id === account.id
+                ? {
+                    ...item,
+                    tradeSync: {
+                      lastSyncAt: nowIso,
+                      lastSyncStatus: "error",
+                      lastSyncMessage: error?.message || "Sync failed.",
+                    },
+                  }
+                : item
+            ),
+          })
+        );
+        throw error;
+      }
+    },
+    [trades]
+  );
+
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
     const instrument = positionState.instrument || "MNQ";
@@ -4340,7 +4580,13 @@ export default function App() {
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen profileState={profileState} onProfileStateChange={setProfileState} onResetPreferences={resetPreferences} debugEnabled={debugEnabled} />
+      <JournalScreen
+        profileState={profileState}
+        onProfileStateChange={setProfileState}
+        onResetPreferences={resetPreferences}
+        onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
+        debugEnabled={debugEnabled}
+      />
     ) : (
       <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} debugEnabled={debugEnabled} />
     );

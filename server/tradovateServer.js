@@ -94,6 +94,104 @@ function normalizeTradovateAccount(account) {
   };
 }
 
+function normalizeTradovateTrade(trade) {
+  if (!trade || typeof trade !== "object") return null;
+  const providerTradeId =
+    trade.fillPairId ?? trade.id ?? trade.tradeId ?? trade.executionId ?? trade.orderId ?? trade.positionId ?? null;
+  const openedAt = trade.openedAt ?? trade.entryTimestamp ?? trade.timestamp ?? trade.tradeDate ?? null;
+  const closedAt = trade.closedAt ?? trade.exitTimestamp ?? trade.timestamp ?? trade.tradeDate ?? openedAt ?? null;
+  const symbol = trade.symbol ?? trade.contractSymbol ?? trade.instrument ?? trade.contractName ?? null;
+  const qty = Number(trade.qty ?? trade.quantity ?? trade.contracts ?? 0);
+  const pnl = Number(trade.pnl ?? trade.realizedPnl ?? trade.netPnl ?? 0);
+  const commission = Number(trade.commission ?? 0);
+  const fees = Number(trade.fees ?? trade.fee ?? 0);
+
+  const normalizeIso = (value) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  };
+
+  const normalized = {
+    providerTradeId: providerTradeId === null || providerTradeId === undefined ? null : String(providerTradeId),
+    symbol: symbol === null || symbol === undefined ? null : String(symbol),
+    side: trade.side ?? trade.action ?? trade.direction ?? null,
+    entryPrice: Number(trade.entryPrice ?? trade.avgEntryPrice ?? trade.buyPrice ?? 0),
+    exitPrice: Number(trade.exitPrice ?? trade.avgExitPrice ?? trade.sellPrice ?? 0),
+    quantity: Number.isFinite(qty) ? qty : 0,
+    openedAt: normalizeIso(openedAt),
+    closedAt: normalizeIso(closedAt),
+    pnl: Number.isFinite(pnl) ? pnl : 0,
+    commission: Number.isFinite(commission) ? commission : 0,
+    fees: Number.isFinite(fees) ? fees : 0,
+    netPnl: Number.isFinite(Number(trade.netPnl)) ? Number(trade.netPnl) : (Number.isFinite(pnl) ? pnl - commission - fees : 0),
+  };
+
+  if (!normalized.openedAt && !normalized.closedAt) return null;
+  return normalized;
+}
+
+async function fetchTradovateTrades(accessToken, providerAccountId, from, to) {
+  const accountIdNum = Number(providerAccountId);
+  const fromIso = typeof from === "string" && from.trim() ? new Date(from).toISOString() : null;
+  const toIso = typeof to === "string" && to.trim() ? new Date(to).toISOString() : null;
+  const fromTimestamp = fromIso ? Math.floor(new Date(fromIso).getTime() / 1000) : null;
+  const toTimestamp = toIso ? Math.floor(new Date(toIso).getTime() / 1000) : null;
+
+  const attempts = [
+    {
+      url: `${TRADOVATE_API_BASE_URL}/fillPair/list`,
+      options: { method: "GET" },
+      withQuery: true,
+    },
+    {
+      url: `${TRADOVATE_API_BASE_URL}/fillPair/list`,
+      options: { method: "POST", body: {} },
+      withQuery: false,
+    },
+    {
+      url: `${TRADOVATE_API_BASE_URL}/orderStrategyFillPair/list`,
+      options: { method: "POST", body: {} },
+      withQuery: false,
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    const url = new URL(attempt.url);
+    const body = { ...(attempt.options.body || {}) };
+
+    if (Number.isFinite(accountIdNum)) {
+      if (attempt.withQuery) url.searchParams.set("accountId", String(accountIdNum));
+      else body.accountId = accountIdNum;
+    }
+    if (fromTimestamp) {
+      if (attempt.withQuery) url.searchParams.set("startTimestamp", String(fromTimestamp));
+      else body.startTimestamp = fromTimestamp;
+    }
+    if (toTimestamp) {
+      if (attempt.withQuery) url.searchParams.set("endTimestamp", String(toTimestamp));
+      else body.endTimestamp = toTimestamp;
+    }
+
+    const response = await fetch(url.toString(), {
+      method: attempt.options.method,
+      headers,
+      body: attempt.options.method === "POST" ? JSON.stringify(body) : undefined,
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) continue;
+    if (!Array.isArray(payload)) continue;
+    return payload.map(normalizeTradovateTrade).filter(Boolean);
+  }
+
+  throw new Error("Trade retrieval failed.");
+}
+
 async function exchangeCodeForToken(code) {
   const form = new URLSearchParams({
     grant_type: "authorization_code",
@@ -337,6 +435,43 @@ const server = http.createServer(async (req, res) => {
       "Set-Cookie": clearSessionCookie(),
     });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/api/tradovate/sync-trades") {
+    try {
+      const body = await readRequestBody(req);
+      const helixAccountId = typeof body.helixAccountId === "string" ? body.helixAccountId.trim() : "";
+      const providerAccountId = typeof body.providerAccountId === "string" ? body.providerAccountId.trim() : "";
+      if (!helixAccountId || !providerAccountId) {
+        json(res, 400, { error: "helixAccountId and providerAccountId are required." });
+        return;
+      }
+
+      const cookies = parseCookies(req.headers.cookie || "");
+      const sessionId = String(cookies.helix_tradovate_session || "").trim();
+      const session = tradovateSessions.get(sessionId);
+      if (!session?.token?.accessToken) {
+        json(res, 401, { error: "Tradovate session not found or expired." });
+        return;
+      }
+
+      const linkedAccount = (session.accounts || []).find((item) => String(item.providerAccountId || "").trim() === providerAccountId);
+      if (!linkedAccount) {
+        json(res, 403, { error: "Requested account is not linked to this Tradovate session." });
+        return;
+      }
+
+      const trades = await fetchTradovateTrades(session.token.accessToken, providerAccountId, body.from, body.to);
+      json(res, 200, {
+        helixAccountId,
+        provider: "tradovate",
+        providerAccountId,
+        trades,
+      });
+    } catch (error) {
+      json(res, 502, { error: error.message || "Unable to sync trades from Tradovate." });
+    }
     return;
   }
 
