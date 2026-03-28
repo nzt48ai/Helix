@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tradovate-server": "node server/tradovateServer.js",
     "build": "vite build",
     "test": "node --test",
     "preview": "vite preview"

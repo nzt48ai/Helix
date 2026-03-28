@@ -70,6 +70,26 @@ function sanitizeProfileAccount(value) {
   if (!id || !name || !PROFILE_ACCOUNT_TYPES.has(type)) return null;
   if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance)) return null;
 
+  const normalizedLinkedProvider =
+    value.linkedProvider && typeof value.linkedProvider === "object"
+      ? {
+          provider: value.linkedProvider.provider === "tradovate" ? "tradovate" : null,
+          providerAccountId:
+            typeof value.linkedProvider.providerAccountId === "string" && value.linkedProvider.providerAccountId.trim()
+              ? value.linkedProvider.providerAccountId.trim()
+              : null,
+          providerAccountName:
+            typeof value.linkedProvider.providerAccountName === "string" && value.linkedProvider.providerAccountName.trim()
+              ? value.linkedProvider.providerAccountName.trim()
+              : null,
+          connectionStatus: value.linkedProvider.connectionStatus === "connected" ? "connected" : null,
+        }
+      : null;
+  const linkedProvider =
+    normalizedLinkedProvider?.provider && normalizedLinkedProvider?.providerAccountId && normalizedLinkedProvider?.connectionStatus
+      ? normalizedLinkedProvider
+      : null;
+
   const baseAccount = {
     id,
     name,
@@ -80,6 +100,7 @@ function sanitizeProfileAccount(value) {
     connectionMethod: typeof value.connectionMethod === "string" && value.connectionMethod.trim() ? value.connectionMethod.trim() : null,
     linkedSource: typeof value.linkedSource === "string" && value.linkedSource.trim() ? value.linkedSource.trim() : null,
     isHelixLinked: typeof value.isHelixLinked === "boolean" ? value.isHelixLinked : false,
+    linkedProvider,
   };
 
   if (type !== "prop") {
