@@ -3212,7 +3212,7 @@ function getAccountRowMeta(account) {
   return {
     badge: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
     logoText: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
-    title: account?.brokerName || account?.name || "Broker",
+    title: account?.brokerName || account?.name || "Personal Account",
     subtitle: "Personal",
   };
 }
@@ -3220,6 +3220,7 @@ function getAccountRowMeta(account) {
 function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, debugEnabled = false }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
+  const [accountFlowStep, setAccountFlowStep] = useState(1);
   const [accountFormError, setAccountFormError] = useState("");
   const [accountFlowNotice, setAccountFlowNotice] = useState("");
   const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
@@ -3260,6 +3261,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
 
   const resetAccountForm = useCallback(() => {
     setAccountForm(createEmptyAccountForm());
+    setAccountFlowStep(1);
     setSelectedPropFirmId("");
     setSelectedTemplateId("");
     setAccountFormError("");
@@ -3276,6 +3278,22 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       return;
     }
     setAccountForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const openAddAccountFlow = useCallback(() => {
+    setIsAddAccountOpen(true);
+    resetAccountForm();
+  }, [resetAccountForm]);
+
+  const closeAddAccountFlow = useCallback(() => {
+    setIsAddAccountOpen(false);
+    resetAccountForm();
+  }, [resetAccountForm]);
+
+  const handleAccountFlowBack = useCallback(() => {
+    setAccountFormError("");
+    setAccountFlowNotice("");
+    setAccountFlowStep((prev) => Math.max(1, prev - 1));
   }, []);
 
   const selectedFirm = useMemo(
@@ -3384,6 +3402,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
         firmName: firm.label,
       }));
     }
+    setAccountFlowStep(3);
   }, []);
 
   const handleSelectTemplate = useCallback(
@@ -3403,6 +3422,7 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
       }));
       setAccountFormError("");
       setAccountFlowNotice(`Template "${template.label}" applied. You can still edit any field.`);
+      setAccountFlowStep(4);
     },
     [selectedFirm]
   );
@@ -3497,149 +3517,222 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
         </div>
         <button
           type="button"
-          onClick={() => {
-            setIsAddAccountOpen((prev) => !prev);
-            setAccountFormError("");
-            setAccountFlowNotice("");
-            if (!isAddAccountOpen) {
-              resetAccountForm();
-            }
-          }}
+          onClick={openAddAccountFlow}
           className="mt-3 w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
         >
           + Add Account
         </button>
+      </GlassCard>
+      <AnimatePresence initial={false}>
         {isAddAccountOpen ? (
-          <div className="mt-3 space-y-3 rounded-[16px] border border-white/65 bg-white/25 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Account type</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {ADD_ACCOUNT_TYPES.map((item) => {
-                const active = normalizeAccountType(accountForm.type) === normalizeAccountType(item.value);
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => updateAccountFormField("type", item.value)}
-                    className={cn(
-                      "rounded-[14px] border px-3 py-2 text-left transition-colors",
-                      active ? "border-blue-200 bg-blue-50/70" : "border-white/70 bg-white/45 hover:bg-white/55"
-                    )}
-                  >
-                    <div className="text-[12px] font-semibold text-slate-700">{item.label}</div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">{item.description}</div>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="fixed inset-0 z-[1300] flex items-end justify-center p-3 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Add account flow">
+            <motion.button
+              type="button"
+              onClick={closeAddAccountFlow}
+              className="absolute inset-0 bg-slate-900/25"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={OVERLAY_FADE_TRANSITION}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              transition={FUTURES_PICKER_TRANSITION}
+              className="relative w-full max-w-[460px] rounded-t-[26px] border border-white/65 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(244,248,255,0.95))] p-4 shadow-[0_18px_42px_rgba(120,140,190,0.25)] sm:rounded-[26px]"
+            >
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300/80 sm:hidden" />
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="text-[14px] font-semibold tracking-[-0.015em] text-slate-700">Add Account</div>
+                <button type="button" onClick={closeAddAccountFlow} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close add account flow">
+                  <X size={16} />
+                </button>
+              </div>
 
-            {normalizeAccountType(accountForm.type) === "personal" ? (
-              <div className="space-y-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select broker</div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {PERSONAL_BROKER_OPTIONS.map((broker) => (
-                    <button
-                      key={broker.id}
-                      type="button"
-                      onClick={() => updateAccountFormField("brokerName", broker.label)}
-                      className={cn(
-                        "rounded-[14px] border px-3 py-2 text-left text-[12px] font-semibold transition-colors",
-                        accountForm.brokerName === broker.label ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600 hover:bg-white/55"
-                      )}
-                    >
-                      {broker.label}
-                    </button>
-                  ))}
+              {accountFlowStep === 1 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Account type</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {ADD_ACCOUNT_TYPES.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => {
+                          updateAccountFormField("type", item.value);
+                          setAccountFlowStep(2);
+                        }}
+                        className="rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-left transition-colors hover:bg-white/70"
+                      >
+                        <div className="text-[12px] font-semibold text-slate-700">{item.label}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">{item.description}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "personal" && accountFlowStep === 2 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select broker</div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {PERSONAL_BROKER_OPTIONS.map((broker) => (
+                      <button
+                        key={broker.id}
+                        type="button"
+                        onClick={() => {
+                          updateAccountFormField("brokerName", broker.label);
+                          setAccountFlowStep(3);
+                        }}
+                        className="rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-left text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/70"
+                      >
+                        {broker.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "personal" && accountFlowStep === 3 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Confirm personal account</div>
+                  <div className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2.5 text-[12px] text-slate-600">Broker: <span className="font-semibold text-slate-700">{accountForm.brokerName || "Not selected"}</span></div>
+                  <div className="text-[11px] text-slate-500">Connection is placeholder in this pass. Account attachment is supported.</div>
+                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                    Attach Personal Account
+                  </button>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 2 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select prop firm</div>
+                  <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
+                    {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
+                      <button
+                        key={firm.id}
+                        type="button"
+                        onClick={() => handleSelectPropFirm(firm.id)}
+                        className={cn(
+                          "rounded-[14px] border px-3 py-2 text-left text-[12px] font-semibold transition-colors",
+                          selectedPropFirmId === firm.id ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700 hover:bg-white/70"
+                        )}
+                      >
+                        {firm.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 3 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Select template</div>
+                  {selectedFirm?.templates?.length ? (
+                    <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
+                      {selectedFirm.templates.map((template) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => handleSelectTemplate(template.id)}
+                          className={cn(
+                            "rounded-[14px] border px-3 py-2 text-left text-[12px] transition-colors",
+                            selectedTemplateId === template.id ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700 hover:bg-white/70"
+                          )}
+                        >
+                          <div className="font-semibold">{template.label}</div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">{formatCurrency(template.profitTarget)} target</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setAccountFlowStep(4)} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                      Continue without template
+                    </button>
+                  )}
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 4 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4 · Connection method</div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "tradovate"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "tradovate" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Connect Tradovate account</button>
+                    <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "csv" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Upload CSV</button>
+                  </div>
+                  <div className="text-[11px] text-slate-500">Connection setup is placeholder UI in this pass; account attachment is supported.</div>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 5 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 5 · Confirm prop account</div>
+                  <label className="block">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
+                    <input
+                      type="text"
+                      value={accountForm.name}
+                      onChange={(event) => updateAccountFormField("name", event.target.value)}
+                      className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
+                      placeholder="PA 50K"
+                    />
+                  </label>
+                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                    Attach Prop Account
+                  </button>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "helixTrade" && accountFlowStep === 2 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Helix Trade connection</div>
+                  <div className="rounded-[14px] border border-white/65 bg-white/35 p-2.5 text-[12px] text-slate-600">Link a Helix Trade account from the separate app. Cross-app sync is placeholder for this pass.</div>
+                  <label className="block">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linked account name</div>
+                    <input
+                      type="text"
+                      value={accountForm.name}
+                      onChange={(event) => updateAccountFormField("name", event.target.value)}
+                      className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
+                      placeholder="Helix Trade Primary"
+                    />
+                  </label>
+                  <button type="button" onClick={() => setAccountFlowStep(3)} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                    Continue
+                  </button>
+                </div>
+              ) : null}
+
+              {normalizeAccountType(accountForm.type) === "helixTrade" && accountFlowStep === 3 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Confirm linked account</div>
+                  <div className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2.5 text-[12px] text-slate-600">Source: <span className="font-semibold text-slate-700">Helix Trade</span></div>
+                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                    Link Helix Trade Account
+                  </button>
+                </div>
+              ) : null}
+
+              {accountFormError ? <div className="mt-3 text-[12px] text-rose-500">{accountFormError}</div> : null}
+              {accountFlowNotice ? <div className="mt-3 text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
+
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-200/70 pt-3">
                 <button
                   type="button"
-                  onClick={createAccountFromFlow}
-                  className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55"
+                  onClick={handleAccountFlowBack}
+                  disabled={accountFlowStep === 1}
+                  className="rounded-[12px] border border-white/70 bg-white/45 px-3 py-1.5 text-[12px] font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Attach Personal Account
+                  Back
+                </button>
+                <button type="button" onClick={closeAddAccountFlow} className="rounded-[12px] border border-white/70 bg-white/45 px-3 py-1.5 text-[12px] font-semibold text-slate-600">
+                  Cancel
                 </button>
               </div>
-            ) : null}
-
-            {normalizeAccountType(accountForm.type) === "prop" ? (
-              <div className="space-y-3">
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Prop firm</div>
-                  <select
-                    value={selectedPropFirmId}
-                    onChange={(event) => handleSelectPropFirm(event.target.value)}
-                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
-                  >
-                    <option value="">Select a futures prop firm</option>
-                    {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
-                      <option key={firm.id} value={firm.id}>
-                        {firm.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Template</div>
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(event) => handleSelectTemplate(event.target.value)}
-                    disabled={!selectedFirm}
-                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-blue-200"
-                  >
-                    <option value="">{selectedFirm ? "Select account template" : "Select firm first"}</option>
-                    {selectedFirm?.templates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
-                  <input
-                    type="text"
-                    value={accountForm.name}
-                    onChange={(event) => updateAccountFormField("name", event.target.value)}
-                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
-                    placeholder="PA 50K"
-                  />
-                </label>
-                <div className="rounded-[14px] border border-white/65 bg-white/30 p-2.5">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4 · Connection</div>
-                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => updateAccountFormField("connectionMethod", "tradovate")} className={cn("rounded-[12px] border px-2.5 py-1.5 text-[11px] font-semibold", accountForm.connectionMethod === "tradovate" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600")}>Connect Tradovate account</button>
-                    <button type="button" onClick={() => updateAccountFormField("connectionMethod", "csv")} className={cn("rounded-[12px] border px-2.5 py-1.5 text-[11px] font-semibold", accountForm.connectionMethod === "csv" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/45 text-slate-600")}>Upload CSV</button>
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-500">Connection setup is placeholder UI in this pass; account attachment is supported.</div>
-                </div>
-                <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55">
-                  Attach Prop Account
-                </button>
-              </div>
-            ) : null}
-
-            {normalizeAccountType(accountForm.type) === "helixTrade" ? (
-              <div className="space-y-3">
-                <div className="rounded-[14px] border border-white/65 bg-white/30 p-2.5 text-[12px] text-slate-600">Link a Helix Trade account from the separate app. Sync status is placeholder for this pass.</div>
-                <label className="block">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linked account name</div>
-                  <input
-                    type="text"
-                    value={accountForm.name}
-                    onChange={(event) => updateAccountFormField("name", event.target.value)}
-                    className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
-                    placeholder="Helix Trade Primary"
-                  />
-                </label>
-                <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/45 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/55">
-                  Link Helix Trade Account
-                </button>
-              </div>
-            ) : null}
-            {accountFormError ? <div className="text-[12px] text-rose-500">{accountFormError}</div> : null}
-            {accountFlowNotice ? <div className="text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
+            </motion.div>
           </div>
         ) : null}
-      </GlassCard>
+      </AnimatePresence>
 
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Theme settings</TinyLabel>
