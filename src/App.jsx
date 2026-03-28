@@ -3,7 +3,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import {
   BookOpen,
   Calculator,
-  ChartColumn,
+  Eye,
   LineChart,
   Undo2,
   Search,
@@ -44,7 +44,7 @@ const NAV_META = {
   position: { label: "Position", icon: Calculator },
   compound: { label: "Compound", icon: TrendingUp },
   share: { label: "Share", icon: Plus },
-  dashboard: { label: "Dashboard", icon: ChartColumn },
+  dashboard: { label: "Insights", icon: Eye },
   journal: { label: "Journal", icon: BookOpen },
 };
 
