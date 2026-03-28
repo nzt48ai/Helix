@@ -685,8 +685,10 @@ function BalanceHeroCard({
           >
             {prefix ? (
               <span
+                style={fixedFontSize ? { fontSize: `${fixedFontSize}px`, lineHeight: 1 } : { lineHeight: 1 }}
                 className={cn(
                   "pointer-events-none mr-1 shrink-0 leading-none tracking-[-0.07em]",
+                  computedFontSizeClass,
                   HERO_NUMBER_TEXT_CLASS
                 )}
               >
