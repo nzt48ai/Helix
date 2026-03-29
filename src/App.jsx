@@ -3715,8 +3715,7 @@ function JournalScreen({
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Accounts</TinyLabel>
-        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
+        <TinyLabel>Prop Mode</TinyLabel>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
