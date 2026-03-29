@@ -177,7 +177,7 @@ function deriveSideFromRow(row) {
   return null;
 }
 
-export function normalizeCsvRowsToTrades(rows = [], { presetId = "generic_futures", accountId = "" } = {}) {
+export function normalizeCsvRowsToTrades(rows = [], { presetId = "generic_futures" } = {}) {
   const preset = PRESET_LIBRARY.find((item) => item.id === presetId) || PRESET_LIBRARY[PRESET_LIBRARY.length - 1];
 
   const normalized = rows
@@ -198,8 +198,8 @@ export function normalizeCsvRowsToTrades(rows = [], { presetId = "generic_future
       if (!Number.isFinite(timestamp)) return null;
 
       return {
-        id: `${preset.id}-${accountId || "unassigned"}-${providerTradeId || index}-${timestamp}`,
-        accountId,
+        id: `${preset.id}-${providerTradeId || index}-${timestamp}`,
+        accountId: "",
         source: preset.source,
         providerTradeId,
         instrument: symbol,
