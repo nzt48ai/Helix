@@ -2,15 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
   Dna,
-  Crown,
   Calculator,
-  Eye,
   LineChart,
   Undo2,
   Search,
   Plus,
   Sparkles,
   TrendingUp,
+  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -53,7 +52,7 @@ const NAV_META = {
   compound: { label: "Compound", icon: TrendingUp },
   share: { label: "Share", icon: Plus },
   dashboard: { label: "Insights", icon: Dna },
-  journal: { label: "Profile", icon: Eye },
+  journal: { label: "Profile", icon: UserRound },
 };
 
 const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
@@ -3678,7 +3677,7 @@ function JournalScreen({
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
-      <ScreenHeader right={<TopIconPill icon={Crown} />} />
+      <ScreenHeader right={<TopIconPill icon={UserRound} />} />
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Profile</TinyLabel>
         <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Your profile</div>
