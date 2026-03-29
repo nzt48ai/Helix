@@ -39,7 +39,14 @@ import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
-import { detectCsvFormat, getImportPresets, normalizeCsvRowsToTrades, parseCsvText } from "./csvImport";
+import {
+  buildTradeDeduplicationKey,
+  detectCsvFormat,
+  estimateDuplicateCount,
+  getImportPresets,
+  normalizeCsvRowsToTrades,
+  parseCsvText,
+} from "./csvImport";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -235,17 +242,7 @@ function createTradeId() {
 }
 
 function buildStableTradeFingerprint(value) {
-  const source = String(value?.source || "manual").trim().toLowerCase();
-  const accountId = String(value?.accountId || "").trim();
-  const providerTradeId = String(value?.providerTradeId || "").trim();
-  if (source && providerTradeId) return `${source}:${providerTradeId}:${accountId}`;
-  const instrument = String(value?.instrument || value?.symbol || "").trim().toUpperCase();
-  const timestamp = Number(value?.timestamp || 0);
-  const pnl = Number(value?.pnl || 0);
-  const quantity = Number(value?.quantity || 0);
-  const entryPrice = Number(value?.entryPrice || 0);
-  const exitPrice = Number(value?.exitPrice || 0);
-  return `fallback:${accountId}|${instrument}|${timestamp}|${pnl}|${quantity}|${entryPrice}|${exitPrice}`;
+  return buildTradeDeduplicationKey(value);
 }
 
 function sanitizeTrade(value) {
@@ -261,6 +258,7 @@ function sanitizeTrade(value) {
     typeof value.ruleViolationReason === "string" && value.ruleViolationReason.trim() ? value.ruleViolationReason.trim() : null;
   const tradeType = value.tradeType === "paper" ? "paper" : "live";
   const source = typeof value.source === "string" && value.source.trim() ? value.source.trim().toLowerCase() : "manual";
+  const importSource = typeof value.importSource === "string" && value.importSource.trim() ? value.importSource.trim().toLowerCase() : null;
   const providerTradeId = typeof value.providerTradeId === "string" && value.providerTradeId.trim() ? value.providerTradeId.trim() : null;
   const side = value.side === "short" ? "short" : value.side === "long" ? "long" : null;
   const entryPrice = Number(value.entryPrice);
@@ -285,6 +283,7 @@ function sanitizeTrade(value) {
     ruleViolationReason,
     tradeType,
     source,
+    importSource,
     providerTradeId,
     side,
     entryPrice: Number.isFinite(entryPrice) ? entryPrice : null,
@@ -2911,6 +2910,7 @@ function JournalScreen({
   debugEnabled = false,
 }) {
   const [csvImportState, setCsvImportState] = useState({
+    step: "upload",
     accountId: "",
     accountName: "",
     fileName: "",
@@ -2918,6 +2918,7 @@ function JournalScreen({
     headers: [],
     detection: null,
     selectedPresetId: "",
+    presetOptions: [],
     previewTrades: [],
     summary: null,
     isImporting: false,
@@ -2963,27 +2964,41 @@ function JournalScreen({
       const text = await file.text();
       const parsed = parseCsvText(text);
       if (!parsed.headers.length || !parsed.rows.length) {
-        setCsvImportState((prev) => ({ ...prev, error: "CSV file appears empty.", rows: [], previewTrades: [], summary: null }));
+        setCsvImportState((prev) => ({
+          ...prev,
+          step: "upload",
+          error: "CSV file appears empty.",
+          rows: [],
+          previewTrades: [],
+          summary: null,
+          presetOptions: [],
+        }));
         return;
       }
       const detection = detectCsvFormat(parsed.headers);
-      const presetId = detection.recommendedPresetId || "generic_futures";
-      const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId, accountId: account.id });
+      const fallbackPresetId = "generic-futures-csv-v1";
+      const hasChoiceStep = detection.confidence === "medium";
+      const selectedPresetId = detection.confidence === "low" ? fallbackPresetId : detection.recommendedPresetId || fallbackPresetId;
+      const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId: selectedPresetId, accountId: account.id });
       const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
+      const duplicateEstimate = estimateDuplicateCount(localTrades, previewTrades);
 
       setCsvImportState({
+        step: hasChoiceStep ? "detect" : "preview",
         accountId: account.id,
         accountName: account.name,
         fileName: file.name,
         rows: parsed.rows,
         headers: parsed.headers,
         detection,
-        selectedPresetId: presetId,
+        selectedPresetId,
+        presetOptions: detection.candidates || [],
         previewTrades,
         summary: {
           rowCount: parsed.rows.length,
           parsedCount: previewTrades.length,
           totalPnl,
+          duplicateEstimate,
         },
         isImporting: false,
         error: "",
@@ -2993,7 +3008,29 @@ function JournalScreen({
     } finally {
       if (event?.target) event.target.value = "";
     }
-  }, []);
+  }, [localTrades]);
+
+  const chooseDetectedPreset = useCallback(
+    (presetId) => {
+      const nextPresetId = presetId || "generic-futures-csv-v1";
+      const previewTrades = normalizeCsvRowsToTrades(csvImportState.rows, { presetId: nextPresetId, accountId: "" });
+      const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
+      const duplicateEstimate = estimateDuplicateCount(localTrades, previewTrades);
+      setCsvImportState((prev) => ({
+        ...prev,
+        step: "preview",
+        selectedPresetId: nextPresetId,
+        previewTrades,
+        summary: {
+          ...(prev.summary || {}),
+          parsedCount: previewTrades.length,
+          totalPnl,
+          duplicateEstimate,
+        },
+      }));
+    },
+    [csvImportState.rows, localTrades]
+  );
 
   const commitCsvImport = useCallback(async () => {
     if (!csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
@@ -3002,6 +3039,7 @@ function JournalScreen({
       const result = await onImportCsvTrades({ trades: csvImportState.previewTrades });
       setCsvImportState((prev) => ({
         ...prev,
+        step: "summary",
         isImporting: false,
         summary: {
           ...prev.summary,
@@ -3013,6 +3051,8 @@ function JournalScreen({
       setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
     }
   }, [csvImportState.previewTrades, onImportCsvTrades]);
+
+  const selectedPreset = getImportPresets().find((item) => item.id === csvImportState.selectedPresetId);
 
   return (
     <div className="space-y-4 pb-4">
@@ -3074,18 +3114,37 @@ function JournalScreen({
             <div className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
               <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
               <div className="mt-0.5">
-                Detected: {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"} ({csvImportState.detection?.confidence || "low"} confidence)
+                Step {csvImportState.step === "detect" ? "2" : csvImportState.step === "preview" ? "3" : csvImportState.step === "summary" ? "5" : "1"} ·
+                Detected: {selectedPreset?.label || "Generic Futures CSV"} ({csvImportState.detection?.confidence || "low"} confidence)
               </div>
+              {csvImportState.step === "detect" ? (
+                <div className="mt-2 space-y-1.5">
+                  <div className="text-[10px] text-slate-500">Choose detected format</div>
+                  {(csvImportState.presetOptions.length ? csvImportState.presetOptions : [{ presetId: "generic-futures-csv-v1", label: "Generic Futures CSV" }]).map((option) => (
+                    <button
+                      key={option.presetId}
+                      type="button"
+                      onClick={() => chooseDetectedPreset(option.presetId)}
+                      className="mr-1.5 rounded-[10px] border border-white/70 bg-white/70 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-white"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-1.5 text-[10px] text-slate-500">
-                Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows · {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
+                Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows valid · {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500">
+                Source: {selectedPreset?.source || "csv"} · Duplicates estimate {csvImportState.summary?.duplicateEstimate || 0}
               </div>
               <button
                 type="button"
                 onClick={commitCsvImport}
-                disabled={csvImportState.isImporting || !csvImportState.previewTrades.length}
+                disabled={csvImportState.isImporting || !csvImportState.previewTrades.length || csvImportState.step === "detect"}
                 className="mt-2 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {csvImportState.isImporting ? "Importing…" : "Import preview trades"}
+                {csvImportState.isImporting ? "Importing…" : "Step 4 · Confirm import"}
               </button>
               {csvImportState.summary?.importedCount !== undefined ? (
                 <div className="mt-1 text-[10px] text-slate-500">
@@ -3308,7 +3367,10 @@ export default function App() {
     [trades]
   );
 
-  const csvTrades = useMemo(() => trades.filter((trade) => String(trade?.source || "").toLowerCase() === "csv"), [trades]);
+  const csvTrades = useMemo(
+    () => trades.filter((trade) => String(trade?.source || "").toLowerCase() === "csv" || String(trade?.importSource || "").toLowerCase() === "csv"),
+    [trades]
+  );
 
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
