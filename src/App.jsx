@@ -3596,7 +3596,12 @@ function ProfileLockedScreen({ authConfigured, authMode, setAuthMode, authForm, 
           >
             {isSignup ? "Have an account? Log in" : "Need an account? Sign up"}
           </motion.button>
-          {!authConfigured ? <div className="text-[12px] text-amber-700">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable login.</div> : null}
+          {!authConfigured ? (
+            <div className="text-[12px] text-amber-700">
+              Set VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY (or SUPABASE_URL/SUPABASE_ANON_KEY) and restart the app to
+              enable login.
+            </div>
+          ) : null}
           {authError ? <div className="text-[12px] text-rose-500">{authError}</div> : null}
         </div>
       </GlassCard>
