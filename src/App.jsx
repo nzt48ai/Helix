@@ -948,11 +948,13 @@ function SharePortraitCard({
         ) : null}
 
           <div className="mt-auto pt-4">
-            <div className="flex items-center justify-center gap-2.5">
+            <div className="flex items-center justify-center gap-2">
               {identity?.showAvatar ? <IdentityAvatar identity={identity} /> : null}
-              {identity?.showUsername ? <div className="text-[12px] font-semibold text-slate-500">{identity.username}</div> : null}
+              {identity?.showUsername ? (
+                <div className="pt-[1px] text-[12px] font-semibold leading-none tracking-[0.01em] text-slate-600">{identity.username}</div>
+              ) : null}
             </div>
-            <div className="mt-2 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+            <div className="mt-1.5 text-center text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400/85">{footerLabel}</div>
           </div>
         </motion.div>
       </AnimatePresence>
