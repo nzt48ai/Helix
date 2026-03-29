@@ -1277,7 +1277,8 @@ function PropModeSelectorDialog({ open, firms = [], accounts = [], selectedAccou
     if (!selectedFirm) return [];
     return accounts.filter((account) => {
       const firmName = String(account?.firmName || "").trim().toLowerCase();
-      return firmName && firmName === selectedFirm.label.trim().toLowerCase();
+      if (selectedFirm.id === "__unassigned__") return !firmName;
+      return firmName && (firmName === selectedFirm.label.trim().toLowerCase() || firmName === selectedFirm.id);
     });
   }, [accounts, selectedFirm]);
   const dialogInitial = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.985 };
@@ -1832,6 +1833,40 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     });
     return Array.from(firmMap.values());
   }, [selectedPropAccounts]);
+  const propModeSelectableFirms = useMemo(() => {
+    const normalizedConfiguredFirms = new Map(
+      PROP_FIRM_TEMPLATE_CONFIG.map((firm) => [firm.label.trim().toLowerCase(), { id: firm.id, label: firm.label }])
+    );
+    const dynamicFirms = [];
+    const seenFirmIds = new Set();
+
+    propAccounts.forEach((account) => {
+      const normalizedFirmName = String(account?.firmName || "").trim().toLowerCase();
+      if (!normalizedFirmName) {
+        if (!seenFirmIds.has("__unassigned__")) {
+          seenFirmIds.add("__unassigned__");
+          dynamicFirms.push({ id: "__unassigned__", label: "Unassigned Firm" });
+        }
+        return;
+      }
+
+      const configuredFirm = normalizedConfiguredFirms.get(normalizedFirmName);
+      if (configuredFirm) {
+        if (!seenFirmIds.has(configuredFirm.id)) {
+          seenFirmIds.add(configuredFirm.id);
+          dynamicFirms.push(configuredFirm);
+        }
+        return;
+      }
+
+      if (!seenFirmIds.has(normalizedFirmName)) {
+        seenFirmIds.add(normalizedFirmName);
+        dynamicFirms.push({ id: normalizedFirmName, label: account?.firmName || "Custom Firm" });
+      }
+    });
+
+    return dynamicFirms;
+  }, [propAccounts]);
   const parsedAccountBalance = parseNullableNumberString(effectiveAccountBalanceValue);
   const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
@@ -2018,7 +2053,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
       />
       <PropModeSelectorDialog
         open={propModeSelectorOpen}
-        firms={PROP_FIRM_TEMPLATE_CONFIG}
+        firms={propModeSelectableFirms}
         accounts={propAccounts}
         selectedAccountIds={propModeDraftAccountIds}
         onSelectionChange={handlePropModeSelectionChange}
