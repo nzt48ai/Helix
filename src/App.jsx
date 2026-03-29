@@ -933,9 +933,13 @@ function SharePortraitCard({
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              initial={{ pathLength: 0 }}
+              initial={shouldReduce ? { pathLength: 1 } : { pathLength: 0 }}
               animate={{ pathLength: 1 }}
-              transition={{ duration: 3.8, ease: pathEase, repeat: isReplayCard && !shouldReduce ? Infinity : 0, repeatDelay: 0.5 }}
+              transition={
+                shouldReduce
+                  ? { duration: 0 }
+                  : { duration: 3.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.5 }
+              }
             />
             <circle cx={chartModel.entryMarker.x} cy={chartModel.entryMarker.y} r="1.45" fill="rgba(226,232,240,0.95)" />
             <circle cx={chartModel.stopMarker.x} cy={chartModel.stopMarker.y} r="1.35" fill="rgba(251,113,133,0.85)" />
