@@ -57,6 +57,12 @@ test("localStorage hydration handles invalid persisted data safely", () => {
   assert.deepEqual(sanitizePositionState(readStoredAppState(storage)?.positionState), POSITION_DEFAULTS);
 });
 
+test("position account balance falls back to defaults when persisted value is blank", () => {
+  const sanitized = sanitizePositionState({ accountBalance: "   " });
+  assert.equal(sanitized.accountBalance, POSITION_DEFAULTS.accountBalance);
+});
+
+
 test("reset preferences clears persisted data and falls back to defaults", () => {
   const storage = createStorage({
     [APP_STORAGE_KEY]: JSON.stringify({

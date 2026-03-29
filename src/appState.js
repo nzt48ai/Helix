@@ -246,7 +246,10 @@ export function readStoredProfileState(storage) {
 export function sanitizePositionState(value) {
   if (!value || typeof value !== "object") return { ...POSITION_DEFAULTS };
   return {
-    accountBalance: typeof value.accountBalance === "string" ? value.accountBalance : POSITION_DEFAULTS.accountBalance,
+    accountBalance:
+      typeof value.accountBalance === "string" && value.accountBalance.trim()
+        ? value.accountBalance
+        : POSITION_DEFAULTS.accountBalance,
     propMode: typeof value.propMode === "boolean" ? value.propMode : POSITION_DEFAULTS.propMode,
     instrument: POSITION_INSTRUMENT_KEYS.includes(value.instrument) ? value.instrument : POSITION_DEFAULTS.instrument,
     entry: typeof value.entry === "string" ? value.entry : POSITION_DEFAULTS.entry,
