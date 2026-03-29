@@ -1,5 +1,19 @@
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+function readEnv(...keys) {
+  const viteEnv = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
+  const runtimeEnv =
+    typeof window !== "undefined" && window.__HELIX_ENV__ && typeof window.__HELIX_ENV__ === "object"
+      ? window.__HELIX_ENV__
+      : {};
+
+  for (const key of keys) {
+    const value = viteEnv[key] ?? runtimeEnv[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+const supabaseUrl = readEnv("VITE_SUPABASE_URL", "SUPABASE_URL");
+const supabaseAnonKey = readEnv("VITE_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY");
 const AUTH_STORAGE_KEY = "helix.supabase.auth.session.v1";
 const SUPABASE_PROFILE_TABLE = "user_profiles";
 const SUPABASE_TRADE_LEDGER_TABLE = "trade_ledger";

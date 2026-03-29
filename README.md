@@ -67,6 +67,13 @@ VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-supabase-anon-key>
 ```
 
+If your deployment system cannot use the `VITE_` prefix, Helix also accepts:
+
+```bash
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_ANON_KEY=<your-supabase-anon-key>
+```
+
 Without these variables, the app still runs in local-first mode, but Profile login is disabled and the locked state explains how to enable it.
 
 ### Supabase Profile + normalized trade ledger sync (logged-in users)
