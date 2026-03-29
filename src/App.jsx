@@ -826,15 +826,15 @@ function SharePortraitCard({
   const premiumPillSheenClassName = "before:pointer-events-none before:absolute before:inset-x-[10%] before:top-[8%] before:h-[46%] before:rounded-full before:bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.22))]";
   const premiumPillToneClassNameByKey = {
     REPLAY:
-      "border-amber-200/85 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(254,243,199,0.84))] text-amber-800 shadow-[0_0_0_1px_rgba(251,191,36,0.14),0_5px_10px_rgba(245,158,11,0.16),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(245,158,11,0.14)]",
+      "border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,251,235,0.94),rgba(254,243,199,0.78))] text-amber-800 shadow-[0_0_0_1px_rgba(251,191,36,0.12),0_5px_10px_rgba(245,158,11,0.12),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(245,158,11,0.11)]",
     SETUP:
-      "border-emerald-200/85 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(209,250,229,0.84))] text-emerald-800 shadow-[0_0_0_1px_rgba(52,211,153,0.16),0_5px_10px_rgba(16,185,129,0.14),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(16,185,129,0.14)]",
+      "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(209,250,229,0.78))] text-emerald-800 shadow-[0_0_0_1px_rgba(52,211,153,0.13),0_5px_10px_rgba(16,185,129,0.11),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(16,185,129,0.11)]",
     JOURNAL:
-      "border-rose-200/85 bg-[linear-gradient(180deg,rgba(255,241,242,0.96),rgba(255,228,230,0.84))] text-rose-800 shadow-[0_0_0_1px_rgba(251,113,133,0.15),0_5px_10px_rgba(244,63,94,0.14),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(244,63,94,0.14)]",
+      "border-rose-200/80 bg-[linear-gradient(180deg,rgba(255,241,242,0.94),rgba(255,228,230,0.78))] text-rose-800 shadow-[0_0_0_1px_rgba(251,113,133,0.12),0_5px_10px_rgba(244,63,94,0.11),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(244,63,94,0.11)]",
     LONG:
-      "border-emerald-200/85 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(209,250,229,0.84))] text-emerald-800 shadow-[0_0_0_1px_rgba(52,211,153,0.16),0_5px_10px_rgba(16,185,129,0.14),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(16,185,129,0.14)]",
+      "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(209,250,229,0.78))] text-emerald-800 shadow-[0_0_0_1px_rgba(52,211,153,0.13),0_5px_10px_rgba(16,185,129,0.11),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(16,185,129,0.11)]",
     SHORT:
-      "border-rose-200/85 bg-[linear-gradient(180deg,rgba(255,241,242,0.96),rgba(255,228,230,0.84))] text-rose-800 shadow-[0_0_0_1px_rgba(251,113,133,0.15),0_5px_10px_rgba(244,63,94,0.14),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(244,63,94,0.14)]",
+      "border-rose-200/80 bg-[linear-gradient(180deg,rgba(255,241,242,0.94),rgba(255,228,230,0.78))] text-rose-800 shadow-[0_0_0_1px_rgba(251,113,133,0.12),0_5px_10px_rgba(244,63,94,0.11),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(244,63,94,0.11)]",
   };
   const getPremiumPillClassName = (pillKey) =>
     cn(premiumPillBaseClassName, premiumPillSheenClassName, premiumPillToneClassNameByKey[pillKey]);
@@ -856,7 +856,7 @@ function SharePortraitCard({
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={`share-content-${shareType}`}
-          className="flex h-full flex-col bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.20)),radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.14),transparent_40%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.08),transparent_44%)] px-6 pb-6 pt-6 text-slate-700"
+          className="flex h-full flex-col bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.22)),radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.11),transparent_40%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.06),transparent_44%)] px-6 pb-6 pt-6 text-slate-700"
           initial={shareContentInitial}
           animate={shareContentAnimate}
           exit={shareContentExit}
@@ -877,8 +877,8 @@ function SharePortraitCard({
         <div className="mt-6 grid w-full grid-cols-3 gap-3.5">
           {[
             { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
-            { label: "STOP", value: stopValue, tone: "text-rose-400" },
-            { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
+            { label: "STOP", value: stopValue, tone: "text-rose-500/90" },
+            { label: "TARGET", value: targetValue, tone: "text-emerald-600/90" },
           ].map((item) => (
             <div key={item.label} className="flex min-w-0 flex-col items-center justify-center rounded-[18px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.56),rgba(255,255,255,0.46))] px-[14px] py-[12px] text-center shadow-[0_6px_16px_rgba(148,163,184,0.07),inset_0_1px_0_rgba(255,255,255,0.74)]">
               <div className="text-[9px] uppercase tracking-[0.2em] text-slate-500/80">{item.label}</div>
