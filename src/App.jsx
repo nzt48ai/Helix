@@ -116,6 +116,8 @@ const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
 const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
 const PROFILE_LOCAL_BACKUP_STORAGE_KEY = "helix.profile.settings.local-backup.v1";
 const PROFILE_CLOUD_SAVE_DEBOUNCE_MS = 800;
+const RECONCILIATION_DISMISS_STORAGE_KEY = "helix.reconciliation.dismiss.v1";
+const RECONCILIATION_REMIND_LATER_MS = 1000 * 60 * 60 * 24 * 3;
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -393,6 +395,28 @@ function sanitizeTrade(value) {
 function sanitizeTrades(value) {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeTrade).filter(Boolean);
+}
+
+function readReconciliationDismissState() {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(RECONCILIATION_DISMISS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistReconciliationDismissState(state) {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(RECONCILIATION_DISMISS_STORAGE_KEY, JSON.stringify(state && typeof state === "object" ? state : {}));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function deriveTradeImportRange(trades = []) {
@@ -3478,6 +3502,8 @@ function ProfileLockedScreen({ authConfigured, authMode, setAuthMode, authForm, 
 
 function JournalScreen({
   profileState,
+  localTrades = [],
+  isAuthenticated = false,
   onProfileStateChange,
   onResetPreferences,
   onSyncTradovateAccountTrades,
@@ -3496,6 +3522,7 @@ function JournalScreen({
   const [tradovateAccounts, setTradovateAccounts] = useState([]);
   const [isTradovateBusy, setIsTradovateBusy] = useState(false);
   const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
+  const [reconciliationDismissState, setReconciliationDismissState] = useState(() => readReconciliationDismissState());
   const [csvImportState, setCsvImportState] = useState({
     accountId: "",
     accountName: "",
@@ -3509,6 +3536,99 @@ function JournalScreen({
     isImporting: false,
     error: "",
   });
+  const csvFileInputByAccountIdRef = useRef({});
+
+  useEffect(() => {
+    setReconciliationDismissState(readReconciliationDismissState());
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    persistReconciliationDismissState(reconciliationDismissState);
+  }, [reconciliationDismissState]);
+
+  const localTradeCountByAccountId = useMemo(() => {
+    const next = new Map();
+    sanitizeTrades(localTrades).forEach((trade) => {
+      const accountId = typeof trade?.accountId === "string" ? trade.accountId.trim() : "";
+      if (!accountId) return;
+      next.set(accountId, (next.get(accountId) || 0) + 1);
+    });
+    return next;
+  }, [localTrades]);
+
+  const accountReconciliationById = useMemo(() => {
+    if (!isAuthenticated) return {};
+    const result = {};
+    profileState.accounts.forEach((account) => {
+      const accountId = account?.id;
+      if (!accountId) return;
+      const tradeSync = account?.tradeSync || {};
+      const localCount = Number(localTradeCountByAccountId.get(accountId) || 0);
+      const lastSyncCount = Number(tradeSync.lastSyncCount || 0);
+      const lastImportCount = Number(tradeSync.lastImportCount || 0);
+      const expectedCount = Math.max(lastSyncCount, lastImportCount);
+      const hasCloudBookkeeping = Boolean(
+        tradeSync.lastImportAt ||
+          tradeSync.lastSyncAt ||
+          tradeSync.lastImportSource ||
+          tradeSync.lastImportedBatchId ||
+          expectedCount > 0
+      );
+      const providerConnection = account?.connection || account?.linkedProvider || null;
+      const isTradovateLinked =
+        providerConnection?.provider === "tradovate" &&
+        providerConnection?.providerAccountId &&
+        providerConnection?.connectionStatus === "connected";
+      const recentSyncAtMs = tradeSync.lastSyncAt ? new Date(tradeSync.lastSyncAt).getTime() : NaN;
+      const hasRecentTradovateSync = Number.isFinite(recentSyncAtMs) && Date.now() - recentSyncAtMs <= 1000 * 60 * 60 * 24 * 30;
+      const missingAllLocalTrades = hasCloudBookkeeping && localCount === 0;
+      const hasLikelyPartialLocalTrades = expectedCount >= 10 && localCount > 0 && localCount <= Math.max(3, Math.floor(expectedCount * 0.35));
+      const needsTradovateRecovery = isTradovateLinked && hasRecentTradovateSync && localCount === 0;
+      const needsAction = Boolean(missingAllLocalTrades || hasLikelyPartialLocalTrades || needsTradovateRecovery);
+      const reason = missingAllLocalTrades
+        ? "Cloud sync/import history exists, but this device has no local trades for this account."
+        : hasLikelyPartialLocalTrades
+          ? "Cloud import/sync count suggests more trades than currently stored on this device."
+          : needsTradovateRecovery
+            ? "Tradovate sync history exists, but this device has not imported the local ledger yet."
+            : "";
+      const actionType = isTradovateLinked ? "sync" : tradeSync.lastImportSource === "csv" || account?.connectionMethod === "csv" ? "csv" : "info";
+      const signature = [
+        tradeSync.lastImportAt || "",
+        tradeSync.lastSyncAt || "",
+        tradeSync.lastImportCount || "",
+        tradeSync.lastSyncCount || "",
+        tradeSync.lastImportSource || "",
+        localCount,
+      ].join("|");
+      const dismissal = reconciliationDismissState?.[accountId] || null;
+      const hasMatchingDismissal = dismissal?.signature === signature;
+      const remindAt = Number(dismissal?.remindAt || 0);
+      const isRemindSuppressed = hasMatchingDismissal && Number.isFinite(remindAt) && remindAt > Date.now();
+      const isDismissed = hasMatchingDismissal && !isRemindSuppressed && dismissal?.mode === "dismissed";
+      result[accountId] = {
+        accountId,
+        localCount,
+        expectedCount,
+        needsAction,
+        reason,
+        actionType,
+        signature,
+        isVisible: needsAction && !isDismissed && !isRemindSuppressed,
+        isSuppressed: Boolean(isDismissed || isRemindSuppressed),
+      };
+    });
+    return result;
+  }, [isAuthenticated, localTradeCountByAccountId, profileState.accounts, reconciliationDismissState]);
+
+  const reconciliationItems = useMemo(
+    () => Object.values(accountReconciliationById).filter((item) => item.needsAction),
+    [accountReconciliationById]
+  );
+  const visibleReconciliationItems = useMemo(
+    () => reconciliationItems.filter((item) => item.isVisible),
+    [reconciliationItems]
+  );
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3997,6 +4117,37 @@ function JournalScreen({
     [onSyncTradovateAccountTrades]
   );
 
+  const openCsvPickerForAccount = useCallback((accountId) => {
+    const input = csvFileInputByAccountIdRef.current[accountId];
+    if (input && typeof input.click === "function") input.click();
+  }, []);
+
+  const dismissReconciliation = useCallback((accountId, signature) => {
+    if (!accountId || !signature) return;
+    setReconciliationDismissState((prev) => ({
+      ...(prev || {}),
+      [accountId]: {
+        signature,
+        mode: "dismissed",
+        dismissedAt: new Date().toISOString(),
+        remindAt: null,
+      },
+    }));
+  }, []);
+
+  const remindReconciliationLater = useCallback((accountId, signature) => {
+    if (!accountId || !signature) return;
+    setReconciliationDismissState((prev) => ({
+      ...(prev || {}),
+      [accountId]: {
+        signature,
+        mode: "remind_later",
+        dismissedAt: new Date().toISOString(),
+        remindAt: Date.now() + RECONCILIATION_REMIND_LATER_MS,
+      },
+    }));
+  }, []);
+
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="JOURNAL SCREEN" />
@@ -4055,6 +4206,14 @@ function JournalScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Accounts</TinyLabel>
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
+        {visibleReconciliationItems.length ? (
+          <div className="mt-3 rounded-[14px] border border-amber-200/90 bg-amber-50/70 p-3 text-[12px] text-amber-900">
+            <div className="font-semibold">Trade reconciliation needed on this device</div>
+            <div className="mt-1 text-[11px] text-amber-800">
+              Account metadata syncs across devices, but full trade history stays local for now. Re-sync or re-import on this device when needed.
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
@@ -4073,6 +4232,7 @@ function JournalScreen({
                       minute: "2-digit",
                     })}`
                   : null;
+              const reconciliationState = accountReconciliationById[account.id] || null;
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -4108,6 +4268,54 @@ function JournalScreen({
                     </div>
                   </div>
                 ) : null}
+                {reconciliationState?.isVisible ? (
+                  <div className="mt-2 rounded-[12px] border border-amber-200/90 bg-amber-50/75 p-2.5">
+                    <div className="text-[11px] font-semibold text-amber-900">Missing local trade data likely</div>
+                    <div className="mt-1 text-[10px] text-amber-800">{reconciliationState.reason}</div>
+                    <div className="mt-1 text-[10px] text-amber-700">
+                      Local trades: {reconciliationState.localCount}
+                      {reconciliationState.expectedCount > 0 ? ` · Last cloud import/sync count: ${reconciliationState.expectedCount}` : ""}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {reconciliationState.actionType === "sync" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSyncTrades(account)}
+                          disabled={syncState?.status === "syncing"}
+                          className="rounded-[10px] border border-amber-300/90 bg-amber-100/80 px-2.5 py-1 text-[10px] font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {syncState?.status === "syncing" ? "Syncing…" : "Sync Trades"}
+                        </button>
+                      ) : null}
+                      {reconciliationState.actionType === "csv" ? (
+                        <button
+                          type="button"
+                          onClick={() => openCsvPickerForAccount(account.id)}
+                          className="rounded-[10px] border border-amber-300/90 bg-amber-100/80 px-2.5 py-1 text-[10px] font-semibold text-amber-900"
+                        >
+                          Re-import CSV
+                        </button>
+                      ) : null}
+                      {reconciliationState.actionType === "info" ? (
+                        <div className="text-[10px] text-amber-800">Use this account's normal import flow to rebuild local trades on this device.</div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => remindReconciliationLater(account.id, reconciliationState.signature)}
+                        className="rounded-[10px] border border-white/80 bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600"
+                      >
+                        Remind later
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dismissReconciliation(account.id, reconciliationState.signature)}
+                        className="rounded-[10px] border border-white/80 bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-2 space-y-2">
                   <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
                     Import CSV
@@ -4115,6 +4323,10 @@ function JournalScreen({
                       type="file"
                       accept=".csv,text/csv"
                       className="hidden"
+                      ref={(node) => {
+                        if (!node) return;
+                        csvFileInputByAccountIdRef.current[account.id] = node;
+                      }}
                       onChange={(event) => handleCsvFileSelection(event, account)}
                     />
                   </label>
@@ -5307,6 +5519,8 @@ export default function App() {
       isAuthenticated ? (
         <JournalScreen
           profileState={profileState}
+          localTrades={trades}
+          isAuthenticated={isAuthenticated}
           onProfileStateChange={setProfileState}
           onResetPreferences={resetPreferences}
           onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
