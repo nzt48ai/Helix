@@ -69,7 +69,7 @@ const FUTURES_PICKER_TRANSITION = { type: "spring", stiffness: 300, damping: 28,
 const OVERLAY_FADE_TRANSITION = { duration: 0.18, ease: IOS_FADE_EASE };
 const TAB_CONTENT_TRANSITION = { duration: 0.2, ease: IOS_FADE_EASE };
 const HERO_NUMBER_TEXT_CLASS =
-  "bg-[linear-gradient(110deg,rgba(71,85,105,0.98)_0%,rgba(255,255,255,0.9)_45%,rgba(51,65,85,0.92)_60%,rgba(100,116,139,0.86)_100%)] bg-[length:200%_100%] bg-clip-text font-semibold leading-[1] tracking-[-0.08em] text-transparent animate-[balanceShimmer_10s_linear_infinite]";
+  "bg-[linear-gradient(110deg,rgba(51,65,85,0.99)_0%,rgba(255,255,255,0.9)_42%,rgba(30,41,59,0.96)_58%,rgba(71,85,105,0.9)_100%)] bg-[length:200%_100%] bg-clip-text font-bold leading-[0.94] tracking-[-0.09em] text-transparent animate-[balanceShimmer_10s_linear_infinite]";
 const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) => ({
   key: instrument.symbol,
   pointValue: instrument.pointValue ?? 1,
@@ -866,7 +866,7 @@ function SharePortraitCard({
           <div className={getPremiumPillClassName(shareType)}>
             <span className="relative z-10">{shareType}</span>
           </div>
-          <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
+          <div className="min-w-0 flex-1 text-center text-[20px] font-semibold tracking-[-0.025em] text-slate-700/90">{selectedInstrumentKey}</div>
           {normalizedDirection ? <div className={directionPillClassName}><span className="relative z-10">{normalizedDirection}</span></div> : null}
         </div>
 
@@ -908,7 +908,7 @@ function SharePortraitCard({
         <div className="mt-6 min-w-0 text-center">
           <div
             className={cn(
-              "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
+              "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,11vw,60px)] tabular-nums",
               HERO_NUMBER_TEXT_CLASS
             )}
           >
@@ -918,7 +918,7 @@ function SharePortraitCard({
               heroMetric
             )}
           </div>
-          {hasDirectionalStoryLine ? <div className="mt-3.5 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
+          {hasDirectionalStoryLine ? <div className="mt-3 text-[11px] tracking-[0.01em] text-slate-500/85">{directionalStoryLine}</div> : null}
         </div>
 
         <div
@@ -929,8 +929,8 @@ function SharePortraitCard({
         >
           {secondaryMetrics.map((metric) => (
             <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] bg-white/48 px-4 py-[15px] shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]">
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
-              <div className="mt-3.5 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.14em] text-slate-500/90">{metric.label}</div>
+              <div className="mt-3.5 overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-medium text-slate-700/90 tabular-nums">
                 {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
                   <AnimatedFormattedNumber value={metric.animatedNumber} formatter={metric.formatter} />
                 ) : (
