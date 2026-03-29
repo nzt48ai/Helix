@@ -1276,7 +1276,6 @@ function BalanceHeroCard({
   toggleRightLabel,
   toggleState = false,
   onToggle,
-  toggleAdornment = null,
   prefix = "$",
   suffix = "",
   fixedFontSize,
@@ -1375,7 +1374,6 @@ function BalanceHeroCard({
                 </motion.span>
                 {toggleLabel === "Prop" ? null : <span className={cn("transition-colors", toggleState ? "text-slate-700" : "text-slate-500/80")}>{toggleRightLabel || "%"}</span>}
               </motion.button>
-              {toggleAdornment}
             </div>
           </div>
         ) : null}
@@ -1583,7 +1581,6 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const lastDefaultInstrumentRef = useRef(POSITION_INSTRUMENTS[2]?.key || "MNQ");
   const [activePriceField, setActivePriceField] = useState(null);
   const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
-  const [propSelectorOpen, setPropSelectorOpen] = useState(false);
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
@@ -1603,22 +1600,13 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const pointValue = selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
-  const propAccounts = useMemo(
-    () => (Array.isArray(profileState?.accounts) ? profileState.accounts.filter((account) => normalizeAccountType(account?.type) === "prop") : []),
-    [profileState]
-  );
-  const activePropModeAccountIds = useMemo(
-    () =>
-      Array.isArray(positionState.activePropModeAccountIds)
-        ? positionState.activePropModeAccountIds.filter((id) => typeof id === "string" && id.trim())
-        : [],
-    [positionState.activePropModeAccountIds]
-  );
   const selectedPropAccounts = useMemo(() => {
-    if (!activePropModeAccountIds.length || !propAccounts.length) return [];
-    const selectedIdSet = new Set(activePropModeAccountIds);
-    return propAccounts.filter((account) => selectedIdSet.has(account.id));
-  }, [activePropModeAccountIds, propAccounts]);
+    const selectedIds = Array.isArray(profileState?.selectedPropAccountIds) ? profileState.selectedPropAccountIds : [];
+    const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
+    if (!selectedIds.length || !allAccounts.length) return [];
+    const selectedIdSet = new Set(selectedIds);
+    return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop" && selectedIdSet.has(account.id));
+  }, [profileState]);
   const propModeBalanceOverride = useMemo(() => {
     if (!positionState.propMode || !selectedPropAccounts.length) return null;
     const combinedBalance = selectedPropAccounts.reduce((sum, account) => {
@@ -1680,38 +1668,6 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   }, [isKellyManual, autoSuggestedContracts, positionState.contracts, setPositionState]);
 
   const setField = (key, value) => setPositionState((prev) => ({ ...prev, [key]: value }));
-  const handleTogglePropMode = useCallback(() => {
-    setPositionState((prev) => {
-      const nextPropMode = !prev.propMode;
-      return { ...prev, propMode: nextPropMode };
-    });
-    if (!positionState.propMode) setPropSelectorOpen(true);
-  }, [positionState.propMode, setPositionState]);
-
-  const togglePropSelection = useCallback(
-    (accountId, checked) => {
-      setPositionState((prev) => {
-        const currentSelection = Array.isArray(prev.activePropModeAccountIds) ? prev.activePropModeAccountIds : [];
-        const selectionSet = new Set(currentSelection);
-        if (checked) {
-          selectionSet.add(accountId);
-        } else {
-          selectionSet.delete(accountId);
-        }
-        return {
-          ...prev,
-          activePropModeAccountIds: Array.from(selectionSet),
-        };
-      });
-    },
-    [setPositionState]
-  );
-
-  useEffect(() => {
-    if (!positionState.propMode) return;
-    if (selectedPropAccounts.length > 0) return;
-    if (!propSelectorOpen) setPropSelectorOpen(true);
-  }, [positionState.propMode, propSelectorOpen, selectedPropAccounts.length]);
 
   useEffect(() => {
     setPriceDrafts((prev) => {
@@ -1828,101 +1784,11 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
         }}
         toggleLabel="Prop"
         toggleState={positionState.propMode}
-        onToggle={handleTogglePropMode}
-        toggleAdornment={
-          selectedPropAccounts.length ? (
-            <div className="ml-1 inline-flex items-center gap-1.5">
-              {Array.from(
-                new Map(
-                  selectedPropAccounts.map((account) => [
-                    (account?.firmName || account?.name || "PF").trim().toLowerCase(),
-                    account,
-                  ])
-                ).values()
-              )
-                .slice(0, 3)
-                .map((account) => {
-                  const logo = (account?.firmName || account?.name || "PF").trim();
-                  const initials = logo
-                    .split(/\s+/)
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((part) => part[0]?.toUpperCase() || "")
-                    .join("")
-                    .slice(0, 2) || "PF";
-                  return (
-                    <span
-                      key={account.id}
-                      title={logo}
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300/80 bg-white/90 text-[8px] font-semibold tracking-[0.02em] text-slate-600"
-                    >
-                      {initials}
-                    </span>
-                  );
-                })}
-            </div>
-          ) : null
-        }
+        onToggle={() => setField("propMode", !positionState.propMode)}
       />
       {showPropModeSelectionHint ? (
-        <div className="px-1 text-center text-[12px] font-medium text-slate-500">Select prop accounts to drive Prop Mode balance</div>
+        <div className="px-1 text-center text-[12px] font-medium text-slate-500">Select prop accounts in Profile to use Prop Mode</div>
       ) : null}
-      <AnimatePresence>
-        {propSelectorOpen ? (
-          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-900/30 px-4 pb-4 pt-10" role="presentation">
-            <motion.div
-              initial={reduceMotion ? false : { opacity: 0, y: 24 }}
-              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
-              transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: IOS_FADE_EASE }}
-              className="max-h-[72vh] w-full max-w-md overflow-hidden rounded-[26px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,248,255,0.95))] p-4 shadow-[0_24px_48px_rgba(70,85,120,0.24)]"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Prop Mode</div>
-                  <div className="text-[16px] font-semibold text-slate-700">Select prop accounts</div>
-                </div>
-                <button type="button" onClick={() => setPropSelectorOpen(false)} className="rounded-full p-1 text-slate-500 hover:bg-slate-100">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="max-h-[46vh] space-y-2 overflow-y-auto pb-2">
-                {propAccounts.length ? (
-                  propAccounts.map((account) => {
-                    const checked = activePropModeAccountIds.includes(account.id);
-                    return (
-                      <label key={account.id} className="flex cursor-pointer items-center justify-between rounded-[14px] border border-slate-200 bg-white/70 px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-semibold text-slate-700">{account.name || "Prop Account"}</div>
-                          <div className="truncate text-[11px] text-slate-500">{account.firmName || "Prop Firm"}</div>
-                        </div>
-                        <input type="checkbox" checked={checked} onChange={(event) => togglePropSelection(account.id, event.target.checked)} />
-                      </label>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-[14px] border border-slate-200 bg-white/65 px-3 py-3 text-[12px] text-slate-500">No prop accounts available.</div>
-                )}
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPositionState((prev) => ({ ...prev, activePropModeAccountIds: [] }));
-                    setPropSelectorOpen(false);
-                  }}
-                  className="rounded-[12px] border border-slate-200 px-3 py-2 text-[12px] font-semibold text-slate-600"
-                >
-                  Clear
-                </button>
-                <button type="button" onClick={() => setPropSelectorOpen(false)} className="rounded-[12px] bg-slate-700 px-3 py-2 text-[12px] font-semibold text-white">
-                  Done
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        ) : null}
-      </AnimatePresence>
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
@@ -3777,6 +3643,29 @@ function JournalScreen({
         return sanitizeProfileState({
           ...safePrev,
           accounts: safePrev.accounts.filter((account) => account.id !== accountId),
+          selectedPropAccountIds: (safePrev.selectedPropAccountIds || []).filter((id) => id !== accountId),
+        });
+      });
+    },
+    [onProfileStateChange]
+  );
+
+  const togglePropAccountSelection = useCallback(
+    (accountId, checked) => {
+      onProfileStateChange((prev) => {
+        const safePrev = sanitizeProfileState(prev);
+        const targetAccount = safePrev.accounts.find((account) => account.id === accountId);
+        if (normalizeAccountType(targetAccount?.type) !== "prop") return safePrev;
+        const currentSelection = Array.isArray(safePrev.selectedPropAccountIds) ? safePrev.selectedPropAccountIds : [];
+        const selectionSet = new Set(currentSelection);
+        if (checked) {
+          selectionSet.add(accountId);
+        } else {
+          selectionSet.delete(accountId);
+        }
+        return sanitizeProfileState({
+          ...safePrev,
+          selectedPropAccountIds: Array.from(selectionSet),
         });
       });
     },
@@ -3827,10 +3716,12 @@ function JournalScreen({
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Accounts</TinyLabel>
+        <TinyLabel>Prop Mode</TinyLabel>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
+              const isPropAccount = normalizeAccountType(account?.type) === "prop";
+              const isSelected = isPropAccount && Array.isArray(profileState.selectedPropAccountIds) && profileState.selectedPropAccountIds.includes(account.id);
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -3844,6 +3735,13 @@ function JournalScreen({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(isSelected)}
+                      disabled={!isPropAccount}
+                      onChange={(event) => togglePropAccountSelection(account.id, event.target.checked)}
+                      aria-label={`Select ${account.name || "account"} for prop mode`}
+                    />
                     <button
                       type="button"
                       onClick={() => deleteAccount(account.id)}
