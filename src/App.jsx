@@ -874,15 +874,15 @@ function SharePortraitCard({
 
         <div className="mt-2.5 pl-0.5 text-[12px] leading-[1.3] text-slate-500/90">{contextLine}</div>
 
-        <div className="mt-6 grid w-full grid-cols-3 gap-4.5">
+        <div className="mt-6 grid w-full grid-cols-3 gap-3.5">
           {[
             { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
             { label: "STOP", value: stopValue, tone: "text-rose-400" },
             { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
           ].map((item) => (
-            <div key={item.label} className="min-w-0 rounded-[20px] bg-white/52 px-4 py-[15px] text-center shadow-[0_8px_20px_rgba(148,163,184,0.09),inset_0_1px_0_rgba(255,255,255,0.72)] flex flex-col items-center justify-center">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
-              <div className={cn("mt-3.5 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+            <div key={item.label} className="flex min-w-0 flex-col items-center justify-center rounded-[18px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.56),rgba(255,255,255,0.46))] px-[14px] py-[12px] text-center shadow-[0_6px_16px_rgba(148,163,184,0.07),inset_0_1px_0_rgba(255,255,255,0.74)]">
+              <div className="text-[9px] uppercase tracking-[0.2em] text-slate-500/80">{item.label}</div>
+              <div className={cn("mt-2.5 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-semibold tracking-[-0.015em] tabular-nums", item.tone)}>
                 {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
             </div>
