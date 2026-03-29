@@ -4810,6 +4810,8 @@ export default function App() {
                     tradeSync: {
                       lastSyncAt: nowIso,
                       lastSyncStatus: "success",
+                      lastSyncCount: dedupedIncoming.length,
+                      lastSyncError: null,
                       lastSyncMessage: `Imported ${dedupedIncoming.length} trade${dedupedIncoming.length === 1 ? "" : "s"}.`,
                     },
                   }
@@ -4834,6 +4836,8 @@ export default function App() {
                     tradeSync: {
                       lastSyncAt: nowIso,
                       lastSyncStatus: "error",
+                      lastSyncCount: 0,
+                      lastSyncError: error?.message || "Sync failed.",
                       lastSyncMessage: error?.message || "Sync failed.",
                     },
                   }
