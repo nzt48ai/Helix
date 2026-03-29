@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
+  Brain,
   Crown,
   Calculator,
   Eye,
@@ -51,8 +52,8 @@ const NAV_META = {
   position: { label: "Position", icon: Calculator },
   compound: { label: "Compound", icon: TrendingUp },
   share: { label: "Share", icon: Plus },
-  dashboard: { label: "Insights", icon: Eye },
-  journal: { label: "Profile", icon: Crown },
+  dashboard: { label: "Insights", icon: Brain },
+  journal: { label: "Profile", icon: Eye },
 };
 
 const NAV_ITEMS = TAB_KEYS.map((key) => ({ key, ...NAV_META[key] }));
