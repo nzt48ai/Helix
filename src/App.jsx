@@ -395,6 +395,20 @@ function sanitizeTrades(value) {
   return value.map(sanitizeTrade).filter(Boolean);
 }
 
+function deriveTradeImportRange(trades = []) {
+  if (!Array.isArray(trades) || !trades.length) {
+    return { from: null, to: null };
+  }
+  const timestamps = trades
+    .map((trade) => new Date(trade?.timestamp).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (!timestamps.length) return { from: null, to: null };
+  return {
+    from: new Date(Math.min(...timestamps)).toISOString(),
+    to: new Date(Math.max(...timestamps)).toISOString(),
+  };
+}
+
 function deriveTradovateTradeSide(providerTrade = {}) {
   const normalized = String(providerTrade.side || providerTrade.action || providerTrade.direction || "")
     .trim()
@@ -4798,6 +4812,7 @@ export default function App() {
         const dedupedIncoming = normalizedTrades.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
         const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
         setTrades(mergedTrades);
+        const syncRange = deriveTradeImportRange(normalizedTrades);
 
         const nowIso = new Date().toISOString();
         setProfileState((prev) =>
@@ -4808,11 +4823,21 @@ export default function App() {
                 ? {
                     ...item,
                     tradeSync: {
+                      ...(item.tradeSync || {}),
                       lastSyncAt: nowIso,
                       lastSyncStatus: "success",
                       lastSyncCount: dedupedIncoming.length,
                       lastSyncError: null,
                       lastSyncMessage: `Imported ${dedupedIncoming.length} trade${dedupedIncoming.length === 1 ? "" : "s"}.`,
+                      lastImportSource: "tradovate",
+                      lastImportAt: nowIso,
+                      lastImportStatus: "success",
+                      lastImportCount: dedupedIncoming.length,
+                      lastImportError: null,
+                      lastImportRangeFrom: syncRange.from,
+                      lastImportRangeTo: syncRange.to,
+                      lastSeenProviderCursor:
+                        typeof response?.cursor === "string" && response.cursor.trim() ? response.cursor.trim() : item?.tradeSync?.lastSeenProviderCursor || null,
                     },
                   }
                 : item
@@ -4834,11 +4859,17 @@ export default function App() {
                 ? {
                     ...item,
                     tradeSync: {
+                      ...(item.tradeSync || {}),
                       lastSyncAt: nowIso,
                       lastSyncStatus: "error",
                       lastSyncCount: 0,
                       lastSyncError: error?.message || "Sync failed.",
                       lastSyncMessage: error?.message || "Sync failed.",
+                      lastImportSource: "tradovate",
+                      lastImportAt: nowIso,
+                      lastImportStatus: "error",
+                      lastImportCount: 0,
+                      lastImportError: error?.message || "Sync failed.",
                     },
                   }
                 : item
@@ -4856,16 +4887,66 @@ export default function App() {
       if (!accountId || !Array.isArray(incomingTrades) || !incomingTrades.length) {
         return { importedCount: 0, dedupedCount: 0 };
       }
-      const existingTrades = sanitizeTrades(trades);
-      const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
-      const normalizedIncoming = sanitizeTrades(incomingTrades.map((trade) => ({ ...trade, accountId })));
-      const dedupedIncoming = normalizedIncoming.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
-      const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
-      setTrades(mergedTrades);
-      return {
-        importedCount: dedupedIncoming.length,
-        dedupedCount: Math.max(0, normalizedIncoming.length - dedupedIncoming.length),
-      };
+      const nowIso = new Date().toISOString();
+      try {
+        const existingTrades = sanitizeTrades(trades);
+        const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
+        const normalizedIncoming = sanitizeTrades(incomingTrades.map((trade) => ({ ...trade, accountId })));
+        const dedupedIncoming = normalizedIncoming.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
+        const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
+        setTrades(mergedTrades);
+
+        const importRange = deriveTradeImportRange(normalizedIncoming);
+        setProfileState((prev) =>
+          sanitizeProfileState({
+            ...prev,
+            accounts: (prev?.accounts || []).map((item) =>
+              item.id === accountId
+                ? {
+                    ...item,
+                    tradeSync: {
+                      ...(item.tradeSync || {}),
+                      lastImportSource: "csv",
+                      lastImportAt: nowIso,
+                      lastImportStatus: "success",
+                      lastImportCount: dedupedIncoming.length,
+                      lastImportError: null,
+                      lastImportRangeFrom: importRange.from,
+                      lastImportRangeTo: importRange.to,
+                    },
+                  }
+                : item
+            ),
+          })
+        );
+
+        return {
+          importedCount: dedupedIncoming.length,
+          dedupedCount: Math.max(0, normalizedIncoming.length - dedupedIncoming.length),
+        };
+      } catch (error) {
+        setProfileState((prev) =>
+          sanitizeProfileState({
+            ...prev,
+            accounts: (prev?.accounts || []).map((item) =>
+              item.id === accountId
+                ? {
+                    ...item,
+                    tradeSync: {
+                      ...(item.tradeSync || {}),
+                      lastImportSource: "csv",
+                      lastImportAt: nowIso,
+                      lastImportStatus: "error",
+                      lastImportCount: 0,
+                      lastImportError: error?.message || "Import failed.",
+                    },
+                  }
+                : item
+            ),
+          })
+        );
+        throw error;
+      }
     },
     [trades]
   );
