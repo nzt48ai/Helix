@@ -852,11 +852,11 @@ function SharePortraitCard({
   const shareContentExit = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 4 };
 
   return (
-    <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
+    <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/68 bg-[linear-gradient(180deg,rgba(251,253,255,0.985),rgba(242,247,255,0.955))] shadow-[0_18px_44px_rgba(116,137,173,0.16),0_3px_10px_rgba(116,137,173,0.08),inset_0_1px_0_rgba(255,255,255,0.94),inset_0_-1px_0_rgba(148,163,184,0.08)]">
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={`share-content-${shareType}`}
-          className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700"
+          className="flex h-full flex-col bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.20)),radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.14),transparent_40%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.08),transparent_44%)] px-6 pb-6 pt-6 text-slate-700"
           initial={shareContentInitial}
           animate={shareContentAnimate}
           exit={shareContentExit}
