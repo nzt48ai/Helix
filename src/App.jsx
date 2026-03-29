@@ -10,7 +10,6 @@ import {
   Sparkles,
   TrendingUp,
   UserRound,
-  X,
 } from "lucide-react";
 import {
   COMPOUND_DEFAULTS,
@@ -40,7 +39,6 @@ import { getActiveIndex, getSegmentedIndicatorStyle } from "./motionStability";
 import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } from "./tabRouting";
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
-import { PROP_FIRM_TEMPLATE_CONFIG } from "./accountTemplates";
 import { detectCsvFormat, getImportPresets, normalizeCsvRowsToTrades, parseCsvText } from "./csvImport";
 
 function cn(...classes) {
@@ -73,33 +71,9 @@ const POSITION_INSTRUMENTS = getDefaultInstrumentShortcuts().map((instrument) =>
       ? { entry: "5,250.00", stop: "5,245.00", target: "5,260.00" }
       : { entry: "21,500.00", stop: "21,470.00", target: "21,560.00" },
 }));
-const PROFILE_ACCOUNT_TYPES = [
-  { value: "personal", label: "Personal" },
-  { value: "prop", label: "Prop" },
-  { value: "paper", label: "Paper" },
-  { value: "helixTrade", label: "Helix Trade" },
-  { value: "sim", label: "Sim (Legacy)" },
-];
-const ACCOUNT_SOURCE_OPTIONS = PROFILE_ACCOUNT_TYPES.filter((type) => type.value !== "sim");
-const PERSONAL_BROKER_OPTIONS = [
-  { id: "amp", label: "AMP" },
-  { id: "tradovate", label: "Tradovate" },
-  { id: "tradestation", label: "TradeStation" },
-];
-const ADD_ACCOUNT_TYPES = [
-  { value: "personal", label: "Personal", description: "Connect a personal futures broker account." },
-  { value: "prop", label: "Prop", description: "Attach a funded or challenge prop account." },
-  { value: "helixTrade", label: "Helix Trade", description: "Link your Helix Trade app account." },
-];
-const PROP_ACCOUNT_STATUSES = ["active", "breached", "passed", "funded"];
-const DASHBOARD_ACCOUNT_FILTER_MODE_ALL = "all";
-const DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM = "custom";
 const DASHBOARD_TRADE_TYPE_FILTER_ALL = "all";
 const DASHBOARD_TRADE_TYPE_FILTER_LIVE = "live";
 const DASHBOARD_TRADE_TYPE_FILTER_PAPER = "paper";
-const UNASSIGNED_ACCOUNT_GROUP_ID = "__unassigned__";
-const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
-const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -274,34 +248,6 @@ function buildStableTradeFingerprint(value) {
   return `fallback:${accountId}|${instrument}|${timestamp}|${pnl}|${quantity}|${entryPrice}|${exitPrice}`;
 }
 
-function createEmptyAccountForm() {
-  return {
-    name: "",
-    type: "personal",
-    startingBalance: "",
-    currentBalance: "",
-    brokerName: "",
-    firmName: "",
-    dailyLossLimit: "",
-    maxDrawdown: "",
-    profitTarget: "",
-    status: "active",
-    connectionMethod: "",
-    tradovateSessionId: "",
-    linkedProviderAccountId: "",
-    linkedProviderAccountName: "",
-    linkedSource: "",
-    isHelixLinked: false,
-  };
-}
-
-function normalizeTradeAccountId(accountId, validAccountIds) {
-  if (typeof accountId !== "string" || !accountId.trim()) return "";
-  const trimmed = accountId.trim();
-  if (!validAccountIds || !validAccountIds.size) return trimmed;
-  return validAccountIds.has(trimmed) ? trimmed : "";
-}
-
 function sanitizeTrade(value) {
   if (!value || typeof value !== "object") return null;
   const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : createTradeId();
@@ -357,20 +303,6 @@ function sanitizeTrades(value) {
   return value.map(sanitizeTrade).filter(Boolean);
 }
 
-function deriveTradeImportRange(trades = []) {
-  if (!Array.isArray(trades) || !trades.length) {
-    return { from: null, to: null };
-  }
-  const timestamps = trades
-    .map((trade) => new Date(trade?.timestamp).getTime())
-    .filter((value) => Number.isFinite(value));
-  if (!timestamps.length) return { from: null, to: null };
-  return {
-    from: new Date(Math.min(...timestamps)).toISOString(),
-    to: new Date(Math.max(...timestamps)).toISOString(),
-  };
-}
-
 function mergeTradesWithDedupe(existingTrades = [], incomingTrades = []) {
   const normalizedExisting = sanitizeTrades(existingTrades);
   const normalizedIncoming = sanitizeTrades(incomingTrades);
@@ -385,114 +317,6 @@ function mergeTradesWithDedupe(existingTrades = [], incomingTrades = []) {
   });
 
   return deduped.sort((a, b) => b.timestamp - a.timestamp);
-}
-
-function getTradeDayKey(timestamp) {
-  return new Date(timestamp).toISOString().slice(0, 10);
-}
-
-function sanitizePropNumeric(value) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function evaluatePropRuleViolations(trades = [], accounts = []) {
-  const accountMap = new Map(accounts.map((account) => [account.id, account]));
-  const propAccountIds = new Set(accounts.filter((account) => account.type === "prop").map((account) => account.id));
-  const violationsByTradeId = new Map();
-  const propProgressByAccountId = new Map();
-
-  const sortedTrades = [...trades].sort((a, b) => a.timestamp - b.timestamp);
-
-  propAccountIds.forEach((accountId) => {
-    const account = accountMap.get(accountId);
-    const accountTrades = sortedTrades.filter((trade) => trade.accountId === accountId);
-    const dailyLossLimit = sanitizePropNumeric(account?.dailyLossLimit);
-    const maxDrawdown = sanitizePropNumeric(account?.maxDrawdown);
-    const profitTarget = sanitizePropNumeric(account?.profitTarget);
-
-    const tradesByDay = accountTrades.reduce((acc, trade) => {
-      const dateKey = getTradeDayKey(trade.timestamp);
-      const next = [...(acc.get(dateKey) || []), trade];
-      acc.set(dateKey, next);
-      return acc;
-    }, new Map());
-
-    if (dailyLossLimit !== null) {
-      tradesByDay.forEach((dayTrades) => {
-        const dayPnl = dayTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-        if (dayPnl < -dailyLossLimit) {
-          dayTrades.forEach((trade) => {
-            const existing = violationsByTradeId.get(trade.id) || new Set();
-            existing.add(RULE_REASON_DAILY_LOSS);
-            violationsByTradeId.set(trade.id, existing);
-          });
-        }
-      });
-    }
-
-    let cumulativePnl = 0;
-    let peakCumulativePnl = 0;
-    let drawdownBreached = false;
-    let targetReachedAt = null;
-
-    accountTrades.forEach((trade) => {
-      cumulativePnl += trade.pnl;
-      peakCumulativePnl = Math.max(peakCumulativePnl, cumulativePnl);
-      const drawdown = peakCumulativePnl - cumulativePnl;
-
-      if (maxDrawdown !== null && (drawdownBreached || drawdown > maxDrawdown)) {
-        drawdownBreached = true;
-        const existing = violationsByTradeId.get(trade.id) || new Set();
-        existing.add(RULE_REASON_MAX_DRAWDOWN);
-        violationsByTradeId.set(trade.id, existing);
-      }
-
-      if (targetReachedAt === null && profitTarget !== null && cumulativePnl >= profitTarget) {
-        targetReachedAt = trade.timestamp;
-      }
-    });
-
-    propProgressByAccountId.set(accountId, {
-      cumulativePnl,
-      dailyLossLimit,
-      maxDrawdown,
-      profitTarget,
-      targetReached: profitTarget !== null ? cumulativePnl >= profitTarget : false,
-      targetReachedAt,
-      progressToTargetPercent: profitTarget ? Math.max(0, (cumulativePnl / profitTarget) * 100) : null,
-    });
-  });
-
-  const evaluatedTrades = trades.map((trade) => {
-    if (!trade.accountId || !propAccountIds.has(trade.accountId)) {
-      return {
-        ...trade,
-        ruleViolation: false,
-        ruleViolationReason: null,
-      };
-    }
-
-    const reasons = violationsByTradeId.get(trade.id);
-    if (!reasons || reasons.size === 0) {
-      return {
-        ...trade,
-        ruleViolation: false,
-        ruleViolationReason: null,
-      };
-    }
-
-    return {
-      ...trade,
-      ruleViolation: true,
-      ruleViolationReason: Array.from(reasons).join("; "),
-    };
-  });
-
-  return {
-    evaluatedTrades,
-    propProgressByAccountId,
-  };
 }
 
 function AnimatedFormattedNumber({
@@ -1263,186 +1087,6 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
         </div>
       ) : null}
     </AnimatePresence>
-  );
-}
-
-function PropModeSelectorDialog({ open, firms = [], accounts = [], selectedAccountIds = [], onSelectionChange, onCancel, onDone }) {
-  const reduceMotion = useReducedMotion();
-  const [step, setStep] = useState(1);
-  const [selectedFirmId, setSelectedFirmId] = useState("");
-  const selectedSet = useMemo(() => new Set(selectedAccountIds), [selectedAccountIds]);
-  const selectedFirm = useMemo(() => firms.find((firm) => firm.id === selectedFirmId) || null, [firms, selectedFirmId]);
-  const firmAccounts = useMemo(() => {
-    if (!selectedFirm) return [];
-    return accounts.filter((account) => {
-      const firmName = String(account?.firmName || "").trim().toLowerCase();
-      if (selectedFirm.id === "__unassigned__") return !firmName;
-      return firmName && (firmName === selectedFirm.label.trim().toLowerCase() || firmName === selectedFirm.id);
-    });
-  }, [accounts, selectedFirm]);
-  const dialogInitial = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.985 };
-  const dialogAnimate = reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 };
-  const dialogExit = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.99 };
-
-  useEffect(() => {
-    if (!open) return;
-    setStep(1);
-    const selectedAccount = accounts.find((account) => selectedSet.has(account.id));
-    if (!selectedAccount) {
-      setSelectedFirmId("");
-      return;
-    }
-    const matchingFirm = firms.find((firm) => String(selectedAccount?.firmName || "").trim().toLowerCase() === firm.label.trim().toLowerCase());
-    setSelectedFirmId(matchingFirm?.id || "");
-  }, [open]);
-
-  return (
-    <AnimatePresence initial={false}>
-      {open ? (
-        <div className="fixed inset-0 z-[1260] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Prop mode account selector">
-          <motion.button
-            type="button"
-            onClick={onCancel}
-            className="absolute inset-0 bg-slate-900/18 backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={OVERLAY_FADE_TRANSITION}
-          />
-          <motion.div
-            className="relative w-full max-w-[460px] overflow-hidden rounded-[34px] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.95))] px-6 pb-5 pt-6 shadow-[0_24px_54px_rgba(98,115,155,0.22),0_8px_18px_rgba(128,145,184,0.12),inset_0_1px_0_rgba(255,255,255,0.92)]"
-            initial={dialogInitial}
-            animate={dialogAnimate}
-            exit={dialogExit}
-            transition={reduceMotion ? TAB_CONTENT_TRANSITION : FUTURES_PICKER_TRANSITION}
-          >
-            <div className="text-center">
-              <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-700">Prop Mode</div>
-              <div className="mt-1 text-[12px] leading-relaxed text-slate-500">{step === 1 ? "Select prop firm" : "Select one or more accounts"}</div>
-            </div>
-
-            <div className="mt-5 space-y-2.5">
-              {step === 1
-                ? firms.map((firm) => {
-                    const isSelected = selectedFirmId === firm.id;
-                    return (
-                      <button
-                        key={firm.id}
-                        type="button"
-                        onClick={() => setSelectedFirmId(firm.id)}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
-                          isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
-                        )}
-                      >
-                        <div className="truncate text-[13px] font-semibold text-slate-700">{firm.label}</div>
-                        <span
-                          className={cn(
-                            "h-5 w-5 shrink-0 rounded-full transition-all",
-                            isSelected
-                              ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
-                              : "border border-slate-300/70 bg-white/92"
-                          )}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    );
-                  })
-                : firmAccounts.length
-                  ? firmAccounts.map((account) => {
-                      const isSelected = selectedSet.has(account.id);
-                      const title = getAccountRowMeta(account).title;
-                      const subtitle = getAccountRowMeta(account).subtitle;
-                      return (
-                        <button
-                          key={account.id}
-                          type="button"
-                          onClick={() => onSelectionChange?.(account.id, !isSelected)}
-                          className={cn(
-                            "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
-                            isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
-                          )}
-                        >
-                          <div className="min-w-0 pr-3">
-                            <div className="truncate text-[13px] font-semibold text-slate-700">{title}</div>
-                            <div className="truncate text-[11px] text-slate-500">{subtitle}</div>
-                          </div>
-                          <span
-                            className={cn(
-                              "h-5 w-5 shrink-0 rounded-full transition-all",
-                              isSelected
-                                ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
-                                : "border border-slate-300/70 bg-white/92"
-                            )}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      );
-                    })
-                  : <div className="rounded-[20px] bg-white/70 px-4 py-4 text-center text-[12px] text-slate-500">No prop accounts for this firm.</div>}
-            </div>
-
-            <div className="mt-5 flex items-center justify-center gap-2">
-              {step === 2 ? (
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="rounded-full bg-[rgba(245,248,255,0.95)] px-4 py-2 text-[11px] font-semibold tracking-[-0.01em] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] hover:bg-[rgba(250,252,255,0.98)]"
-                >
-                  Back
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-full bg-[rgba(245,248,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] hover:bg-[rgba(250,252,255,0.98)]"
-              >
-                Cancel
-              </button>
-              {step === 1 ? (
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  disabled={!selectedFirmId}
-                  className="rounded-full bg-[rgba(235,242,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onDone}
-                  className="rounded-full bg-[rgba(235,242,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)]"
-                >
-                  Done
-                </button>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-function PropToggleFirmBadges({ firms = [] }) {
-  if (!firms.length) return null;
-  const visible = firms.slice(0, 3);
-  const hiddenCount = Math.max(0, firms.length - visible.length);
-
-  return (
-    <div className="inline-flex items-center gap-1.5">
-      {visible.map((firm) => (
-        <span
-          key={firm.id}
-          title={firm.label}
-          className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-white/80 bg-white/75 px-1.5 text-[9px] font-semibold tracking-[0.02em] text-slate-600"
-        >
-          {firm.logoText}
-        </span>
-      ))}
-      {hiddenCount > 0 ? <span className="text-[10px] font-semibold text-slate-500">+{hiddenCount}</span> : null}
-    </div>
   );
 }
 
@@ -3258,53 +2902,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
   );
 }
 
-function normalizeAccountType(value = "") {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase();
-  if (normalized === "helixtrade") return "helixTrade";
-  return normalized;
-}
-
-function getAccountRowMeta(account) {
-  const normalizedType = normalizeAccountType(account?.type);
-  if (normalizedType === "prop") {
-    const providerConnection = account?.connection || account?.linkedProvider || null;
-    const linkedTradovateName =
-      providerConnection?.provider === "tradovate" && providerConnection?.providerAccountName
-        ? ` · Tradovate ${providerConnection.providerAccountName}`
-        : "";
-    return {
-      badge: "PROP",
-      logoText: account?.firmName ? account.firmName.slice(0, 2).toUpperCase() : "PF",
-      title: account?.name || "Prop Account",
-      subtitle: `${account?.firmName || "Prop Firm"}${linkedTradovateName}`,
-    };
-  }
-  if (normalizedType === "helixTrade") {
-    return {
-      badge: "HX",
-      logoText: "HX",
-      title: account?.name || "Helix Trade",
-      subtitle: account?.isHelixLinked ? "Helix-synced linked account" : "Helix Trade linked account",
-    };
-  }
-  if (normalizedType === "paper" || normalizedType === "sim") {
-    return {
-      badge: "HX",
-      logoText: "HX",
-      title: account?.name || "Paper Account",
-      subtitle: "Paper",
-    };
-  }
-  return {
-    badge: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
-    logoText: (account?.brokerName || "BR").slice(0, 2).toUpperCase(),
-    title: account?.brokerName || account?.name || "Personal Account",
-    subtitle: "Personal",
-  };
-}
-
 function JournalScreen({
   profileState,
   localTrades = [],
@@ -3313,14 +2910,6 @@ function JournalScreen({
   onImportCsvTrades,
   debugEnabled = false,
 }) {
-  const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
-  const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
-  const [accountFlowStep, setAccountFlowStep] = useState(1);
-  const [accountFormError, setAccountFormError] = useState("");
-  const [accountFlowNotice, setAccountFlowNotice] = useState("");
-  const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
   const [csvImportState, setCsvImportState] = useState({
     accountId: "",
     accountName: "",
@@ -3334,7 +2923,6 @@ function JournalScreen({
     isImporting: false,
     error: "",
   });
-  const csvFileInputByAccountIdRef = useRef({});
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
     return source
@@ -3368,110 +2956,50 @@ function JournalScreen({
     [onProfileStateChange]
   );
 
-  const resetAccountForm = useCallback(() => {
-    setAccountForm({ ...createEmptyAccountForm(), type: "prop" });
-    setAccountFlowStep(2);
-    setSelectedPropFirmId("");
-    setSelectedTemplateId("");
-    setAccountFormError("");
-    setAccountFlowNotice("");
-  }, []);
-
-  const updateAccountFormField = useCallback((key, value) => {
-    setAccountFlowNotice("");
-    if (key === "type") {
-      setSelectedPropFirmId("");
-      setSelectedTemplateId("");
-      setAccountForm(createEmptyAccountForm());
-      setAccountForm((prev) => ({ ...prev, type: value }));
-      return;
-    }
-    setAccountForm((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  const resetCsvImportState = useCallback(() => {
-    setCsvImportState({
-      accountId: "",
-      accountName: "",
-      fileName: "",
-      rows: [],
-      headers: [],
-      detection: null,
-      selectedPresetId: "",
-      previewTrades: [],
-      summary: null,
-      isImporting: false,
-      error: "",
-    });
-  }, []);
-
-  const handleCsvFileSelection = useCallback(
-    async (event, account) => {
-      const file = event?.target?.files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const parsed = parseCsvText(text);
-        if (!parsed.headers.length || !parsed.rows.length) {
-          setCsvImportState((prev) => ({ ...prev, error: "CSV file appears empty.", rows: [], previewTrades: [], summary: null }));
-          return;
-        }
-        const detection = detectCsvFormat(parsed.headers);
-        const presetId = detection.recommendedPresetId || "generic_futures";
-        const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId, accountId: account.id });
-        const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
-
-        setCsvImportState({
-          accountId: account.id,
-          accountName: account.name,
-          fileName: file.name,
-          rows: parsed.rows,
-          headers: parsed.headers,
-          detection,
-          selectedPresetId: presetId,
-          previewTrades,
-          summary: {
-            rowCount: parsed.rows.length,
-            parsedCount: previewTrades.length,
-            totalPnl,
-          },
-          isImporting: false,
-          error: "",
-        });
-      } catch (error) {
-        setCsvImportState((prev) => ({ ...prev, error: error?.message || "Unable to read CSV file." }));
-      } finally {
-        if (event?.target) event.target.value = "";
+  const handleCsvFileSelection = useCallback(async (event, account) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseCsvText(text);
+      if (!parsed.headers.length || !parsed.rows.length) {
+        setCsvImportState((prev) => ({ ...prev, error: "CSV file appears empty.", rows: [], previewTrades: [], summary: null }));
+        return;
       }
-    },
-    []
-  );
-
-  const handleChangeCsvPreset = useCallback((presetId) => {
-    setCsvImportState((prev) => {
-      if (!prev.rows.length) return prev;
-      const previewTrades = normalizeCsvRowsToTrades(prev.rows, { presetId, accountId: prev.accountId });
+      const detection = detectCsvFormat(parsed.headers);
+      const presetId = detection.recommendedPresetId || "generic_futures";
+      const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId, accountId: account.id });
       const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
-      return {
-        ...prev,
+
+      setCsvImportState({
+        accountId: account.id,
+        accountName: account.name,
+        fileName: file.name,
+        rows: parsed.rows,
+        headers: parsed.headers,
+        detection,
         selectedPresetId: presetId,
         previewTrades,
         summary: {
-          rowCount: prev.rows.length,
+          rowCount: parsed.rows.length,
           parsedCount: previewTrades.length,
           totalPnl,
         },
-      };
-    });
+        isImporting: false,
+        error: "",
+      });
+    } catch (error) {
+      setCsvImportState((prev) => ({ ...prev, error: error?.message || "Unable to read CSV file." }));
+    } finally {
+      if (event?.target) event.target.value = "";
+    }
   }, []);
 
   const commitCsvImport = useCallback(async () => {
     if (!csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
     setCsvImportState((prev) => ({ ...prev, isImporting: true, error: "" }));
     try {
-      const result = await onImportCsvTrades({
-        trades: csvImportState.previewTrades,
-      });
+      const result = await onImportCsvTrades({ trades: csvImportState.previewTrades });
       setCsvImportState((prev) => ({
         ...prev,
         isImporting: false,
@@ -3485,194 +3013,6 @@ function JournalScreen({
       setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
     }
   }, [csvImportState.previewTrades, onImportCsvTrades]);
-
-  const openAddAccountFlow = useCallback(() => {
-    setIsAddAccountOpen(true);
-    resetAccountForm();
-    resetCsvImportState();
-  }, [resetAccountForm, resetCsvImportState]);
-
-  const closeAddAccountFlow = useCallback(() => {
-    setIsAddAccountOpen(false);
-    resetAccountForm();
-    resetCsvImportState();
-  }, [resetAccountForm, resetCsvImportState]);
-
-  const handleAccountFlowBack = useCallback(() => {
-    setAccountFormError("");
-    setAccountFlowNotice("");
-    setAccountFlowStep((prev) => Math.max(2, prev - 1));
-  }, []);
-
-  const selectedFirm = useMemo(
-    () => PROP_FIRM_TEMPLATE_CONFIG.find((firm) => firm.id === selectedPropFirmId) || null,
-    [selectedPropFirmId]
-  );
-
-
-  const buildValidatedAccount = useCallback(() => {
-    const type = normalizeAccountType(accountForm.type);
-    const isProp = type === "prop";
-    const isPersonal = type === "personal";
-    const isHelixTrade = type === "helixTrade";
-    const name = accountForm.name.trim();
-    const startingBalance = Number(accountForm.startingBalance || 0);
-    const currentBalance = Number(accountForm.currentBalance || startingBalance || 0);
-    const brokerName = String(accountForm.brokerName || "").trim();
-    const firmName = String(accountForm.firmName || "").trim();
-    const dailyLossLimit = Number(accountForm.dailyLossLimit);
-    const maxDrawdown = Number(accountForm.maxDrawdown);
-    const profitTarget = Number(accountForm.profitTarget);
-    const status = String(accountForm.status || "").trim().toLowerCase();
-    const connectionMethod = String(accountForm.connectionMethod || "").trim();
-
-    if (!ACCOUNT_SOURCE_OPTIONS.some((item) => normalizeAccountType(item.value) === type)) {
-      setAccountFormError("Please choose Personal, Prop, or Helix Trade.");
-      return null;
-    }
-    if (isPersonal && !brokerName) {
-      setAccountFormError("Select a broker for personal accounts.");
-      return null;
-    }
-    if (isProp && !name) {
-      setAccountFormError("Account name is required for prop accounts.");
-      return null;
-    }
-    if (isHelixTrade && !name) {
-      setAccountFormError("Linked account name is required.");
-      return null;
-    }
-    if (!Number.isFinite(startingBalance) || !Number.isFinite(currentBalance) || startingBalance < 0 || currentBalance < 0) {
-      setAccountFormError("Balances must be numeric.");
-      return null;
-    }
-    if (isProp && !firmName) {
-      setAccountFormError("Firm name is required for prop accounts.");
-      return null;
-    }
-    if (isProp && !Number.isFinite(dailyLossLimit)) {
-      setAccountFormError("Daily loss limit must be numeric for prop accounts.");
-      return null;
-    }
-    if (isProp && !Number.isFinite(maxDrawdown)) {
-      setAccountFormError("Max drawdown must be numeric for prop accounts.");
-      return null;
-    }
-    if (isProp && !Number.isFinite(profitTarget)) {
-      setAccountFormError("Profit target must be numeric for prop accounts.");
-      return null;
-    }
-    if (isProp && !PROP_ACCOUNT_STATUSES.includes(status)) {
-      setAccountFormError("Prop status must be active, breached, passed, or funded.");
-      return null;
-    }
-
-    setAccountFormError("");
-    return {
-      name: isPersonal ? `${brokerName} Personal` : name,
-      type,
-      startingBalance,
-      currentBalance,
-      brokerName: isPersonal ? brokerName : null,
-      firmName: isProp ? firmName : null,
-      dailyLossLimit: isProp ? dailyLossLimit : null,
-      maxDrawdown: isProp ? maxDrawdown : null,
-      profitTarget: isProp ? profitTarget : null,
-      status: isProp ? status : null,
-      connectionMethod: isProp ? connectionMethod || "csv" : null,
-      linkedProvider: null,
-      connection: null,
-      linkedSource: isHelixTrade ? "helixTrade" : null,
-      isHelixLinked: isHelixTrade,
-    };
-  }, [accountForm]);
-
-  const createAccountFromFlow = useCallback(async () => {
-    const validatedAccount = buildValidatedAccount();
-    if (!validatedAccount) return;
-    const createdAccountId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    onProfileStateChange((prev) => {
-      const safePrev = sanitizeProfileState(prev);
-      const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
-      return sanitizeProfileState({
-        ...safePrev,
-        accounts: [...existingAccounts, { id: createdAccountId, ...validatedAccount }],
-      });
-    });
-    if (
-      validatedAccount.type === "prop" &&
-      validatedAccount.connectionMethod === "csv" &&
-      csvImportState.accountId === "__pending_new__" &&
-      csvImportState.previewTrades.length &&
-      typeof onImportCsvTrades === "function"
-    ) {
-      try {
-        const result = await onImportCsvTrades({
-          accountId: createdAccountId,
-          trades: csvImportState.previewTrades.map((trade) => ({ ...trade, accountId: createdAccountId })),
-        });
-        setAccountFlowNotice(
-          `Account added. Imported ${Number(result?.importedCount || 0)} trade${Number(result?.importedCount || 0) === 1 ? "" : "s"}${Number(result?.dedupedCount || 0) ? ` · ${Number(result?.dedupedCount || 0)} duplicates skipped` : ""}.`
-        );
-      } catch (error) {
-        setAccountFlowNotice(`Account added. CSV import failed: ${error?.message || "Unknown error."}`);
-      }
-    } else {
-      setAccountFlowNotice("Account added.");
-    }
-    setIsAddAccountOpen(false);
-    resetAccountForm();
-    resetCsvImportState();
-  }, [buildValidatedAccount, csvImportState, onImportCsvTrades, onProfileStateChange, resetAccountForm, resetCsvImportState]);
-
-  const handleSelectPropFirm = useCallback((firmId) => {
-    const firm = PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.id === firmId);
-    setSelectedPropFirmId(firmId);
-    setSelectedTemplateId("");
-    if (firm) {
-      setAccountForm((prev) => ({
-        ...prev,
-        firmName: firm.label,
-      }));
-    }
-    setAccountFlowStep(3);
-  }, []);
-
-  const handleSelectTemplate = useCallback(
-    (templateId) => {
-      setSelectedTemplateId(templateId);
-      if (!selectedFirm) return;
-      const template = selectedFirm.templates.find((item) => item.id === templateId);
-      if (!template) return;
-      setAccountForm((prev) => ({
-        ...prev,
-        name: prev.name || template.label,
-        firmName: template.firmName,
-        dailyLossLimit: String(template.dailyLossLimit),
-        maxDrawdown: String(template.maxDrawdown),
-        profitTarget: String(template.profitTarget),
-        status: template.status,
-      }));
-      setAccountFormError("");
-      setAccountFlowNotice(`Template "${template.label}" applied. You can still edit any field.`);
-      setAccountFlowStep(4);
-    },
-    [selectedFirm]
-  );
-
-  const deleteAccount = useCallback(
-    (accountId) => {
-      onProfileStateChange((prev) => {
-        const safePrev = sanitizeProfileState(prev);
-        return sanitizeProfileState({
-          ...safePrev,
-          accounts: safePrev.accounts.filter((account) => account.id !== accountId),
-        });
-      });
-    },
-    [onProfileStateChange]
-  );
-
 
   return (
     <div className="space-y-4 pb-4">
