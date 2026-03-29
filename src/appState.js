@@ -11,7 +11,6 @@ export const TAB_KEYS = ["position", "compound", "share", "dashboard", "journal"
 export const POSITION_DEFAULTS = {
   accountBalance: "50,000",
   propMode: false,
-  activePropModeAccountIds: [],
   instrument: "MNQ",
   entry: "21,500.00",
   stop: "21,470.00",
@@ -37,9 +36,6 @@ export const COMPOUND_DEFAULTS = {
 
 export const VIEW_DEFAULTS = {
   dashboardRange: "Month",
-  dashboardAccountFilterMode: "all",
-  dashboardSelectedAccountIds: [],
-  dashboardIncludeUnassigned: true,
   dashboardTradeTypeFilter: "all",
 };
 
@@ -51,9 +47,7 @@ export const PROFILE_DEFAULTS = {
   shareSettings: {
     showAvatar: true,
     showUsername: true,
-    showAccountName: true,
   },
-  accounts: [],
 };
 
 const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper", "helixtrade"]);
@@ -254,12 +248,6 @@ export function sanitizePositionState(value) {
   return {
     accountBalance: typeof value.accountBalance === "string" ? value.accountBalance : POSITION_DEFAULTS.accountBalance,
     propMode: typeof value.propMode === "boolean" ? value.propMode : POSITION_DEFAULTS.propMode,
-    activePropModeAccountIds: Array.isArray(value.activePropModeAccountIds)
-      ? value.activePropModeAccountIds
-          .filter((item) => typeof item === "string" && item.trim())
-          .map((item) => item.trim())
-          .filter((item, index, list) => list.indexOf(item) === index)
-      : POSITION_DEFAULTS.activePropModeAccountIds,
     instrument: POSITION_INSTRUMENT_KEYS.includes(value.instrument) ? value.instrument : POSITION_DEFAULTS.instrument,
     entry: typeof value.entry === "string" ? value.entry : POSITION_DEFAULTS.entry,
     stop: typeof value.stop === "string" ? value.stop : POSITION_DEFAULTS.stop,
@@ -306,33 +294,12 @@ export function updateCompoundStateSafely(previousState, nextValueOrUpdater) {
 
 export function sanitizeViewState(value) {
   if (!value || typeof value !== "object") return { ...VIEW_DEFAULTS };
-  const legacyAccountFilter = typeof value.dashboardAccountFilter === "string" ? value.dashboardAccountFilter : null;
-  const dashboardAccountFilterMode =
-    value.dashboardAccountFilterMode === "custom" || value.dashboardAccountFilterMode === "all"
-      ? value.dashboardAccountFilterMode
-      : legacyAccountFilter === "all" || !legacyAccountFilter
-        ? "all"
-        : "custom";
-  const dashboardSelectedAccountIds = Array.isArray(value.dashboardSelectedAccountIds)
-    ? value.dashboardSelectedAccountIds.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-    : legacyAccountFilter && legacyAccountFilter !== "all" && legacyAccountFilter !== "unassigned"
-      ? [legacyAccountFilter]
-      : [];
-  const dashboardIncludeUnassigned =
-    typeof value.dashboardIncludeUnassigned === "boolean"
-      ? value.dashboardIncludeUnassigned
-      : legacyAccountFilter === "unassigned"
-        ? true
-        : VIEW_DEFAULTS.dashboardIncludeUnassigned;
   const dashboardTradeTypeFilter =
     value.dashboardTradeTypeFilter === "live" || value.dashboardTradeTypeFilter === "paper" || value.dashboardTradeTypeFilter === "all"
       ? value.dashboardTradeTypeFilter
       : VIEW_DEFAULTS.dashboardTradeTypeFilter;
   return {
     dashboardRange: DASHBOARD_RANGES.includes(value.dashboardRange) ? value.dashboardRange : VIEW_DEFAULTS.dashboardRange,
-    dashboardAccountFilterMode,
-    dashboardSelectedAccountIds,
-    dashboardIncludeUnassigned,
     dashboardTradeTypeFilter,
   };
 }
@@ -340,7 +307,6 @@ export function sanitizeViewState(value) {
 export function sanitizeProfileState(value) {
   if (!value || typeof value !== "object") return { ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } };
   const shareSettings = value.shareSettings && typeof value.shareSettings === "object" ? value.shareSettings : {};
-  const accounts = Array.isArray(value.accounts) ? value.accounts.map(sanitizeProfileAccount).filter(Boolean) : PROFILE_DEFAULTS.accounts;
   return {
     displayName: typeof value.displayName === "string" ? value.displayName : PROFILE_DEFAULTS.displayName,
     username: typeof value.username === "string" ? value.username.replace(/^@+/, "") : PROFILE_DEFAULTS.username,
@@ -349,9 +315,7 @@ export function sanitizeProfileState(value) {
     shareSettings: {
       showAvatar: typeof shareSettings.showAvatar === "boolean" ? shareSettings.showAvatar : PROFILE_DEFAULTS.shareSettings.showAvatar,
       showUsername: typeof shareSettings.showUsername === "boolean" ? shareSettings.showUsername : PROFILE_DEFAULTS.shareSettings.showUsername,
-      showAccountName: typeof shareSettings.showAccountName === "boolean" ? shareSettings.showAccountName : PROFILE_DEFAULTS.shareSettings.showAccountName,
     },
-    accounts,
   };
 }
 

@@ -1763,8 +1763,6 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const lastDefaultInstrumentRef = useRef(POSITION_INSTRUMENTS[2]?.key || "MNQ");
   const [activePriceField, setActivePriceField] = useState(null);
   const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
-  const [propModeSelectorOpen, setPropModeSelectorOpen] = useState(false);
-  const [propModeDraftAccountIds, setPropModeDraftAccountIds] = useState([]);
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
@@ -1784,89 +1782,8 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const pointValue = selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
-  const propAccounts = useMemo(() => {
-    const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
-    return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop");
-  }, [profileState]);
-  const activePropModeAccountIds = useMemo(() => {
-    const selectedIds = Array.isArray(positionState?.activePropModeAccountIds) ? positionState.activePropModeAccountIds : [];
-    return selectedIds.filter((id) => propAccounts.some((account) => account.id === id));
-  }, [positionState, propAccounts]);
-  const selectedPropAccounts = useMemo(() => {
-    if (!activePropModeAccountIds.length || !propAccounts.length) return [];
-    const selectedIdSet = new Set(activePropModeAccountIds);
-    return propAccounts.filter((account) => selectedIdSet.has(account.id));
-  }, [propAccounts, activePropModeAccountIds]);
-  const propModeBalanceOverride = useMemo(() => {
-    if (!positionState.propMode || !selectedPropAccounts.length) return null;
-    const combinedBalance = selectedPropAccounts.reduce((sum, account) => {
-      const currentBalance = Number(account?.currentBalance);
-      const startingBalance = Number(account?.startingBalance);
-      if (Number.isFinite(currentBalance)) return sum + currentBalance;
-      if (Number.isFinite(startingBalance)) return sum + startingBalance;
-      return sum + 0;
-    }, 0);
-    return Math.max(0, combinedBalance);
-  }, [positionState.propMode, selectedPropAccounts]);
-  const effectiveAccountBalanceValue =
-    propModeBalanceOverride === null ? positionState.accountBalance : formatNumberString(String(Math.trunc(propModeBalanceOverride)));
-  const isAccountBalanceReadOnly = propModeBalanceOverride !== null;
-  const selectedPropFirms = useMemo(() => {
-    const firmMap = new Map();
-    selectedPropAccounts.forEach((account) => {
-      const normalizedFirmName = String(account?.firmName || "").trim().toLowerCase();
-      const firm =
-        PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.label.trim().toLowerCase() === normalizedFirmName) ||
-        (normalizedFirmName ? { id: normalizedFirmName, label: account?.firmName || "Firm", templates: [] } : null);
-      if (!firm || firmMap.has(firm.id)) return;
-      firmMap.set(firm.id, {
-        id: firm.id,
-        label: firm.label,
-        logoText: String(firm.label || "PF")
-          .split(/\s+/)
-          .filter(Boolean)
-          .slice(0, 2)
-          .map((token) => token[0])
-          .join("")
-          .toUpperCase() || "PF",
-      });
-    });
-    return Array.from(firmMap.values());
-  }, [selectedPropAccounts]);
-  const propModeSelectableFirms = useMemo(() => {
-    const normalizedConfiguredFirms = new Map(
-      PROP_FIRM_TEMPLATE_CONFIG.map((firm) => [firm.label.trim().toLowerCase(), { id: firm.id, label: firm.label }])
-    );
-    const dynamicFirms = [];
-    const seenFirmIds = new Set();
-
-    propAccounts.forEach((account) => {
-      const normalizedFirmName = String(account?.firmName || "").trim().toLowerCase();
-      if (!normalizedFirmName) {
-        if (!seenFirmIds.has("__unassigned__")) {
-          seenFirmIds.add("__unassigned__");
-          dynamicFirms.push({ id: "__unassigned__", label: "Unassigned Firm" });
-        }
-        return;
-      }
-
-      const configuredFirm = normalizedConfiguredFirms.get(normalizedFirmName);
-      if (configuredFirm) {
-        if (!seenFirmIds.has(configuredFirm.id)) {
-          seenFirmIds.add(configuredFirm.id);
-          dynamicFirms.push(configuredFirm);
-        }
-        return;
-      }
-
-      if (!seenFirmIds.has(normalizedFirmName)) {
-        seenFirmIds.add(normalizedFirmName);
-        dynamicFirms.push({ id: normalizedFirmName, label: account?.firmName || "Custom Firm" });
-      }
-    });
-
-    return dynamicFirms;
-  }, [propAccounts]);
+  const effectiveAccountBalanceValue = positionState.accountBalance;
+  const isAccountBalanceReadOnly = false;
   const parsedAccountBalance = parseNullableNumberString(effectiveAccountBalanceValue);
   const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
@@ -1953,23 +1870,9 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   };
 
   const handleTogglePropMode = () => {
-    const nextState = !positionState.propMode;
-    setField("propMode", nextState);
-    if (nextState) {
-      triggerLightHaptic();
-      setPropModeDraftAccountIds(activePropModeAccountIds);
-      setPropModeSelectorOpen(true);
-    }
+    setField("propMode", !positionState.propMode);
+    triggerLightHaptic();
   };
-  const handlePropModeSelectionChange = useCallback((accountId, checked) => {
-    if (!accountId) return;
-    setPropModeDraftAccountIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(accountId);
-      else next.delete(accountId);
-      return Array.from(next);
-    });
-  }, []);
 
   useEffect(() => {
     if (!isDefaultInstrument) return;
@@ -2049,22 +1952,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
         toggleLabel="Prop"
         toggleState={positionState.propMode}
         onToggle={handleTogglePropMode}
-        toggleBadges={<PropToggleFirmBadges firms={selectedPropFirms} />}
-      />
-      <PropModeSelectorDialog
-        open={propModeSelectorOpen}
-        firms={propModeSelectableFirms}
-        accounts={propAccounts}
-        selectedAccountIds={propModeDraftAccountIds}
-        onSelectionChange={handlePropModeSelectionChange}
-        onCancel={() => {
-          setPropModeDraftAccountIds(activePropModeAccountIds);
-          setPropModeSelectorOpen(false);
-        }}
-        onDone={() => {
-          setField("activePropModeAccountIds", propModeDraftAccountIds);
-          setPropModeSelectorOpen(false);
-        }}
+        toggleBadges={null}
       />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
@@ -2797,14 +2685,7 @@ function DashboardScreen({
   range,
   onRangeChange,
   trades = [],
-  accounts = [],
-  accountFilterMode = DASHBOARD_ACCOUNT_FILTER_MODE_ALL,
-  selectedAccountIds = [],
-  includeUnassigned = true,
   tradeTypeFilter = DASHBOARD_TRADE_TYPE_FILTER_ALL,
-  onAccountFilterModeChange,
-  onSelectedAccountIdsChange,
-  onIncludeUnassignedChange,
   onTradeTypeFilterChange,
   debugEnabled = false,
 }) {
@@ -2812,48 +2693,24 @@ function DashboardScreen({
   const activeSnapshot = ensureDashboardSnapshot(dashboardSnapshot?.byRange?.[range] || dashboardSnapshot?.byRange?.Month, fallbackSnapshot);
   const performanceSeries = activeSnapshot.performanceSeries;
   const sessionMix = activeSnapshot.sessionMix;
-  const validAccountIds = useMemo(() => new Set(accounts.map((account) => account.id)), [accounts]);
-  const accountNameById = useMemo(() => {
-    const map = new Map();
-    accounts.forEach((account) => {
-      map.set(account.id, account.name);
-    });
-    return map;
-  }, [accounts]);
-  const accountById = useMemo(() => {
-    const map = new Map();
-    accounts.forEach((account) => {
-      map.set(account.id, account);
-    });
-    return map;
-  }, [accounts]);
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
 
   const normalizedTrades = useMemo(
     () =>
       trades.map((trade) => ({
         ...trade,
-        accountId: normalizeTradeAccountId(trade.accountId, validAccountIds),
         tradeType: trade.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
         ruleViolation: Boolean(trade.ruleViolation),
         ruleViolationReason:
           typeof trade.ruleViolationReason === "string" && trade.ruleViolationReason.trim() ? trade.ruleViolationReason.trim() : null,
         rMultiple: Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : null,
       })),
-    [trades, validAccountIds]
+    [trades]
   );
-  const filteredTrades = useMemo(() => {
-    const selectedIds = new Set(selectedAccountIds);
-    return normalizedTrades.filter((trade) => {
-      const accountPass =
-        accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_ALL
-          ? true
-          : (trade.accountId && selectedIds.has(trade.accountId)) || (!trade.accountId && includeUnassigned);
-      const tradeTypePass =
-        tradeTypeFilter === DASHBOARD_TRADE_TYPE_FILTER_ALL ? true : trade.tradeType === tradeTypeFilter;
-      return accountPass && tradeTypePass;
-    });
-  }, [accountFilterMode, includeUnassigned, normalizedTrades, selectedAccountIds, tradeTypeFilter]);
+  const filteredTrades = useMemo(
+    () => normalizedTrades.filter((trade) => (tradeTypeFilter === DASHBOARD_TRADE_TYPE_FILTER_ALL ? true : trade.tradeType === tradeTypeFilter)),
+    [normalizedTrades, tradeTypeFilter]
+  );
   const filteredTradeStats = useMemo(() => {
     const totalTrades = filteredTrades.length;
     const wins = filteredTrades.filter((trade) => trade.pnl > 0).length;
@@ -2866,17 +2723,14 @@ function DashboardScreen({
       winRate,
     };
   }, [filteredTrades]);
-  const groupedTradesByDayAndAccount = useMemo(() => {
+  const groupedTradesByDay = useMemo(() => {
     return filteredTrades
       .slice()
       .sort((a, b) => b.timestamp - a.timestamp)
       .reduce((acc, trade) => {
         const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
-        const dateBucket = acc.get(dateKey) || new Map();
-        const accountKey = trade.accountId || UNASSIGNED_ACCOUNT_GROUP_ID;
-        const nextTrades = [...(dateBucket.get(accountKey) || []), trade];
-        dateBucket.set(accountKey, nextTrades);
-        acc.set(dateKey, dateBucket);
+        const dateBucket = acc.get(dateKey) || [];
+        acc.set(dateKey, [...dateBucket, trade]);
         return acc;
       }, new Map());
   }, [filteredTrades]);
@@ -2905,45 +2759,21 @@ function DashboardScreen({
   }, []);
   const dayDetailGroups = useMemo(() => {
     if (!selectedCalendarDateKey) return [];
-    const dayGroups = groupedTradesByDayAndAccount.get(selectedCalendarDateKey);
-    if (!dayGroups) return [];
-    return Array.from(dayGroups.entries())
-      .map(([accountKey, accountTrades]) => {
-        const totalPnl = accountTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-        const totalR = accountTrades.reduce((sum, trade) => sum + (Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : 0), 0);
-        const violatingTrades = accountTrades.filter((trade) => trade.ruleViolation);
-        const hasRuleViolation = violatingTrades.length > 0;
-        const violationReasonSummary = Array.from(
-          new Set(
-            violatingTrades
-              .map((trade) => (typeof trade.ruleViolationReason === "string" ? trade.ruleViolationReason : ""))
-              .filter(Boolean)
-          )
-        ).join("; ");
-        const accountName = accountKey === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(accountKey) || "Unassigned";
-        return {
-          accountKey,
-          accountName,
-          totalPnl,
-          totalR,
-          tradeCount: accountTrades.length,
-          hasRuleViolation,
-          violationReasonSummary: violationReasonSummary || null,
-        };
-      })
-      .sort((a, b) => {
-        if (a.accountKey === UNASSIGNED_ACCOUNT_GROUP_ID) return 1;
-        if (b.accountKey === UNASSIGNED_ACCOUNT_GROUP_ID) return -1;
-        return a.accountName.localeCompare(b.accountName);
-      });
-  }, [accountNameById, groupedTradesByDayAndAccount, selectedCalendarDateKey]);
-  const singleSelectedAccountId =
-    accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM && selectedAccountIds.length === 1 ? selectedAccountIds[0] : null;
-  const selectedAccountForSummary = singleSelectedAccountId ? accountById.get(singleSelectedAccountId) : null;
-  const propSummary =
-    selectedAccountForSummary?.type === "prop" && selectedAccountForSummary.propProgress
-      ? selectedAccountForSummary.propProgress
-      : null;
+    const dayTrades = groupedTradesByDay.get(selectedCalendarDateKey);
+    if (!dayTrades?.length) return [];
+    const totalPnl = dayTrades.reduce((sum, trade) => sum + trade.pnl, 0);
+    const totalR = dayTrades.reduce((sum, trade) => sum + (Number.isFinite(Number(trade.rMultiple)) ? Number(trade.rMultiple) : 0), 0);
+    const violatingTrades = dayTrades.filter((trade) => trade.ruleViolation);
+    return [{
+      accountKey: "all-trades",
+      accountName: "All Trades",
+      totalPnl,
+      totalR,
+      tradeCount: dayTrades.length,
+      hasRuleViolation: violatingTrades.length > 0,
+      violationReasonSummary: Array.from(new Set(violatingTrades.map((trade) => trade.ruleViolationReason).filter(Boolean))).join("; ") || null,
+    }];
+  }, [groupedTradesByDay, selectedCalendarDateKey]);
 
   const width = 320;
   const lineHeight = 132;
@@ -2964,50 +2794,8 @@ function DashboardScreen({
       <ScreenHeader right={<TopIconPill icon={LineChart} />} />
       <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <TinyLabel>Filters</TinyLabel>
-            <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights scope</div>
-          </div>
-        </div>
-        <div className="mt-3 space-y-3">
-          <div>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account scope</div>
-            <SegmentedControl
-              items={[
-                { value: DASHBOARD_ACCOUNT_FILTER_MODE_ALL, label: "All Accounts" },
-                { value: DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM, label: "Custom" },
-              ]}
-              value={accountFilterMode}
-              onChange={onAccountFilterModeChange}
-            />
-          </div>
-          {accountFilterMode === DASHBOARD_ACCOUNT_FILTER_MODE_CUSTOM ? (
-            <div className="space-y-2 rounded-[16px] border border-white/70 bg-white/28 px-3 py-2.5">
-              {accounts.map((account) => {
-                const checked = selectedAccountIds.includes(account.id);
-                return (
-                  <label key={account.id} className="flex cursor-pointer items-center justify-between gap-2 text-[13px] text-slate-600">
-                    <span>{account.name}</span>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        const nextIds = event.target.checked
-                          ? [...selectedAccountIds, account.id]
-                          : selectedAccountIds.filter((item) => item !== account.id);
-                        onSelectedAccountIdsChange(Array.from(new Set(nextIds)));
-                      }}
-                    />
-                  </label>
-                );
-              })}
-              <label className="flex cursor-pointer items-center justify-between gap-2 border-t border-white/70 pt-2 text-[13px] font-semibold text-slate-700">
-                <span>Include Unassigned</span>
-                <input type="checkbox" checked={includeUnassigned} onChange={(event) => onIncludeUnassignedChange(event.target.checked)} />
-              </label>
-            </div>
-          ) : null}
+        <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights filters</div>
+        <div className="mt-3">
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Trade type</div>
             <SegmentedControl
@@ -3025,7 +2813,7 @@ function DashboardScreen({
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
         <TinyLabel>Trade Data</TinyLabel>
         <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights are sourced from CSV imports</div>
-        <div className="mt-2 text-[12px] text-slate-500">Upload trades from Profile → Accounts → Import CSV to populate Insights.</div>
+        <div className="mt-2 text-[12px] text-slate-500">Upload trades from Profile → Trade import → Import preview trades to populate Insights.</div>
       </GlassCard>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
@@ -3036,24 +2824,6 @@ function DashboardScreen({
         <MetricRowCard label="Win Rate (Filtered)" value={formatPercent(filteredTradeStats.winRate)} />
         <MetricRowCard label="Net P/L (Filtered)" value={formatCompactCurrency(filteredTradeStats.netPnl)} tone={filteredTradeStats.netPnl >= 0 ? "positive" : "negative"} />
       </div>
-      {selectedAccountForSummary?.type === "prop" ? (
-        <GlassCard className="rounded-[24px] p-4">
-          <TinyLabel>Prop Account Context</TinyLabel>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-600">
-            <div>Status: <span className="font-semibold text-slate-700">{selectedAccountForSummary.status || "active"}</span></div>
-            <div>
-              Target progress:{" "}
-              <span className="font-semibold text-slate-700">
-                {propSummary?.progressToTargetPercent !== null && propSummary?.progressToTargetPercent !== undefined
-                  ? formatPercent(propSummary.progressToTargetPercent, 1)
-                  : "—"}
-              </span>
-            </div>
-            <div>Daily loss limit: <span className="font-semibold text-slate-700">{selectedAccountForSummary.dailyLossLimit ? formatCurrency(selectedAccountForSummary.dailyLossLimit) : "—"}</span></div>
-            <div>Max drawdown: <span className="font-semibold text-slate-700">{selectedAccountForSummary.maxDrawdown ? formatCurrency(selectedAccountForSummary.maxDrawdown) : "—"}</span></div>
-          </div>
-        </GlassCard>
-      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Instrument" value={activeSnapshot.instrument} />
         <MetricRowCard label="Contracts" value={activeSnapshot.contracts} />
@@ -3100,25 +2870,14 @@ function DashboardScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Trade Feed</TinyLabel>
         <div className="mt-3 space-y-2.5">
-          {groupedTradesByDayAndAccount.size ? (
-            Array.from(groupedTradesByDayAndAccount.entries())
+          {groupedTradesByDay.size ? (
+            Array.from(groupedTradesByDay.entries())
               .sort((a, b) => b[0].localeCompare(a[0]))
               .slice(0, 12)
-              .map(([dateKey, groupedByAccount]) => (
+              .map(([dateKey, dayTrades]) => (
                 <div key={dateKey} className="space-y-2.5">
                   <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-slate-500">{new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
-                  {Array.from(groupedByAccount.entries())
-                    .sort((a, b) => {
-                      const leftName = a[0] === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(a[0]) || "Unassigned";
-                      const rightName = b[0] === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(b[0]) || "Unassigned";
-                      return leftName.localeCompare(rightName);
-                    })
-                    .map(([accountKey, accountTrades]) => (
-                      <div key={`${dateKey}-${accountKey}`} className="space-y-2">
-                        <div className="text-[12px] font-semibold text-slate-700">
-                          [{accountKey === UNASSIGNED_ACCOUNT_GROUP_ID ? "Unassigned" : accountNameById.get(accountKey) || "Unassigned"}]
-                        </div>
-                        {accountTrades.map((trade) => (
+                  {dayTrades.map((trade) => (
                           <div key={trade.id} className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
                             <div className="flex items-center justify-between gap-2">
                               <div className="font-semibold text-slate-700">{trade.instrument}</div>
@@ -3138,13 +2897,11 @@ function DashboardScreen({
                             ) : null}
                           </div>
                         ))}
-                      </div>
-                    ))}
                 </div>
               ))
           ) : (
             <div className="rounded-[18px] bg-white/28 px-4 py-3 text-[13px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-              No trades for this account filter yet.
+              No trades for this filter yet.
             </div>
           )}
         </div>
@@ -3710,11 +3467,10 @@ function JournalScreen({
   }, []);
 
   const commitCsvImport = useCallback(async () => {
-    if (!csvImportState.accountId || !csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
+    if (!csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
     setCsvImportState((prev) => ({ ...prev, isImporting: true, error: "" }));
     try {
       const result = await onImportCsvTrades({
-        accountId: csvImportState.accountId,
         trades: csvImportState.previewTrades,
       });
       setCsvImportState((prev) => ({
@@ -3726,18 +3482,10 @@ function JournalScreen({
           dedupedCount: Number(result?.dedupedCount || 0),
         },
       }));
-      setSyncStateByAccountId((prev) => ({
-        ...prev,
-        [csvImportState.accountId]: {
-          status: "success",
-          message: `Imported ${Number(result?.importedCount || 0)} trade${Number(result?.importedCount || 0) === 1 ? "" : "s"}${Number(result?.dedupedCount || 0) ? ` · ${Number(result?.dedupedCount || 0)} duplicate${Number(result?.dedupedCount || 0) === 1 ? "" : "s"} skipped` : ""}.`,
-          syncedAt: Date.now(),
-        },
-      }));
     } catch (error) {
       setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
     }
-  }, [csvImportState.accountId, csvImportState.previewTrades, onImportCsvTrades]);
+  }, [csvImportState.previewTrades, onImportCsvTrades]);
 
   const openAddAccountFlow = useCallback(() => {
     setIsAddAccountOpen(true);
@@ -3970,353 +3718,46 @@ function JournalScreen({
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Accounts</TinyLabel>
-        <div className="mt-3 space-y-3">
-          {profileState.accounts.length ? (
-            profileState.accounts.map((account) => {
-              return (
-              <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/75 bg-white/55 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-                      {getAccountRowMeta(account).badge}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-slate-700">{getAccountRowMeta(account).title}</div>
-                      <div className="truncate text-[11px] text-slate-500">{getAccountRowMeta(account).subtitle}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => deleteAccount(account.id)}
-                      className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-2 space-y-2">
-                  <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
-                    Import CSV
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      className="hidden"
-                      ref={(node) => {
-                        if (!node) return;
-                        csvFileInputByAccountIdRef.current[account.id] = node;
-                      }}
-                      onChange={(event) => handleCsvFileSelection(event, account)}
-                    />
-                  </label>
-                  {csvImportState.accountId === account.id && csvImportState.fileName ? (
-                    <div className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
-                      <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
-                      <div className="mt-0.5">
-                        Detected:{" "}
-                        <span className="font-semibold">
-                          {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"}
-                        </span>{" "}
-                        ({csvImportState.detection?.confidence || "low"} confidence)
-                      </div>
-                      {csvImportState.detection?.confidence !== "high" && csvImportState.detection?.candidates?.length ? (
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {csvImportState.detection.candidates.map((candidate) => (
-                            <button
-                              key={candidate.presetId}
-                              type="button"
-                              onClick={() => handleChangeCsvPreset(candidate.presetId)}
-                              className={cn(
-                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                csvImportState.selectedPresetId === candidate.presetId
-                                  ? "border-blue-200 bg-blue-50 text-blue-700"
-                                  : "border-white/70 bg-white/70 text-slate-600"
-                              )}
-                            >
-                              {candidate.label}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-1.5 text-[10px] text-slate-500">
-                        Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows ·{" "}
-                        {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={commitCsvImport}
-                        disabled={csvImportState.isImporting || !csvImportState.previewTrades.length}
-                        className="mt-2 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {csvImportState.isImporting ? "Importing…" : "Import preview trades"}
-                      </button>
-                      {csvImportState.summary?.importedCount !== undefined ? (
-                        <div className="mt-1 text-[10px] text-slate-500">
-                          Imported {csvImportState.summary.importedCount} · Duplicates skipped {csvImportState.summary.dedupedCount || 0}
-                        </div>
-                      ) : null}
-                      {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              );
-            })
-          ) : (
-            <div className="rounded-[20px] border border-dashed border-white/70 bg-white/20 px-4 py-3 text-[13px] text-slate-500">
-              No attached accounts yet.
-            </div>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={openAddAccountFlow}
-          className="mt-3 w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
-        >
-          + Add Account
-        </button>
-      </GlassCard>
-      <AnimatePresence initial={false}>
-        {isAddAccountOpen ? (
-          <div className="fixed inset-0 z-[1300] flex items-end justify-center p-3 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Add account flow">
-            <motion.button
-              type="button"
-              onClick={closeAddAccountFlow}
-              className="absolute inset-0 bg-slate-900/25"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={OVERLAY_FADE_TRANSITION}
+        <TinyLabel>Trade import</TinyLabel>
+        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Import CSV trades</div>
+        <div className="mt-1 text-[12px] text-slate-500">Upload CSV files directly to local trades. Account mapping is disabled.</div>
+        <div className="mt-3 space-y-2">
+          <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
+            Select CSV file
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(event) => handleCsvFileSelection(event, { id: "", name: "Imported Trades" })}
             />
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 16 }}
-              transition={FUTURES_PICKER_TRANSITION}
-              className="relative w-full max-w-[460px] rounded-t-[26px] border border-white/65 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(244,248,255,0.95))] p-4 shadow-[0_18px_42px_rgba(120,140,190,0.25)] sm:rounded-[26px]"
-            >
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300/80 sm:hidden" />
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="text-[14px] font-semibold tracking-[-0.015em] text-slate-700">Add Account</div>
-                <button type="button" onClick={closeAddAccountFlow} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close add account flow">
-                  <X size={16} />
-                </button>
+          </label>
+          {csvImportState.fileName ? (
+            <div className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
+              <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
+              <div className="mt-0.5">
+                Detected: {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"} ({csvImportState.detection?.confidence || "low"} confidence)
               </div>
-
-
-              {normalizeAccountType(accountForm.type) === "personal" && accountFlowStep === 2 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select broker</div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {PERSONAL_BROKER_OPTIONS.map((broker) => (
-                      <button
-                        key={broker.id}
-                        type="button"
-                        onClick={() => {
-                          updateAccountFormField("brokerName", broker.label);
-                          setAccountFlowStep(3);
-                        }}
-                        className="rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-left text-[12px] font-semibold text-slate-700 transition-colors hover:bg-white/70"
-                      >
-                        {broker.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "personal" && accountFlowStep === 3 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Confirm personal account</div>
-                  <div className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2.5 text-[12px] text-slate-600">Broker: <span className="font-semibold text-slate-700">{accountForm.brokerName || "Not selected"}</span></div>
-                  <div className="text-[11px] text-slate-500">Connection is placeholder in this pass. Account attachment is supported.</div>
-                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
-                    Attach Personal Account
-                  </button>
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 2 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Select prop firm</div>
-                  <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
-                    {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
-                      <button
-                        key={firm.id}
-                        type="button"
-                        onClick={() => handleSelectPropFirm(firm.id)}
-                        className={cn(
-                          "rounded-[14px] border px-3 py-2 text-left text-[12px] font-semibold transition-colors",
-                          selectedPropFirmId === firm.id ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700 hover:bg-white/70"
-                        )}
-                      >
-                        {firm.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 3 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select template</div>
-                  {selectedFirm?.templates?.length ? (
-                    <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
-                      {selectedFirm.templates.map((template) => (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => handleSelectTemplate(template.id)}
-                          className={cn(
-                            "rounded-[14px] border px-3 py-2 text-left text-[12px] transition-colors",
-                            selectedTemplateId === template.id ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700 hover:bg-white/70"
-                          )}
-                        >
-                          <div className="font-semibold">{template.label}</div>
-                          <div className="mt-0.5 text-[11px] text-slate-500">{formatCurrency(template.profitTarget)} target</div>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setAccountFlowStep(4)} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
-                      Continue without template
-                    </button>
-                  )}
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 4 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Connection method</div>
-                  <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className="w-full rounded-[12px] border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-[11px] font-semibold text-slate-700">Upload CSV</button>
-                  <div className="text-[11px] text-slate-500">CSV import is the only supported trade source for Insights.</div>
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 5 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Step 4 · Confirm prop account
-                  </div>
-                  <label className="block">
-                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
-                    <input
-                      type="text"
-                      value={accountForm.name}
-                      onChange={(event) => updateAccountFormField("name", event.target.value)}
-                      className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
-                      placeholder="PA 50K"
-                    />
-                  </label>
-                  {accountForm.connectionMethod === "csv" ? (
-                    <div className="space-y-2 rounded-[14px] border border-white/70 bg-white/40 px-3 py-2 text-[11px] text-slate-500">
-                      <div>Upload a CSV export. Helix auto-detects supported formats and previews before import.</div>
-                      <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/60 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
-                        Select CSV file
-                        <input
-                          type="file"
-                          accept=".csv,text/csv"
-                          className="hidden"
-                          onChange={(event) => handleCsvFileSelection(event, { id: "__pending_new__", name: accountForm.name || "New prop account" })}
-                        />
-                      </label>
-                      {csvImportState.accountId === "__pending_new__" && csvImportState.fileName ? (
-                        <div className="rounded-[10px] border border-white/70 bg-white/55 p-2 text-[10px] text-slate-600">
-                          <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
-                          <div className="mt-0.5">
-                            Detected {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"} (
-                            {csvImportState.detection?.confidence || "low"})
-                          </div>
-                          {csvImportState.detection?.confidence !== "high" && csvImportState.detection?.candidates?.length ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {csvImportState.detection.candidates.map((candidate) => (
-                                <button
-                                  key={candidate.presetId}
-                                  type="button"
-                                  onClick={() => handleChangeCsvPreset(candidate.presetId)}
-                                  className={cn(
-                                    "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                    csvImportState.selectedPresetId === candidate.presetId
-                                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                                      : "border-white/70 bg-white/70 text-slate-600"
-                                  )}
-                                >
-                                  {candidate.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                          <div className="mt-1 text-[10px] text-slate-500">
-                            Preview {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows ·{" "}
-                            {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
-                          </div>
-                          {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={createAccountFromFlow}
-                    className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70"
-                  >
-                    Attach Prop Account
-                  </button>
-                </div>
-              ) : null}
-
-
-              {normalizeAccountType(accountForm.type) === "helixTrade" && accountFlowStep === 2 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Helix Trade connection</div>
-                  <div className="rounded-[14px] border border-white/65 bg-white/35 p-2.5 text-[12px] text-slate-600">Link a Helix Trade account from the separate app. Cross-app sync is placeholder for this pass.</div>
-                  <label className="block">
-                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linked account name</div>
-                    <input
-                      type="text"
-                      value={accountForm.name}
-                      onChange={(event) => updateAccountFormField("name", event.target.value)}
-                      className="w-full rounded-[14px] border border-white/75 bg-white/50 px-3 py-2 text-[13px] font-medium text-slate-700 outline-none focus:border-blue-200"
-                      placeholder="Helix Trade Primary"
-                    />
-                  </label>
-                  <button type="button" onClick={() => setAccountFlowStep(3)} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
-                    Continue
-                  </button>
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "helixTrade" && accountFlowStep === 3 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Confirm linked account</div>
-                  <div className="rounded-[14px] border border-white/70 bg-white/45 px-3 py-2.5 text-[12px] text-slate-600">Source: <span className="font-semibold text-slate-700">Helix Trade</span></div>
-                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
-                    Link Helix Trade Account
-                  </button>
-                </div>
-              ) : null}
-
-              {accountFormError ? <div className="mt-3 text-[12px] text-rose-500">{accountFormError}</div> : null}
-              {accountFlowNotice ? <div className="mt-3 text-[12px] text-slate-500">{accountFlowNotice}</div> : null}
-
-              <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-200/70 pt-3">
-                <button
-                  type="button"
-                  onClick={handleAccountFlowBack}
-                  disabled={accountFlowStep === 2}
-                  className="rounded-[12px] border border-white/70 bg-white/45 px-3 py-1.5 text-[12px] font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Back
-                </button>
-                <button type="button" onClick={closeAddAccountFlow} className="rounded-[12px] border border-white/70 bg-white/45 px-3 py-1.5 text-[12px] font-semibold text-slate-600">
-                  Cancel
-                </button>
+              <div className="mt-1.5 text-[10px] text-slate-500">
+                Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows · {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
               </div>
-            </motion.div>
-          </div>
-        ) : null}
-      </AnimatePresence>
+              <button
+                type="button"
+                onClick={commitCsvImport}
+                disabled={csvImportState.isImporting || !csvImportState.previewTrades.length}
+                className="mt-2 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {csvImportState.isImporting ? "Importing…" : "Import preview trades"}
+              </button>
+              {csvImportState.summary?.importedCount !== undefined ? (
+                <div className="mt-1 text-[10px] text-slate-500">
+                  Imported {csvImportState.summary.importedCount} · Duplicates skipped {csvImportState.summary.dedupedCount || 0}
+                </div>
+              ) : null}
+              {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Theme settings</TinyLabel>
@@ -4339,7 +3780,6 @@ function JournalScreen({
           {[
             { key: "showAvatar", label: "Show avatar on share cards" },
             { key: "showUsername", label: "Show @username on share cards" },
-            { key: "showAccountName", label: "Show account name on share cards" },
           ].map((item) => (
             <label key={item.key} className="flex items-center justify-between gap-3 rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5">
               <span className="text-[13px] font-medium text-slate-600">{item.label}</span>
@@ -4458,22 +3898,7 @@ export default function App() {
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
   const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
-  const { evaluatedTrades, propProgressByAccountId } = useMemo(
-    () => evaluatePropRuleViolations(trades, profileState.accounts),
-    [trades, profileState.accounts]
-  );
-  const accountsWithPropProgress = useMemo(
-    () =>
-      profileState.accounts.map((account) =>
-        account.type === "prop"
-          ? {
-              ...account,
-              propProgress: propProgressByAccountId.get(account.id) || null,
-            }
-          : account
-      ),
-    [profileState.accounts, propProgressByAccountId]
-  );
+  const evaluatedTrades = trades;
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
   const anonymousShareIdentity = useMemo(
     () => ({
@@ -4516,73 +3941,28 @@ export default function App() {
     setPositionState({ ...POSITION_DEFAULTS });
     setCompoundState({ ...COMPOUND_DEFAULTS });
     setViewState({ ...VIEW_DEFAULTS });
-    setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings }, accounts: [] });
+    setProfileState({ ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } });
     setTrades([]);
   };
 
-  const importCsvTradesForAccount = useCallback(
-    async ({ accountId, trades: incomingTrades }) => {
-      if (!accountId || !Array.isArray(incomingTrades) || !incomingTrades.length) {
+  const importCsvTrades = useCallback(
+    async ({ trades: incomingTrades }) => {
+      if (!Array.isArray(incomingTrades) || !incomingTrades.length) {
         return { importedCount: 0, dedupedCount: 0 };
       }
-      const nowIso = new Date().toISOString();
       try {
         const existingTrades = sanitizeTrades(trades);
         const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
-        const normalizedIncoming = sanitizeTrades(incomingTrades.map((trade) => ({ ...trade, accountId })));
+        const normalizedIncoming = sanitizeTrades(incomingTrades.map((trade) => ({ ...trade, accountId: "" })));
         const dedupedIncoming = normalizedIncoming.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
         const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
         setTrades(mergedTrades);
-
-        const importRange = deriveTradeImportRange(normalizedIncoming);
-        setProfileState((prev) =>
-          sanitizeProfileState({
-            ...prev,
-            accounts: (prev?.accounts || []).map((item) =>
-              item.id === accountId
-                ? {
-                    ...item,
-                    tradeSync: {
-                      ...(item.tradeSync || {}),
-                      lastImportSource: "csv",
-                      lastImportAt: nowIso,
-                      lastImportStatus: "success",
-                      lastImportCount: dedupedIncoming.length,
-                      lastImportError: null,
-                      lastImportRangeFrom: importRange.from,
-                      lastImportRangeTo: importRange.to,
-                    },
-                  }
-                : item
-            ),
-          })
-        );
 
         return {
           importedCount: dedupedIncoming.length,
           dedupedCount: Math.max(0, normalizedIncoming.length - dedupedIncoming.length),
         };
       } catch (error) {
-        setProfileState((prev) =>
-          sanitizeProfileState({
-            ...prev,
-            accounts: (prev?.accounts || []).map((item) =>
-              item.id === accountId
-                ? {
-                    ...item,
-                    tradeSync: {
-                      ...(item.tradeSync || {}),
-                      lastImportSource: "csv",
-                      lastImportAt: nowIso,
-                      lastImportStatus: "error",
-                      lastImportCount: 0,
-                      lastImportError: error?.message || "Import failed.",
-                    },
-                  }
-                : item
-            ),
-          })
-        );
         throw error;
       }
     },
@@ -4766,12 +4146,7 @@ export default function App() {
 
   const screen =
     activeTab === "position" ? (
-      <PositionScreen
-        positionState={positionState}
-        setPositionState={setPositionState}
-        profileState={profileState}
-        debugEnabled={debugEnabled}
-      />
+      <PositionScreen positionState={positionState} setPositionState={setPositionState} profileState={profileState} debugEnabled={debugEnabled} />
     ) : activeTab === "compound" ? (
       <CompoundScreen positionState={positionState} compoundState={safeCompoundState} setCompoundState={setCompoundStateSafe} debugEnabled={debugEnabled} />
     ) : activeTab === "dashboard" ? (
@@ -4780,14 +4155,7 @@ export default function App() {
         range={viewState.dashboardRange}
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
         trades={csvTrades}
-        accounts={accountsWithPropProgress}
-        accountFilterMode={viewState.dashboardAccountFilterMode}
-        selectedAccountIds={viewState.dashboardSelectedAccountIds}
-        includeUnassigned={viewState.dashboardIncludeUnassigned}
         tradeTypeFilter={viewState.dashboardTradeTypeFilter}
-        onAccountFilterModeChange={(dashboardAccountFilterMode) => setViewState((prev) => ({ ...prev, dashboardAccountFilterMode }))}
-        onSelectedAccountIdsChange={(dashboardSelectedAccountIds) => setViewState((prev) => ({ ...prev, dashboardSelectedAccountIds }))}
-        onIncludeUnassignedChange={(dashboardIncludeUnassigned) => setViewState((prev) => ({ ...prev, dashboardIncludeUnassigned }))}
         onTradeTypeFilterChange={(dashboardTradeTypeFilter) => setViewState((prev) => ({ ...prev, dashboardTradeTypeFilter }))}
         debugEnabled={debugEnabled}
       />
@@ -4797,7 +4165,7 @@ export default function App() {
         localTrades={csvTrades}
         onProfileStateChange={setProfileState}
         onResetPreferences={resetPreferences}
-        onImportCsvTrades={importCsvTradesForAccount}
+        onImportCsvTrades={importCsvTrades}
         debugEnabled={debugEnabled}
       />
     ) : (
