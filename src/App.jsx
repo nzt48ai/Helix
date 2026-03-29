@@ -2108,7 +2108,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
     return String(Math.max(0, Math.min(999, numeric))).slice(0, maxDigits);
   };
 
-  const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "25,000"));
+  const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "50,000"));
   const manualStartingBalance = Math.max(0, parseNumberString(manualStartingBalanceInput || "0"));
   const minimumDollarGoal = startingBalance > 0 ? startingBalance + 1 : 1;
   const rawDollarGoalNumeric = Math.max(0, parseNumberString(projectionGoalDollarInput || "0"));
