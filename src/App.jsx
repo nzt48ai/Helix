@@ -4,6 +4,8 @@ import {
   Dna,
   Calculator,
   LineChart,
+  FileDown,
+  Loader2,
   Undo2,
   Search,
   Plus,
@@ -459,6 +461,106 @@ async function exportElementAsPng(node, fileName = "helix-share-card.png") {
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
+}
+
+function escapePdfText(value) {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function createInsightsPdfReport({
+  generatedAt = Date.now(),
+  range = "Month",
+  tradeTypeFilterLabel = "All Types",
+  identity,
+  metrics,
+  performance,
+  calendarSnapshot = [],
+  flags = [],
+}) {
+  const lines = [
+    { type: "title", text: "HELIX INSIGHTS REPORT" },
+    { type: "body", text: `Generated: ${new Date(generatedAt).toLocaleString("en-US")}` },
+    { type: "body", text: `Filter: ${range} / ${tradeTypeFilterLabel}` },
+    { type: "spacer" },
+    { type: "section", text: "Identity" },
+    { type: "body", text: `Profile: ${identity?.displayName || "Helix"}` },
+    { type: "body", text: `Handle: ${identity?.showUsername ? identity?.username || "@helixtrader" : "@helixtrader"}` },
+    { type: "body", text: `Mode: ${identity?.isAnonymous ? "Anonymous" : "Local profile"}` },
+    { type: "spacer" },
+    { type: "section", text: "Summary Metrics" },
+    { type: "body", text: `Total Trades: ${metrics.totalTrades}` },
+    { type: "body", text: `Net P/L: ${metrics.netPnl}` },
+    { type: "body", text: `Win Rate: ${metrics.winRate}` },
+    { type: "body", text: `Avg R: ${metrics.avgR}` },
+    { type: "body", text: `Best Day: ${metrics.bestDay}` },
+    { type: "body", text: `Worst Day: ${metrics.worstDay}` },
+    { type: "spacer" },
+    { type: "section", text: "Performance" },
+    { type: "body", text: `Recent (7D): ${performance.recentSummary}` },
+    { type: "body", text: `Top Trade: ${performance.topTrade}` },
+    { type: "body", text: `Worst Trade: ${performance.worstTrade}` },
+    { type: "body", text: `Mode Outcome: ${performance.modeOutcome}` },
+    { type: "body", text: `Frequency: ${performance.frequencySummary}` },
+    { type: "body", text: `Contract Summary: ${performance.contractSummary}` },
+    { type: "spacer" },
+    { type: "section", text: "Calendar / Daily Snapshot" },
+    ...(calendarSnapshot.length
+      ? calendarSnapshot.slice(0, 8).map((item) => ({
+          type: "body",
+          text: `${item.dateLabel}: ${item.netPnlLabel}${item.hasRuleViolation ? " | violation" : ""}`,
+        }))
+      : [{ type: "body", text: "No daily entries for current filter" }]),
+    { type: "spacer" },
+    { type: "section", text: "Notes / Flags" },
+    ...(flags.length ? flags.slice(0, 8).map((flag, index) => ({ type: "body", text: `Flag ${index + 1}: ${flag}` })) : [{ type: "body", text: "No flagged trades in current view" }]),
+  ];
+
+  const contentOps = ["BT"];
+  let y = 760;
+  lines.forEach((line) => {
+    if (line.type === "spacer") {
+      y -= 8;
+      return;
+    }
+    const fontSize = line.type === "title" ? 18 : line.type === "section" ? 12 : 10;
+    if (y < 40) return;
+    contentOps.push(`/F1 ${fontSize} Tf`);
+    contentOps.push(`1 0 0 1 48 ${y} Tm`);
+    contentOps.push(`(${escapePdfText(line.text)}) Tj`);
+    y -= line.type === "title" ? 20 : line.type === "section" ? 15 : 13;
+  });
+  contentOps.push("ET");
+  const content = contentOps.join("\n");
+
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const catalogObj = addObject("<< /Type /Catalog /Pages 2 0 R >>");
+  const pagesObj = addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  const pageObj = addObject("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>");
+  const fontObj = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const contentObj = addObject(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  if (!catalogObj || !pagesObj || !pageObj || !fontObj || !contentObj) return null;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((obj, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([pdf], { type: "application/pdf" });
 }
 
 function GlassCard({ children, className = "", padded = true, highlight = false }) {
@@ -2329,6 +2431,7 @@ function DashboardScreen({
   trades = [],
   tradeTypeFilter = DASHBOARD_TRADE_TYPE_FILTER_ALL,
   onTradeTypeFilterChange,
+  shareIdentity,
   debugEnabled = false,
 }) {
   const fallbackSnapshot = createFallbackDashboardSnapshot(formatCurrency(0));
@@ -2336,6 +2439,8 @@ function DashboardScreen({
   const performanceSeries = activeSnapshot.performanceSeries;
   const sessionMix = activeSnapshot.sessionMix;
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   const normalizedTrades = useMemo(
     () =>
@@ -2365,6 +2470,29 @@ function DashboardScreen({
       winRate,
     };
   }, [filteredTrades]);
+  const filteredDays = useMemo(
+    () =>
+      Array.from(
+        filteredTrades.reduce((acc, trade) => {
+          const dateKey = new Date(trade.timestamp).toISOString().slice(0, 10);
+          const previous = acc.get(dateKey) || 0;
+          acc.set(dateKey, previous + trade.pnl);
+          return acc;
+        }, new Map()).entries()
+      ),
+    [filteredTrades]
+  );
+  const derivedSummaryMetrics = useMemo(() => {
+    const rValues = filteredTrades.map((trade) => Number(trade.rMultiple)).filter((value) => Number.isFinite(value));
+    const averageR = rValues.length ? rValues.reduce((sum, value) => sum + value, 0) / rValues.length : 0;
+    const bestDay = filteredDays.reduce((best, day) => (day[1] > best[1] ? day : best), ["", Number.NEGATIVE_INFINITY]);
+    const worstDay = filteredDays.reduce((worst, day) => (day[1] < worst[1] ? day : worst), ["", Number.POSITIVE_INFINITY]);
+    return {
+      averageR,
+      bestDay,
+      worstDay,
+    };
+  }, [filteredDays, filteredTrades]);
   const groupedTradesByDay = useMemo(() => {
     return filteredTrades
       .slice()
@@ -2387,6 +2515,23 @@ function DashboardScreen({
         });
         return acc;
       }, new Map()),
+    [filteredTrades]
+  );
+  const recent7DaySummary = useMemo(() => {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const tradesInRange = filteredTrades.filter((trade) => Number(trade.timestamp) >= sevenDaysAgo);
+    const netPnl = tradesInRange.reduce((sum, trade) => sum + trade.pnl, 0);
+    return {
+      tradeCount: tradesInRange.length,
+      netPnl,
+    };
+  }, [filteredTrades]);
+  const topTrade = useMemo(
+    () => filteredTrades.reduce((best, trade) => (!best || trade.pnl > best.pnl ? trade : best), null),
+    [filteredTrades]
+  );
+  const worstTrade = useMemo(
+    () => filteredTrades.reduce((worst, trade) => (!worst || trade.pnl < worst.pnl ? trade : worst), null),
     [filteredTrades]
   );
   const last14DateKeys = useMemo(() => {
@@ -2416,6 +2561,101 @@ function DashboardScreen({
       violationReasonSummary: Array.from(new Set(violatingTrades.map((trade) => trade.ruleViolationReason).filter(Boolean))).join("; ") || null,
     }];
   }, [groupedTradesByDay, selectedCalendarDateKey]);
+  const tradeTypeFilterLabel =
+    tradeTypeFilter === DASHBOARD_TRADE_TYPE_FILTER_LIVE
+      ? "Live"
+      : tradeTypeFilter === DASHBOARD_TRADE_TYPE_FILTER_PAPER
+        ? "Paper"
+        : "All Types";
+  const handleExportPdf = useCallback(async () => {
+    if (isGeneratingPdf) return;
+    setPdfError("");
+    setIsGeneratingPdf(true);
+    try {
+      const fallbackDay = ["", 0];
+      const bestDay = Number.isFinite(derivedSummaryMetrics.bestDay[1]) ? derivedSummaryMetrics.bestDay : fallbackDay;
+      const worstDay = Number.isFinite(derivedSummaryMetrics.worstDay[1]) ? derivedSummaryMetrics.worstDay : fallbackDay;
+      const calendarSnapshot = last14DateKeys
+        .map((dateKey) => ({
+          dateKey,
+          dateLabel: new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          netPnl: calendarDailyTotals.get(dateKey)?.netPnl || 0,
+          netPnlLabel: formatCompactCurrency(calendarDailyTotals.get(dateKey)?.netPnl || 0),
+          hasRuleViolation: Boolean(calendarDailyTotals.get(dateKey)?.hasRuleViolation),
+        }))
+        .filter((item) => item.netPnl !== 0 || item.hasRuleViolation);
+      const ruleFlags = filteredTrades
+        .filter((trade) => trade.ruleViolation)
+        .slice(0, 12)
+        .map((trade) => `${formatLocalDateMmDdYy(trade.timestamp)} ${trade.instrument}: ${trade.ruleViolationReason || "Rule violation detected"}`);
+
+      const pdfBlob = createInsightsPdfReport({
+        generatedAt: Date.now(),
+        range,
+        tradeTypeFilterLabel,
+        identity: shareIdentity?.isAnonymous
+          ? { isAnonymous: true, showUsername: true, username: "@helixtrader", displayName: "Helix" }
+          : shareIdentity,
+        metrics: {
+          totalTrades: String(filteredTradeStats.totalTrades),
+          netPnl: formatCompactCurrency(filteredTradeStats.netPnl),
+          winRate: formatPercent(filteredTradeStats.winRate),
+          avgR: `${derivedSummaryMetrics.averageR.toFixed(2)}R`,
+          bestDay: bestDay[0] ? `${new Date(`${bestDay[0]}T00:00:00`).toLocaleDateString("en-US")} (${formatCompactCurrency(bestDay[1])})` : "—",
+          worstDay: worstDay[0] ? `${new Date(`${worstDay[0]}T00:00:00`).toLocaleDateString("en-US")} (${formatCompactCurrency(worstDay[1])})` : "—",
+        },
+        performance: {
+          recentSummary: `${recent7DaySummary.tradeCount} trades · ${formatCompactCurrency(recent7DaySummary.netPnl)}`,
+          topTrade: topTrade
+            ? `${topTrade.instrument} · ${formatCompactCurrency(topTrade.pnl)} · ${formatLocalDateMmDdYy(topTrade.timestamp)}`
+            : "—",
+          worstTrade: worstTrade
+            ? `${worstTrade.instrument} · ${formatCompactCurrency(worstTrade.pnl)} · ${formatLocalDateMmDdYy(worstTrade.timestamp)}`
+            : "—",
+          modeOutcome: toSafeString(activeSnapshot.modeOutcome, "—"),
+          frequencySummary: toSafeString(activeSnapshot.frequencySummary, "—"),
+          contractSummary: toSafeString(activeSnapshot.contractSummary, "—"),
+        },
+        calendarSnapshot,
+        flags: ruleFlags,
+      });
+      if (!pdfBlob) throw new Error("PDF creation failed");
+      const today = new Date().toISOString().slice(0, 10);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = pdfUrl;
+      downloadLink.download = `helix-insights-report-${today}.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(pdfUrl);
+    } catch (error) {
+      setPdfError("Could not generate PDF report right now.");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }, [
+    activeSnapshot.contractSummary,
+    activeSnapshot.frequencySummary,
+    activeSnapshot.modeOutcome,
+    calendarDailyTotals,
+    derivedSummaryMetrics.averageR,
+    derivedSummaryMetrics.bestDay,
+    derivedSummaryMetrics.worstDay,
+    filteredTradeStats.netPnl,
+    filteredTradeStats.totalTrades,
+    filteredTradeStats.winRate,
+    filteredTrades,
+    isGeneratingPdf,
+    last14DateKeys,
+    range,
+    recent7DaySummary.netPnl,
+    recent7DaySummary.tradeCount,
+    shareIdentity,
+    topTrade,
+    tradeTypeFilterLabel,
+    worstTrade,
+  ]);
 
   const width = 320;
   const lineHeight = 132;
@@ -2433,7 +2673,26 @@ function DashboardScreen({
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="DASHBOARD SCREEN" />
       {!hasMeaningfulContent ? <DebugEmptyFallback enabled={debugEnabled} label="Dashboard rendered empty" /> : null}
-      <ScreenHeader right={<TopIconPill icon={LineChart} />} />
+      <ScreenHeader
+        right={(
+          <div className="flex items-center gap-2">
+            <TopIconPill icon={LineChart} />
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={isGeneratingPdf}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[0_8px_20px_rgba(148,163,184,0.2)]",
+                isGeneratingPdf ? "cursor-not-allowed opacity-70" : "hover:bg-white"
+              )}
+            >
+              {isGeneratingPdf ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+              {isGeneratingPdf ? "Generating…" : "Export PDF"}
+            </button>
+          </div>
+        )}
+      />
+      {pdfError ? <div className="mt-[-14px] text-right text-[11px] text-rose-500">{pdfError}</div> : null}
       <SegmentedControl items={DASHBOARD_RANGES} value={range} onChange={onRangeChange} />
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
         <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights filters</div>
@@ -3558,6 +3817,7 @@ export default function App() {
         trades={csvTrades}
         tradeTypeFilter={viewState.dashboardTradeTypeFilter}
         onTradeTypeFilterChange={(dashboardTradeTypeFilter) => setViewState((prev) => ({ ...prev, dashboardTradeTypeFilter }))}
+        shareIdentity={shareIdentity}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
