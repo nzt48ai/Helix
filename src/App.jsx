@@ -215,6 +215,28 @@ function formatDateInTimeZoneMmDdYy(value = Date.now(), timeZone = "America/New_
   });
 }
 
+function formatRelativeTimeFromNow(value) {
+  const timeValue = Number(value);
+  if (!Number.isFinite(timeValue) || timeValue <= 0) return "";
+  const deltaMs = timeValue - Date.now();
+  const minuteMs = 1000 * 60;
+  const hourMs = minuteMs * 60;
+  const dayMs = hourMs * 24;
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const absDeltaMs = Math.abs(deltaMs);
+
+  if (absDeltaMs < hourMs) {
+    const minutes = Math.max(1, Math.round(deltaMs / minuteMs));
+    return rtf.format(minutes, "minute");
+  }
+  if (absDeltaMs < dayMs * 2) {
+    const hours = Math.round(deltaMs / hourMs);
+    return rtf.format(hours, "hour");
+  }
+  const days = Math.round(deltaMs / dayMs);
+  return rtf.format(days, "day");
+}
+
 function formatAbbreviatedNumber(value, { suffix = "", prefix = "", threshold = 99999 } = {}) {
   const safeValue = Number(value);
   if (!Number.isFinite(safeValue)) return `${prefix}0${suffix}`;
@@ -3591,7 +3613,7 @@ function JournalScreen({
   onSyncTradovateAccountTrades,
   onImportCsvTrades,
   onSignOut,
-  cloudSyncState = { isLoading: false, isSaving: false, error: "" },
+  cloudSyncState = { isLoading: false, isSaving: false, error: "", tradeLedger: null },
   debugEnabled = false,
 }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
@@ -3722,6 +3744,45 @@ function JournalScreen({
       .map((part) => part.charAt(0).toUpperCase())
       .join("") || "HX";
   }, [profileState.displayName, profileState.username]);
+
+  const tradeLedgerStatus = cloudSyncState?.tradeLedger || null;
+  const tradeLedgerStatusLabel = useMemo(() => {
+    if (!tradeLedgerStatus) return "";
+    switch (tradeLedgerStatus.status) {
+      case "hydrating":
+        return "Hydrating cloud trades…";
+      case "syncing":
+        return "Syncing changes…";
+      case "fallback-local":
+        return "Using local fallback";
+      case "error":
+        return "Cloud sync failed";
+      case "synced":
+        return "Synced to cloud";
+      default:
+        return "Cloud sync idle";
+    }
+  }, [tradeLedgerStatus]);
+  const tradeLedgerStatusDetail = useMemo(() => {
+    if (!tradeLedgerStatus) return "";
+    const lastSyncedAt = Number(tradeLedgerStatus.lastCloudWriteAt || tradeLedgerStatus.lastCloudHydratedAt || 0);
+    const relativeLastSynced = formatRelativeTimeFromNow(lastSyncedAt);
+    if (tradeLedgerStatus.status === "error" && tradeLedgerStatus.lastCloudError) {
+      return String(tradeLedgerStatus.lastCloudError);
+    }
+    if (tradeLedgerStatus.status === "fallback-local") {
+      return "Cloud trade ledger unavailable. Local cached trades are active.";
+    }
+    if (tradeLedgerStatus.status === "syncing") {
+      return tradeLedgerStatus.pendingUnsyncedChanges
+        ? "Unsynced changes pending upload."
+        : "Uploading trade changes to cloud.";
+    }
+    if (relativeLastSynced) {
+      return `Last synced ${relativeLastSynced}`;
+    }
+    return "Waiting for first cloud sync.";
+  }, [tradeLedgerStatus]);
 
   const updateField = useCallback(
     (key, value) => {
@@ -4250,6 +4311,25 @@ function JournalScreen({
         {cloudSyncState.isLoading ? <div className="mt-2 text-[12px] text-slate-500">Loading profile from cloud…</div> : null}
         {!cloudSyncState.isLoading && cloudSyncState.isSaving ? <div className="mt-2 text-[12px] text-slate-500">Saving profile…</div> : null}
         {cloudSyncState.error ? <div className="mt-2 text-[12px] text-amber-700">{cloudSyncState.error}</div> : null}
+        {tradeLedgerStatus ? (
+          <div
+            className={cn(
+              "mt-3 rounded-[14px] border px-3 py-2 text-[11px]",
+              tradeLedgerStatus.status === "synced"
+                ? "border-emerald-200/90 bg-emerald-50/70 text-emerald-800"
+                : tradeLedgerStatus.status === "syncing" || tradeLedgerStatus.status === "hydrating"
+                  ? "border-blue-200/90 bg-blue-50/70 text-blue-800"
+                  : tradeLedgerStatus.status === "fallback-local"
+                    ? "border-amber-200/90 bg-amber-50/75 text-amber-900"
+                    : tradeLedgerStatus.status === "error"
+                      ? "border-rose-200/90 bg-rose-50/75 text-rose-700"
+                      : "border-white/75 bg-white/55 text-slate-600"
+            )}
+          >
+            <div className="font-semibold">{tradeLedgerStatusLabel}</div>
+            <div className="mt-0.5 text-[10px] opacity-90">{tradeLedgerStatusDetail}</div>
+          </div>
+        ) : null}
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[20px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
             {profileInitials}
@@ -4985,6 +5065,11 @@ export default function App() {
     isSaving: false,
     error: "",
     lastLoadedUserId: "",
+    status: "idle",
+    lastCloudHydratedAt: 0,
+    lastCloudWriteAt: 0,
+    lastCloudError: "",
+    pendingUnsyncedChanges: 0,
   });
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
   const hasHydratedCloudProfileRef = useRef(false);
@@ -5597,6 +5682,9 @@ export default function App() {
         isSaving: false,
         error: "",
         lastLoadedUserId: "",
+        status: "idle",
+        lastCloudError: "",
+        pendingUnsyncedChanges: 0,
       }));
       return;
     }
@@ -5604,7 +5692,14 @@ export default function App() {
     let cancelled = false;
     const localTradesSnapshot = sanitizeTrades(readStoredAppState()?.trades);
 
-    setCloudTradeState((prev) => ({ ...prev, isLoading: true, error: "" }));
+    setCloudTradeState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: "",
+      status: "hydrating",
+      lastCloudError: "",
+      pendingUnsyncedChanges: 0,
+    }));
 
     (async () => {
       try {
@@ -5649,8 +5744,11 @@ export default function App() {
           isLoading: false,
           error: "",
           lastLoadedUserId: authUser.id,
+          status: "synced",
+          lastCloudHydratedAt: Date.now(),
+          lastCloudError: "",
         }));
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         hasHydratedCloudTradesRef.current = true;
         const backupTrades = sanitizeTrades(readStoredAppState()?.trades);
@@ -5661,6 +5759,8 @@ export default function App() {
           isLoading: false,
           error: "Cloud trade ledger unavailable. Using local trade data.",
           lastLoadedUserId: authUser.id,
+          status: "fallback-local",
+          lastCloudError: error?.message || "Cloud trade ledger unavailable.",
         }));
       }
     })();
@@ -5685,8 +5785,20 @@ export default function App() {
       tradeSaveTimeoutRef.current = null;
     }
 
+    setCloudTradeState((prev) => ({
+      ...prev,
+      status: "syncing",
+      pendingUnsyncedChanges: 1,
+      lastCloudError: "",
+    }));
+
     tradeSaveTimeoutRef.current = window.setTimeout(async () => {
-      setCloudTradeState((prev) => ({ ...prev, isSaving: true, error: "" }));
+      setCloudTradeState((prev) => ({
+        ...prev,
+        isSaving: true,
+        error: "",
+        status: "syncing",
+      }));
       try {
         const rows = sanitizedEvaluatedTrades.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean);
         await supabase.tradeLedger.upsertBatch({
@@ -5694,12 +5806,23 @@ export default function App() {
           rows,
         });
         lastSavedTradePayloadRef.current = payload;
-        setCloudTradeState((prev) => ({ ...prev, isSaving: false, error: "" }));
-      } catch {
         setCloudTradeState((prev) => ({
           ...prev,
           isSaving: false,
+          error: "",
+          status: "synced",
+          lastCloudWriteAt: Date.now(),
+          pendingUnsyncedChanges: 0,
+          lastCloudError: "",
+        }));
+      } catch (error) {
+        setCloudTradeState((prev) => ({
+          ...prev,
+          isSaving: false,
+          status: "error",
           error: "Unable to sync trades right now. Local trade changes are still saved.",
+          lastCloudError: error?.message || "Unable to sync trades right now.",
+          pendingUnsyncedChanges: 1,
         }));
       }
     }, TRADE_CLOUD_SAVE_DEBOUNCE_MS);
@@ -5732,8 +5855,27 @@ export default function App() {
       isLoading: cloudProfileState.isLoading || cloudTradeState.isLoading,
       isSaving: cloudProfileState.isSaving || cloudTradeState.isSaving,
       error: errorMessage,
+      tradeLedger: {
+        status: cloudTradeState.status,
+        lastCloudHydratedAt: cloudTradeState.lastCloudHydratedAt,
+        lastCloudWriteAt: cloudTradeState.lastCloudWriteAt,
+        lastCloudError: cloudTradeState.lastCloudError || cloudTradeState.error || "",
+        pendingUnsyncedChanges: cloudTradeState.pendingUnsyncedChanges,
+      },
     };
-  }, [cloudProfileState.error, cloudProfileState.isLoading, cloudProfileState.isSaving, cloudTradeState.error, cloudTradeState.isLoading, cloudTradeState.isSaving]);
+  }, [
+    cloudProfileState.error,
+    cloudProfileState.isLoading,
+    cloudProfileState.isSaving,
+    cloudTradeState.error,
+    cloudTradeState.isLoading,
+    cloudTradeState.isSaving,
+    cloudTradeState.lastCloudError,
+    cloudTradeState.lastCloudHydratedAt,
+    cloudTradeState.lastCloudWriteAt,
+    cloudTradeState.pendingUnsyncedChanges,
+    cloudTradeState.status,
+  ]);
 
   const screen =
     activeTab === "position" ? (
