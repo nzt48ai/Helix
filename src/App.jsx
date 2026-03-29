@@ -1270,6 +1270,7 @@ function BalanceHeroCard({
   label,
   value,
   onChange,
+  readOnly = false,
   toggleLabel,
   toggleRightLabel,
   toggleState = false,
@@ -1316,7 +1317,9 @@ function BalanceHeroCard({
               type="text"
               inputMode="numeric"
               value={displayValue}
+              readOnly={readOnly}
               onChange={(e) => {
+                if (readOnly) return;
                 const rawValue = String(e.target.value ?? "");
                 const strippedValue = rawValue.replace(/[$%]/g, "");
                 onChange?.(strippedValue);
@@ -1570,7 +1573,7 @@ function CompoundInputShell({ children, className = "" }) {
   );
 }
 
-function PositionScreen({ positionState, setPositionState, debugEnabled = false }) {
+function PositionScreen({ positionState, setPositionState, profileState, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
   const lastManualContractsRef = useRef("1");
   const hasMountedContractsEffectRef = useRef(false);
@@ -1596,7 +1599,28 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
   const pointValue = selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
-  const parsedAccountBalance = parseNullableNumberString(positionState.accountBalance);
+  const selectedPropAccounts = useMemo(() => {
+    const selectedIds = Array.isArray(profileState?.selectedPropAccountIds) ? profileState.selectedPropAccountIds : [];
+    const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
+    if (!selectedIds.length || !allAccounts.length) return [];
+    const selectedIdSet = new Set(selectedIds);
+    return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop" && selectedIdSet.has(account.id));
+  }, [profileState]);
+  const propModeBalanceOverride = useMemo(() => {
+    if (!positionState.propMode || !selectedPropAccounts.length) return null;
+    const combinedBalance = selectedPropAccounts.reduce((sum, account) => {
+      const currentBalance = Number(account?.currentBalance);
+      const startingBalance = Number(account?.startingBalance);
+      if (Number.isFinite(currentBalance)) return sum + currentBalance;
+      if (Number.isFinite(startingBalance)) return sum + startingBalance;
+      return sum;
+    }, 0);
+    return Math.max(0, combinedBalance);
+  }, [positionState.propMode, selectedPropAccounts]);
+  const effectiveAccountBalanceValue =
+    propModeBalanceOverride === null ? positionState.accountBalance : formatNumberString(String(Math.trunc(propModeBalanceOverride)));
+  const isAccountBalanceReadOnly = propModeBalanceOverride !== null;
+  const parsedAccountBalance = parseNullableNumberString(effectiveAccountBalanceValue);
   const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
   const stopPrice = positionSetupSnapshot.stop;
@@ -1747,7 +1771,19 @@ function PositionScreen({ positionState, setPositionState, debugEnabled = false 
           setInstrumentPickerOpen(false);
         }}
       />
-      <BalanceHeroCard label="Account Balance" fixedFontSize={52} value={positionState.accountBalance} onChange={(raw) => setField("accountBalance", formatNumberString(raw))} toggleLabel="Prop" toggleState={positionState.propMode} onToggle={() => setField("propMode", !positionState.propMode)} />
+      <BalanceHeroCard
+        label="Account Balance"
+        fixedFontSize={52}
+        value={effectiveAccountBalanceValue}
+        readOnly={isAccountBalanceReadOnly}
+        onChange={(raw) => {
+          if (isAccountBalanceReadOnly) return;
+          setField("accountBalance", formatNumberString(raw));
+        }}
+        toggleLabel="Prop"
+        toggleState={positionState.propMode}
+        onToggle={() => setField("propMode", !positionState.propMode)}
+      />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
@@ -3602,6 +3638,29 @@ function JournalScreen({
         return sanitizeProfileState({
           ...safePrev,
           accounts: safePrev.accounts.filter((account) => account.id !== accountId),
+          selectedPropAccountIds: (safePrev.selectedPropAccountIds || []).filter((id) => id !== accountId),
+        });
+      });
+    },
+    [onProfileStateChange]
+  );
+
+  const togglePropAccountSelection = useCallback(
+    (accountId, checked) => {
+      onProfileStateChange((prev) => {
+        const safePrev = sanitizeProfileState(prev);
+        const targetAccount = safePrev.accounts.find((account) => account.id === accountId);
+        if (normalizeAccountType(targetAccount?.type) !== "prop") return safePrev;
+        const currentSelection = Array.isArray(safePrev.selectedPropAccountIds) ? safePrev.selectedPropAccountIds : [];
+        const selectionSet = new Set(currentSelection);
+        if (checked) {
+          selectionSet.add(accountId);
+        } else {
+          selectionSet.delete(accountId);
+        }
+        return sanitizeProfileState({
+          ...safePrev,
+          selectedPropAccountIds: Array.from(selectionSet),
         });
       });
     },
@@ -3657,6 +3716,8 @@ function JournalScreen({
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
+              const isPropAccount = normalizeAccountType(account?.type) === "prop";
+              const isSelected = isPropAccount && Array.isArray(profileState.selectedPropAccountIds) && profileState.selectedPropAccountIds.includes(account.id);
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -3669,13 +3730,22 @@ function JournalScreen({
                       <div className="truncate text-[11px] text-slate-500">{getAccountRowMeta(account).subtitle}</div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => deleteAccount(account.id)}
-                    className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(isSelected)}
+                      disabled={!isPropAccount}
+                      onChange={(event) => togglePropAccountSelection(account.id, event.target.checked)}
+                      aria-label={`Select ${account.name || "account"} for prop mode`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => deleteAccount(account.id)}
+                      className="rounded-[12px] border border-rose-200/80 bg-rose-50/70 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-100/75"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-2 space-y-2">
                   <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
@@ -4468,7 +4538,12 @@ export default function App() {
 
   const screen =
     activeTab === "position" ? (
-      <PositionScreen positionState={positionState} setPositionState={setPositionState} debugEnabled={debugEnabled} />
+      <PositionScreen
+        positionState={positionState}
+        setPositionState={setPositionState}
+        profileState={profileState}
+        debugEnabled={debugEnabled}
+      />
     ) : activeTab === "compound" ? (
       <CompoundScreen positionState={positionState} compoundState={safeCompoundState} setCompoundState={setCompoundStateSafe} debugEnabled={debugEnabled} />
     ) : activeTab === "dashboard" ? (
