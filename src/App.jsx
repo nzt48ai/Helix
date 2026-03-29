@@ -470,6 +470,13 @@ function escapePdfText(value) {
     .replace(/\)/g, "\\)");
 }
 
+function hexToPdfRgb(hex, fallback = [1, 1, 1]) {
+  if (typeof hex !== "string") return fallback;
+  const normalized = hex.replace("#", "").trim();
+  if (!/^[\da-fA-F]{6}$/.test(normalized)) return fallback;
+  return [0, 2, 4].map((offset) => parseInt(normalized.slice(offset, offset + 2), 16) / 255);
+}
+
 function createInsightsPdfReport({
   generatedAt = Date.now(),
   range = "Month",
@@ -480,59 +487,158 @@ function createInsightsPdfReport({
   calendarSnapshot = [],
   flags = [],
 }) {
-  const lines = [
-    { type: "title", text: "HELIX INSIGHTS REPORT" },
-    { type: "body", text: `Generated: ${new Date(generatedAt).toLocaleString("en-US")}` },
-    { type: "body", text: `Filter: ${range} / ${tradeTypeFilterLabel}` },
-    { type: "spacer" },
-    { type: "section", text: "Identity" },
-    { type: "body", text: `Profile: ${identity?.displayName || "Helix"}` },
-    { type: "body", text: `Handle: ${identity?.showUsername ? identity?.username || "@helixtrader" : "@helixtrader"}` },
-    { type: "body", text: `Mode: ${identity?.isAnonymous ? "Anonymous" : "Local profile"}` },
-    { type: "spacer" },
-    { type: "section", text: "Summary Metrics" },
-    { type: "body", text: `Total Trades: ${metrics.totalTrades}` },
-    { type: "body", text: `Net P/L: ${metrics.netPnl}` },
-    { type: "body", text: `Win Rate: ${metrics.winRate}` },
-    { type: "body", text: `Avg R: ${metrics.avgR}` },
-    { type: "body", text: `Best Day: ${metrics.bestDay}` },
-    { type: "body", text: `Worst Day: ${metrics.worstDay}` },
-    { type: "spacer" },
-    { type: "section", text: "Performance" },
-    { type: "body", text: `Recent (7D): ${performance.recentSummary}` },
-    { type: "body", text: `Top Trade: ${performance.topTrade}` },
-    { type: "body", text: `Worst Trade: ${performance.worstTrade}` },
-    { type: "body", text: `Mode Outcome: ${performance.modeOutcome}` },
-    { type: "body", text: `Frequency: ${performance.frequencySummary}` },
-    { type: "body", text: `Contract Summary: ${performance.contractSummary}` },
-    { type: "spacer" },
-    { type: "section", text: "Calendar / Daily Snapshot" },
-    ...(calendarSnapshot.length
-      ? calendarSnapshot.slice(0, 8).map((item) => ({
-          type: "body",
-          text: `${item.dateLabel}: ${item.netPnlLabel}${item.hasRuleViolation ? " | violation" : ""}`,
-        }))
-      : [{ type: "body", text: "No daily entries for current filter" }]),
-    { type: "spacer" },
-    { type: "section", text: "Notes / Flags" },
-    ...(flags.length ? flags.slice(0, 8).map((flag, index) => ({ type: "body", text: `Flag ${index + 1}: ${flag}` })) : [{ type: "body", text: "No flagged trades in current view" }]),
-  ];
-
-  const contentOps = ["BT"];
-  let y = 760;
-  lines.forEach((line) => {
-    if (line.type === "spacer") {
-      y -= 8;
-      return;
+  const PAGE_WIDTH = 612;
+  const PAGE_HEIGHT = 792;
+  const MARGIN = 40;
+  const bodyWidth = PAGE_WIDTH - MARGIN * 2;
+  const tone = {
+    bg: hexToPdfRgb("#070B17", [0.03, 0.04, 0.09]),
+    card: hexToPdfRgb("#0E152A", [0.06, 0.08, 0.16]),
+    cardAlt: hexToPdfRgb("#121D37", [0.07, 0.11, 0.21]),
+    border: hexToPdfRgb("#253554", [0.15, 0.2, 0.32]),
+    textPrimary: hexToPdfRgb("#E8EEFF", [0.91, 0.93, 1]),
+    textMuted: hexToPdfRgb("#8EA0C6", [0.56, 0.63, 0.78]),
+    cyan: hexToPdfRgb("#30C9FF", [0.19, 0.78, 1]),
+    violet: hexToPdfRgb("#8E7DFF", [0.56, 0.49, 1]),
+    orange: hexToPdfRgb("#F6A752", [0.96, 0.66, 0.32]),
+  };
+  const toRgb = (value = [1, 1, 1]) => value.map((n) => n.toFixed(3)).join(" ");
+  const wrapText = (text, maxChars = 72) => {
+    const words = String(text ?? "").split(/\s+/).filter(Boolean);
+    if (!words.length) return [""];
+    const lines = [];
+    let line = words[0];
+    for (let index = 1; index < words.length; index += 1) {
+      const next = `${line} ${words[index]}`;
+      if (next.length <= maxChars) line = next;
+      else {
+        lines.push(line);
+        line = words[index];
+      }
     }
-    const fontSize = line.type === "title" ? 18 : line.type === "section" ? 12 : 10;
-    if (y < 40) return;
-    contentOps.push(`/F1 ${fontSize} Tf`);
-    contentOps.push(`1 0 0 1 48 ${y} Tm`);
-    contentOps.push(`(${escapePdfText(line.text)}) Tj`);
-    y -= line.type === "title" ? 20 : line.type === "section" ? 15 : 13;
+    lines.push(line);
+    return lines;
+  };
+
+  const contentOps = [];
+  const drawRect = (x, yTop, width, height, fillColor = null, strokeColor = null, lineWidth = 1) => {
+    const yBottom = yTop - height;
+    if (fillColor) contentOps.push(`${toRgb(fillColor)} rg`);
+    if (strokeColor) {
+      contentOps.push(`${toRgb(strokeColor)} RG`);
+      contentOps.push(`${lineWidth.toFixed(2)} w`);
+    }
+    contentOps.push(`${x.toFixed(2)} ${yBottom.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re`);
+    if (fillColor && strokeColor) contentOps.push("B");
+    else if (fillColor) contentOps.push("f");
+    else contentOps.push("S");
+  };
+  const drawLine = (x1, y1, x2, y2, strokeColor = tone.border, lineWidth = 1) => {
+    contentOps.push(`${toRgb(strokeColor)} RG`);
+    contentOps.push(`${lineWidth.toFixed(2)} w`);
+    contentOps.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+  };
+  const drawText = (text, x, y, { font = "F1", size = 10, color = tone.textPrimary } = {}) => {
+    contentOps.push("BT");
+    contentOps.push(`/${font} ${size} Tf`);
+    contentOps.push(`${toRgb(color)} rg`);
+    contentOps.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
+    contentOps.push(`(${escapePdfText(text)}) Tj`);
+    contentOps.push("ET");
+  };
+  const drawLabeledValue = (label, value, x, y, width, isAccent = false) => {
+    drawText(label, x + 12, y - 18, { font: "F1", size: 8, color: tone.textMuted });
+    drawText(value, x + 12, y - 36, { font: "F2", size: 12, color: isAccent ? tone.cyan : tone.textPrimary });
+    drawLine(x + 12, y - 43, x + width - 12, y - 43, tone.border, 0.75);
+  };
+
+  drawRect(0, PAGE_HEIGHT, PAGE_WIDTH, PAGE_HEIGHT, tone.bg);
+
+  drawRect(MARGIN, PAGE_HEIGHT - MARGIN, bodyWidth, 124, tone.card, tone.border, 1);
+  drawRect(MARGIN + bodyWidth - 170, PAGE_HEIGHT - MARGIN - 1, 168, 122, tone.cardAlt);
+  drawRect(MARGIN, PAGE_HEIGHT - MARGIN - 92, bodyWidth, 2, tone.border);
+
+  // subtle candlestick motif in header
+  drawRect(MARGIN + 20, PAGE_HEIGHT - MARGIN - 14, 3, 26, tone.violet);
+  drawRect(MARGIN + 28, PAGE_HEIGHT - MARGIN - 4, 3, 16, tone.cyan);
+  drawRect(MARGIN + 36, PAGE_HEIGHT - MARGIN - 10, 3, 22, tone.orange);
+
+  drawText("HELIX", MARGIN + 54, PAGE_HEIGHT - MARGIN - 4, { font: "F2", size: 20, color: tone.textPrimary });
+  drawText("INSIGHTS REPORT", MARGIN + 54, PAGE_HEIGHT - MARGIN - 28, { font: "F1", size: 10, color: tone.textMuted });
+  drawText(`Generated ${new Date(generatedAt).toLocaleString("en-US")}`, MARGIN + 20, PAGE_HEIGHT - MARGIN - 52, { font: "F1", size: 9, color: tone.textMuted });
+  drawText(`Scope ${range}  |  ${tradeTypeFilterLabel}`, MARGIN + 20, PAGE_HEIGHT - MARGIN - 70, { font: "F1", size: 9, color: tone.textMuted });
+
+  drawText("Profile", MARGIN + bodyWidth - 158, PAGE_HEIGHT - MARGIN - 26, { font: "F1", size: 8, color: tone.textMuted });
+  drawText(identity?.displayName || "Helix", MARGIN + bodyWidth - 158, PAGE_HEIGHT - MARGIN - 45, { font: "F2", size: 12, color: tone.textPrimary });
+  drawText(identity?.showUsername ? identity?.username || "@helixtrader" : "@helixtrader", MARGIN + bodyWidth - 158, PAGE_HEIGHT - MARGIN - 61, { font: "F1", size: 9, color: tone.cyan });
+  drawText(identity?.isAnonymous ? "Anonymous mode" : "Local profile", MARGIN + bodyWidth - 158, PAGE_HEIGHT - MARGIN - 77, { font: "F1", size: 8, color: tone.textMuted });
+
+  let yCursor = PAGE_HEIGHT - MARGIN - 142;
+  const sectionTitle = (title) => {
+    drawText(title.toUpperCase(), MARGIN, yCursor - 2, { font: "F2", size: 11, color: tone.textPrimary });
+    drawLine(MARGIN + 138, yCursor + 2, PAGE_WIDTH - MARGIN, yCursor + 2, tone.border, 0.75);
+    yCursor -= 12;
+  };
+
+  sectionTitle("Summary Metrics");
+  const metricBlockWidth = (bodyWidth - 20) / 2;
+  const metricRows = [
+    ["Total Trades", metrics.totalTrades, "Net P/L", metrics.netPnl, true],
+    ["Win Rate", metrics.winRate, "Avg R", metrics.avgR, false],
+    ["Best Day", metrics.bestDay, "Worst Day", metrics.worstDay, false],
+  ];
+  metricRows.forEach(([labelA, valueA, labelB, valueB, accentA], index) => {
+    const top = yCursor - index * 52;
+    drawRect(MARGIN, top, metricBlockWidth, 46, tone.card, tone.border, 0.8);
+    drawRect(MARGIN + metricBlockWidth + 20, top, metricBlockWidth, 46, tone.card, tone.border, 0.8);
+    drawLabeledValue(String(labelA), String(valueA), MARGIN, top, metricBlockWidth, accentA);
+    drawLabeledValue(String(labelB), String(valueB), MARGIN + metricBlockWidth + 20, top, metricBlockWidth, false);
   });
-  contentOps.push("ET");
+  yCursor -= 168;
+
+  sectionTitle("Performance");
+  const perfCardHeight = 112;
+  drawRect(MARGIN, yCursor, bodyWidth, perfCardHeight, tone.card, tone.border, 0.9);
+  const perfRows = [
+    ["Recent (7D)", performance.recentSummary],
+    ["Top Trade", performance.topTrade],
+    ["Worst Trade", performance.worstTrade],
+    ["Mode Outcome", performance.modeOutcome],
+    ["Frequency", performance.frequencySummary],
+    ["Contract Summary", performance.contractSummary],
+  ];
+  perfRows.forEach(([label, value], index) => {
+    const rowY = yCursor - 16 - index * 16;
+    drawText(label, MARGIN + 14, rowY, { font: "F1", size: 8, color: tone.textMuted });
+    drawText(value, MARGIN + 122, rowY, { font: "F1", size: 9, color: tone.textPrimary });
+  });
+  yCursor -= perfCardHeight + 14;
+
+  sectionTitle("Calendar / Daily Snapshot");
+  const lowerCardWidth = (bodyWidth - 16) / 2;
+  drawRect(MARGIN, yCursor, lowerCardWidth, 122, tone.card, tone.border, 0.8);
+  const calendarRows = calendarSnapshot.length
+    ? calendarSnapshot.slice(0, 7).map((item) => `${item.dateLabel}  ${item.netPnlLabel}${item.hasRuleViolation ? " | flag" : ""}`)
+    : ["No daily entries for current filter"];
+  calendarRows.forEach((line, index) => {
+    drawText(line, MARGIN + 12, yCursor - 18 - index * 14, { font: "F1", size: 8.5, color: tone.textPrimary });
+  });
+
+  drawText("NOTES / FLAGS", MARGIN + lowerCardWidth + 16, yCursor - 2, { font: "F2", size: 11, color: tone.textPrimary });
+  drawRect(MARGIN + lowerCardWidth + 16, yCursor - 8, lowerCardWidth, 114, tone.card, tone.border, 0.8);
+  const flagRows = flags.length ? flags.slice(0, 6) : ["No flagged trades in current view"];
+  let flagY = yCursor - 18;
+  flagRows.forEach((flag, index) => {
+    wrapText(`${index + 1}. ${flag}`, 42).slice(0, 2).forEach((line, lineIndex) => {
+      drawText(line, MARGIN + lowerCardWidth + 28, flagY - lineIndex * 12, { font: "F1", size: 8, color: tone.textPrimary });
+    });
+    flagY -= 22;
+  });
+
+  drawLine(MARGIN, 34, PAGE_WIDTH - MARGIN, 34, tone.border, 0.75);
+  drawText("Helix Insights  |  Premium performance report", MARGIN, 20, { font: "F1", size: 8, color: tone.textMuted });
+  drawText(new Date(generatedAt).toLocaleDateString("en-US"), PAGE_WIDTH - MARGIN - 76, 20, { font: "F1", size: 8, color: tone.textMuted });
+
   const content = contentOps.join("\n");
 
   const objects = [];
@@ -542,10 +648,11 @@ function createInsightsPdfReport({
   };
   const catalogObj = addObject("<< /Type /Catalog /Pages 2 0 R >>");
   const pagesObj = addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-  const pageObj = addObject("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>");
-  const fontObj = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const pageObj = addObject("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>");
+  const fontBodyObj = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const fontStrongObj = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   const contentObj = addObject(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  if (!catalogObj || !pagesObj || !pageObj || !fontObj || !contentObj) return null;
+  if (!catalogObj || !pagesObj || !pageObj || !fontBodyObj || !fontStrongObj || !contentObj) return null;
 
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
