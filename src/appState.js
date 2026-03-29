@@ -11,6 +11,7 @@ export const TAB_KEYS = ["position", "compound", "share", "dashboard", "journal"
 export const POSITION_DEFAULTS = {
   accountBalance: "50,000",
   propMode: false,
+  activePropModeAccountIds: [],
   instrument: "MNQ",
   entry: "21,500.00",
   stop: "21,470.00",
@@ -53,7 +54,6 @@ export const PROFILE_DEFAULTS = {
     showAccountName: true,
   },
   accounts: [],
-  selectedPropAccountIds: [],
 };
 
 const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper", "helixtrade"]);
@@ -254,6 +254,12 @@ export function sanitizePositionState(value) {
   return {
     accountBalance: typeof value.accountBalance === "string" ? value.accountBalance : POSITION_DEFAULTS.accountBalance,
     propMode: typeof value.propMode === "boolean" ? value.propMode : POSITION_DEFAULTS.propMode,
+    activePropModeAccountIds: Array.isArray(value.activePropModeAccountIds)
+      ? value.activePropModeAccountIds
+          .filter((item) => typeof item === "string" && item.trim())
+          .map((item) => item.trim())
+          .filter((item, index, list) => list.indexOf(item) === index)
+      : POSITION_DEFAULTS.activePropModeAccountIds,
     instrument: POSITION_INSTRUMENT_KEYS.includes(value.instrument) ? value.instrument : POSITION_DEFAULTS.instrument,
     entry: typeof value.entry === "string" ? value.entry : POSITION_DEFAULTS.entry,
     stop: typeof value.stop === "string" ? value.stop : POSITION_DEFAULTS.stop,
@@ -335,18 +341,6 @@ export function sanitizeProfileState(value) {
   if (!value || typeof value !== "object") return { ...PROFILE_DEFAULTS, shareSettings: { ...PROFILE_DEFAULTS.shareSettings } };
   const shareSettings = value.shareSettings && typeof value.shareSettings === "object" ? value.shareSettings : {};
   const accounts = Array.isArray(value.accounts) ? value.accounts.map(sanitizeProfileAccount).filter(Boolean) : PROFILE_DEFAULTS.accounts;
-  const validAccountIds = new Set(accounts.map((account) => account.id));
-  const selectedPropAccountIds = Array.isArray(value.selectedPropAccountIds)
-    ? value.selectedPropAccountIds
-        .filter((item) => typeof item === "string" && item.trim())
-        .map((item) => item.trim())
-        .filter((accountId, index, list) => list.indexOf(accountId) === index)
-        .filter((accountId) => {
-          if (!validAccountIds.has(accountId)) return false;
-          const account = accounts.find((item) => item.id === accountId);
-          return account?.type === "prop";
-        })
-    : PROFILE_DEFAULTS.selectedPropAccountIds;
   return {
     displayName: typeof value.displayName === "string" ? value.displayName : PROFILE_DEFAULTS.displayName,
     username: typeof value.username === "string" ? value.username.replace(/^@+/, "") : PROFILE_DEFAULTS.username,
@@ -358,7 +352,6 @@ export function sanitizeProfileState(value) {
       showAccountName: typeof shareSettings.showAccountName === "boolean" ? shareSettings.showAccountName : PROFILE_DEFAULTS.shareSettings.showAccountName,
     },
     accounts,
-    selectedPropAccountIds,
   };
 }
 

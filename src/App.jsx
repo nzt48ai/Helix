@@ -1267,12 +1267,34 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
   );
 }
 
-function PropModeSelectorDialog({ open, accounts = [], selectedAccountIds = [], onToggleAccount, onClose }) {
+function PropModeSelectorDialog({ open, firms = [], accounts = [], selectedAccountIds = [], onSelectionChange, onCancel, onDone }) {
   const reduceMotion = useReducedMotion();
+  const [step, setStep] = useState(1);
+  const [selectedFirmId, setSelectedFirmId] = useState("");
   const selectedSet = useMemo(() => new Set(selectedAccountIds), [selectedAccountIds]);
+  const selectedFirm = useMemo(() => firms.find((firm) => firm.id === selectedFirmId) || null, [firms, selectedFirmId]);
+  const firmAccounts = useMemo(() => {
+    if (!selectedFirm) return [];
+    return accounts.filter((account) => {
+      const firmName = String(account?.firmName || "").trim().toLowerCase();
+      return firmName && firmName === selectedFirm.label.trim().toLowerCase();
+    });
+  }, [accounts, selectedFirm]);
   const dialogInitial = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.985 };
   const dialogAnimate = reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 };
   const dialogExit = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.99 };
+
+  useEffect(() => {
+    if (!open) return;
+    setStep(1);
+    const selectedAccount = accounts.find((account) => selectedSet.has(account.id));
+    if (!selectedAccount) {
+      setSelectedFirmId("");
+      return;
+    }
+    const matchingFirm = firms.find((firm) => String(selectedAccount?.firmName || "").trim().toLowerCase() === firm.label.trim().toLowerCase());
+    setSelectedFirmId(matchingFirm?.id || "");
+  }, [open]);
 
   return (
     <AnimatePresence initial={false}>
@@ -1280,7 +1302,7 @@ function PropModeSelectorDialog({ open, accounts = [], selectedAccountIds = [], 
         <div className="fixed inset-0 z-[1260] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Prop mode account selector">
           <motion.button
             type="button"
-            onClick={onClose}
+            onClick={onCancel}
             className="absolute inset-0 bg-slate-900/18 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1296,59 +1318,131 @@ function PropModeSelectorDialog({ open, accounts = [], selectedAccountIds = [], 
           >
             <div className="text-center">
               <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-700">Prop Mode</div>
-              <div className="mt-1 text-[12px] leading-relaxed text-slate-500">Choose which prop accounts to include when sizing from Prop Mode.</div>
+              <div className="mt-1 text-[12px] leading-relaxed text-slate-500">{step === 1 ? "Select prop firm" : "Select one or more accounts"}</div>
             </div>
 
             <div className="mt-5 space-y-2.5">
-              {accounts.length ? (
-                accounts.map((account) => {
-                  const isSelected = selectedSet.has(account.id);
-                  const title = getAccountRowMeta(account).title;
-                  const subtitle = getAccountRowMeta(account).subtitle;
-                  return (
-                    <button
-                      key={account.id}
-                      type="button"
-                      onClick={() => onToggleAccount(account.id, !isSelected)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
-                        isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
-                      )}
-                    >
-                      <div className="min-w-0 pr-3">
-                        <div className="truncate text-[13px] font-semibold text-slate-700">{title}</div>
-                        <div className="truncate text-[11px] text-slate-500">{subtitle}</div>
-                      </div>
-                      <span
+              {step === 1
+                ? firms.map((firm) => {
+                    const isSelected = selectedFirmId === firm.id;
+                    return (
+                      <button
+                        key={firm.id}
+                        type="button"
+                        onClick={() => setSelectedFirmId(firm.id)}
                         className={cn(
-                          "h-5 w-5 shrink-0 rounded-full transition-all",
-                          isSelected
-                            ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
-                            : "border border-slate-300/70 bg-white/92"
+                          "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
+                          isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
                         )}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="rounded-[20px] bg-white/70 px-4 py-4 text-center text-[12px] text-slate-500">No prop accounts available yet.</div>
-              )}
+                      >
+                        <div className="truncate text-[13px] font-semibold text-slate-700">{firm.label}</div>
+                        <span
+                          className={cn(
+                            "h-5 w-5 shrink-0 rounded-full transition-all",
+                            isSelected
+                              ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
+                              : "border border-slate-300/70 bg-white/92"
+                          )}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    );
+                  })
+                : firmAccounts.length
+                  ? firmAccounts.map((account) => {
+                      const isSelected = selectedSet.has(account.id);
+                      const title = getAccountRowMeta(account).title;
+                      const subtitle = getAccountRowMeta(account).subtitle;
+                      return (
+                        <button
+                          key={account.id}
+                          type="button"
+                          onClick={() => onSelectionChange?.(account.id, !isSelected)}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
+                            isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
+                          )}
+                        >
+                          <div className="min-w-0 pr-3">
+                            <div className="truncate text-[13px] font-semibold text-slate-700">{title}</div>
+                            <div className="truncate text-[11px] text-slate-500">{subtitle}</div>
+                          </div>
+                          <span
+                            className={cn(
+                              "h-5 w-5 shrink-0 rounded-full transition-all",
+                              isSelected
+                                ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
+                                : "border border-slate-300/70 bg-white/92"
+                            )}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      );
+                    })
+                  : <div className="rounded-[20px] bg-white/70 px-4 py-4 text-center text-[12px] text-slate-500">No prop accounts for this firm.</div>}
             </div>
 
-            <div className="mt-5 flex justify-center">
+            <div className="mt-5 flex items-center justify-center gap-2">
+              {step === 2 ? (
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="rounded-full bg-[rgba(245,248,255,0.95)] px-4 py-2 text-[11px] font-semibold tracking-[-0.01em] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] hover:bg-[rgba(250,252,255,0.98)]"
+                >
+                  Back
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={onCancel}
                 className="rounded-full bg-[rgba(245,248,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] hover:bg-[rgba(250,252,255,0.98)]"
               >
-                Done
+                Cancel
               </button>
+              {step === 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  disabled={!selectedFirmId}
+                  className="rounded-full bg-[rgba(235,242,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onDone}
+                  className="rounded-full bg-[rgba(235,242,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)]"
+                >
+                  Done
+                </button>
+              )}
             </div>
           </motion.div>
         </div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+function PropToggleFirmBadges({ firms = [] }) {
+  if (!firms.length) return null;
+  const visible = firms.slice(0, 3);
+  const hiddenCount = Math.max(0, firms.length - visible.length);
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      {visible.map((firm) => (
+        <span
+          key={firm.id}
+          title={firm.label}
+          className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-white/80 bg-white/75 px-1.5 text-[9px] font-semibold tracking-[0.02em] text-slate-600"
+        >
+          {firm.logoText}
+        </span>
+      ))}
+      {hiddenCount > 0 ? <span className="text-[10px] font-semibold text-slate-500">+{hiddenCount}</span> : null}
+    </div>
   );
 }
 
@@ -1361,6 +1455,7 @@ function BalanceHeroCard({
   toggleRightLabel,
   toggleState = false,
   onToggle,
+  toggleBadges = null,
   prefix = "$",
   suffix = "",
   fixedFontSize,
@@ -1459,6 +1554,7 @@ function BalanceHeroCard({
                 </motion.span>
                 {toggleLabel === "Prop" ? null : <span className={cn("transition-colors", toggleState ? "text-slate-700" : "text-slate-500/80")}>{toggleRightLabel || "%"}</span>}
               </motion.button>
+              {toggleBadges}
             </div>
           </div>
         ) : null}
@@ -1659,7 +1755,7 @@ function CompoundInputShell({ children, className = "" }) {
   );
 }
 
-function PositionScreen({ positionState, setPositionState, profileState, onProfileStateChange, debugEnabled = false }) {
+function PositionScreen({ positionState, setPositionState, profileState, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
   const lastManualContractsRef = useRef("1");
   const hasMountedContractsEffectRef = useRef(false);
@@ -1667,6 +1763,7 @@ function PositionScreen({ positionState, setPositionState, profileState, onProfi
   const [activePriceField, setActivePriceField] = useState(null);
   const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
   const [propModeSelectorOpen, setPropModeSelectorOpen] = useState(false);
+  const [propModeDraftAccountIds, setPropModeDraftAccountIds] = useState([]);
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
@@ -1686,21 +1783,19 @@ function PositionScreen({ positionState, setPositionState, profileState, onProfi
   const pointValue = selectedInstrumentFromCatalog?.pointValue ?? selectedShortcutInstrument.pointValue ?? 1;
   const fallbackValue = "—";
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
-  const selectedPropAccounts = useMemo(() => {
-    const selectedIds = Array.isArray(profileState?.selectedPropAccountIds) ? profileState.selectedPropAccountIds : [];
-    const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
-    if (!selectedIds.length || !allAccounts.length) return [];
-    const selectedIdSet = new Set(selectedIds);
-    return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop" && selectedIdSet.has(account.id));
-  }, [profileState]);
   const propAccounts = useMemo(() => {
     const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
     return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop");
   }, [profileState]);
-  const selectedPropAccountIds = useMemo(() => {
-    const selectedIds = Array.isArray(profileState?.selectedPropAccountIds) ? profileState.selectedPropAccountIds : [];
+  const activePropModeAccountIds = useMemo(() => {
+    const selectedIds = Array.isArray(positionState?.activePropModeAccountIds) ? positionState.activePropModeAccountIds : [];
     return selectedIds.filter((id) => propAccounts.some((account) => account.id === id));
-  }, [profileState, propAccounts]);
+  }, [positionState, propAccounts]);
+  const selectedPropAccounts = useMemo(() => {
+    if (!activePropModeAccountIds.length || !propAccounts.length) return [];
+    const selectedIdSet = new Set(activePropModeAccountIds);
+    return propAccounts.filter((account) => selectedIdSet.has(account.id));
+  }, [propAccounts, activePropModeAccountIds]);
   const propModeBalanceOverride = useMemo(() => {
     if (!positionState.propMode || !selectedPropAccounts.length) return null;
     const combinedBalance = selectedPropAccounts.reduce((sum, account) => {
@@ -1708,14 +1803,35 @@ function PositionScreen({ positionState, setPositionState, profileState, onProfi
       const startingBalance = Number(account?.startingBalance);
       if (Number.isFinite(currentBalance)) return sum + currentBalance;
       if (Number.isFinite(startingBalance)) return sum + startingBalance;
-      return sum;
+      return sum + 0;
     }, 0);
     return Math.max(0, combinedBalance);
   }, [positionState.propMode, selectedPropAccounts]);
   const effectiveAccountBalanceValue =
     propModeBalanceOverride === null ? positionState.accountBalance : formatNumberString(String(Math.trunc(propModeBalanceOverride)));
   const isAccountBalanceReadOnly = propModeBalanceOverride !== null;
-  const showPropModeSelectionHint = positionState.propMode && selectedPropAccounts.length === 0;
+  const selectedPropFirms = useMemo(() => {
+    const firmMap = new Map();
+    selectedPropAccounts.forEach((account) => {
+      const normalizedFirmName = String(account?.firmName || "").trim().toLowerCase();
+      const firm =
+        PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.label.trim().toLowerCase() === normalizedFirmName) ||
+        (normalizedFirmName ? { id: normalizedFirmName, label: account?.firmName || "Firm", templates: [] } : null);
+      if (!firm || firmMap.has(firm.id)) return;
+      firmMap.set(firm.id, {
+        id: firm.id,
+        label: firm.label,
+        logoText: String(firm.label || "PF")
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((token) => token[0])
+          .join("")
+          .toUpperCase() || "PF",
+      });
+    });
+    return Array.from(firmMap.values());
+  }, [selectedPropAccounts]);
   const parsedAccountBalance = parseNullableNumberString(effectiveAccountBalanceValue);
   const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
@@ -1806,30 +1922,19 @@ function PositionScreen({ positionState, setPositionState, profileState, onProfi
     setField("propMode", nextState);
     if (nextState) {
       triggerLightHaptic();
+      setPropModeDraftAccountIds(activePropModeAccountIds);
       setPropModeSelectorOpen(true);
     }
   };
-
-  const handleTogglePropModeAccount = useCallback(
-    (accountId, checked) => {
-      if (typeof onProfileStateChange !== "function" || !accountId) return;
-      onProfileStateChange((prev) => {
-        const safePrev = sanitizeProfileState(prev);
-        const currentSelection = Array.isArray(safePrev.selectedPropAccountIds) ? safePrev.selectedPropAccountIds : [];
-        const selectionSet = new Set(currentSelection);
-        if (checked) {
-          selectionSet.add(accountId);
-        } else {
-          selectionSet.delete(accountId);
-        }
-        return sanitizeProfileState({
-          ...safePrev,
-          selectedPropAccountIds: Array.from(selectionSet),
-        });
-      });
-    },
-    [onProfileStateChange]
-  );
+  const handlePropModeSelectionChange = useCallback((accountId, checked) => {
+    if (!accountId) return;
+    setPropModeDraftAccountIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(accountId);
+      else next.delete(accountId);
+      return Array.from(next);
+    });
+  }, []);
 
   useEffect(() => {
     if (!isDefaultInstrument) return;
@@ -1909,31 +2014,22 @@ function PositionScreen({ positionState, setPositionState, profileState, onProfi
         toggleLabel="Prop"
         toggleState={positionState.propMode}
         onToggle={handleTogglePropMode}
+        toggleBadges={<PropToggleFirmBadges firms={selectedPropFirms} />}
       />
-      {showPropModeSelectionHint ? (
-        <button
-          type="button"
-          onClick={() => setPropModeSelectorOpen(true)}
-          className="mx-auto block px-1 text-center text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
-        >
-          Select prop accounts to use Prop Mode
-        </button>
-      ) : null}
-      {positionState.propMode && !showPropModeSelectionHint ? (
-        <button
-          type="button"
-          onClick={() => setPropModeSelectorOpen(true)}
-          className="mx-auto block px-1 text-center text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-700"
-        >
-          Edit included prop accounts
-        </button>
-      ) : null}
       <PropModeSelectorDialog
         open={propModeSelectorOpen}
+        firms={PROP_FIRM_TEMPLATE_CONFIG}
         accounts={propAccounts}
-        selectedAccountIds={selectedPropAccountIds}
-        onToggleAccount={handleTogglePropModeAccount}
-        onClose={() => setPropModeSelectorOpen(false)}
+        selectedAccountIds={propModeDraftAccountIds}
+        onSelectionChange={handlePropModeSelectionChange}
+        onCancel={() => {
+          setPropModeDraftAccountIds(activePropModeAccountIds);
+          setPropModeSelectorOpen(false);
+        }}
+        onDone={() => {
+          setField("activePropModeAccountIds", propModeDraftAccountIds);
+          setPropModeSelectorOpen(false);
+        }}
       />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
@@ -3789,29 +3885,6 @@ function JournalScreen({
         return sanitizeProfileState({
           ...safePrev,
           accounts: safePrev.accounts.filter((account) => account.id !== accountId),
-          selectedPropAccountIds: (safePrev.selectedPropAccountIds || []).filter((id) => id !== accountId),
-        });
-      });
-    },
-    [onProfileStateChange]
-  );
-
-  const togglePropAccountSelection = useCallback(
-    (accountId, checked) => {
-      onProfileStateChange((prev) => {
-        const safePrev = sanitizeProfileState(prev);
-        const targetAccount = safePrev.accounts.find((account) => account.id === accountId);
-        if (normalizeAccountType(targetAccount?.type) !== "prop") return safePrev;
-        const currentSelection = Array.isArray(safePrev.selectedPropAccountIds) ? safePrev.selectedPropAccountIds : [];
-        const selectionSet = new Set(currentSelection);
-        if (checked) {
-          selectionSet.add(accountId);
-        } else {
-          selectionSet.delete(accountId);
-        }
-        return sanitizeProfileState({
-          ...safePrev,
-          selectedPropAccountIds: Array.from(selectionSet),
         });
       });
     },
@@ -3862,12 +3935,10 @@ function JournalScreen({
       </GlassCard>
 
       <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Prop Mode</TinyLabel>
+        <TinyLabel>Accounts</TinyLabel>
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
-              const isPropAccount = normalizeAccountType(account?.type) === "prop";
-              const isSelected = isPropAccount && Array.isArray(profileState.selectedPropAccountIds) && profileState.selectedPropAccountIds.includes(account.id);
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -3881,13 +3952,6 @@ function JournalScreen({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(isSelected)}
-                      disabled={!isPropAccount}
-                      onChange={(event) => togglePropAccountSelection(account.id, event.target.checked)}
-                      aria-label={`Select ${account.name || "account"} for prop mode`}
-                    />
                     <button
                       type="button"
                       onClick={() => deleteAccount(account.id)}
@@ -4671,7 +4735,6 @@ export default function App() {
         positionState={positionState}
         setPositionState={setPositionState}
         profileState={profileState}
-        onProfileStateChange={setProfileState}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "compound" ? (
