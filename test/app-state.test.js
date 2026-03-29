@@ -142,6 +142,17 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
           lastSyncCount: "7",
           lastSyncError: "",
         },
+        tradeSync: {
+          lastImportSource: "CSV",
+          lastImportAt: "2026-03-02T09:00:00.000Z",
+          lastImportStatus: "SUCCESS",
+          lastImportCount: "12",
+          lastImportError: "",
+          lastImportRangeFrom: "2026-02-01T00:00:00.000Z",
+          lastImportRangeTo: "2026-02-28T23:59:59.999Z",
+          lastImportedBatchId: " batch-1 ",
+          lastSeenProviderCursor: " cursor-123 ",
+        },
       },
       {
         id: "prop-2",
@@ -165,9 +176,51 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
   assert.equal(profile.accounts[0].linkedProvider?.lastSyncCount, 7);
   assert.equal(profile.accounts[0].linkedProvider?.lastSyncError, null);
   assert.equal(profile.accounts[0].tradeSync?.lastSyncCount, 7);
+  assert.equal(profile.accounts[0].tradeSync?.lastImportSource, "csv");
+  assert.equal(profile.accounts[0].tradeSync?.lastImportStatus, "success");
+  assert.equal(profile.accounts[0].tradeSync?.lastImportCount, 12);
+  assert.equal(profile.accounts[0].tradeSync?.lastImportError, null);
+  assert.equal(profile.accounts[0].tradeSync?.lastImportedBatchId, "batch-1");
+  assert.equal(profile.accounts[0].tradeSync?.lastSeenProviderCursor, "cursor-123");
   assert.equal(profile.accounts[1].dailyLossLimit, null);
   assert.equal(profile.accounts[1].status, "active");
   assert.equal(profile.accounts[1].linkedProvider, null);
+});
+
+test("malformed import bookkeeping metadata sanitizes to null without crashing", () => {
+  const profile = sanitizeProfileState({
+    accounts: [
+      {
+        id: "prop-invalid-import",
+        name: "Import Meta",
+        type: "prop",
+        startingBalance: 50000,
+        currentBalance: 50000,
+        tradeSync: {
+          lastImportSource: "unsupported-source",
+          lastImportAt: 123,
+          lastImportStatus: "nope",
+          lastImportCount: "NaN",
+          lastImportError: {},
+          lastImportRangeFrom: false,
+          lastImportRangeTo: [],
+          lastImportedBatchId: 88,
+          lastSeenProviderCursor: null,
+        },
+      },
+    ],
+  });
+
+  const account = profile.accounts[0];
+  assert.equal(account.tradeSync?.lastImportSource, null);
+  assert.equal(account.tradeSync?.lastImportAt, null);
+  assert.equal(account.tradeSync?.lastImportStatus, null);
+  assert.equal(account.tradeSync?.lastImportCount, null);
+  assert.equal(account.tradeSync?.lastImportError, null);
+  assert.equal(account.tradeSync?.lastImportRangeFrom, null);
+  assert.equal(account.tradeSync?.lastImportRangeTo, null);
+  assert.equal(account.tradeSync?.lastImportedBatchId, null);
+  assert.equal(account.tradeSync?.lastSeenProviderCursor, null);
 });
 
 test("legacy sync metadata in connection payload hydrates into both connection and tradeSync safely", () => {

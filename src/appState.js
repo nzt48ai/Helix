@@ -58,6 +58,7 @@ export const PROFILE_DEFAULTS = {
 const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper", "helixtrade"]);
 const PROP_ACCOUNT_STATUSES = new Set(["active", "breached", "passed", "funded"]);
 const SYNC_STATUSES = new Set(["success", "error", "syncing"]);
+const IMPORT_SOURCES = new Set(["csv", "tradovate", "manual", "helixtrade"]);
 
 function sanitizeLastSyncAt(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -77,6 +78,25 @@ function sanitizeLastSyncError(value) {
 }
 
 function sanitizeLastSyncMessage(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeImportSource(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return IMPORT_SOURCES.has(normalized) ? normalized : null;
+}
+
+function sanitizeOptionalIsoDate(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeOptionalCount(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function sanitizeOptionalText(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
@@ -100,6 +120,15 @@ function sanitizeProfileAccount(value) {
   const lastSyncCount = sanitizeLastSyncCount((rawConnection || rawLinkedProvider)?.lastSyncCount ?? rawTradeSync?.lastSyncCount);
   const lastSyncError = sanitizeLastSyncError((rawConnection || rawLinkedProvider)?.lastSyncError ?? rawTradeSync?.lastSyncError);
   const lastSyncMessage = sanitizeLastSyncMessage(rawTradeSync?.lastSyncMessage);
+  const lastImportSource = sanitizeImportSource(rawTradeSync?.lastImportSource);
+  const lastImportAt = sanitizeOptionalIsoDate(rawTradeSync?.lastImportAt);
+  const lastImportStatus = sanitizeLastSyncStatus(rawTradeSync?.lastImportStatus);
+  const lastImportCount = sanitizeOptionalCount(rawTradeSync?.lastImportCount);
+  const lastImportError = sanitizeOptionalText(rawTradeSync?.lastImportError);
+  const lastImportRangeFrom = sanitizeOptionalIsoDate(rawTradeSync?.lastImportRangeFrom);
+  const lastImportRangeTo = sanitizeOptionalIsoDate(rawTradeSync?.lastImportRangeTo);
+  const lastImportedBatchId = sanitizeOptionalText(rawTradeSync?.lastImportedBatchId);
+  const lastSeenProviderCursor = sanitizeOptionalText(rawTradeSync?.lastSeenProviderCursor);
   const normalizedLinkedProvider =
     (rawConnection || rawLinkedProvider)
       ? {
@@ -144,6 +173,15 @@ function sanitizeProfileAccount(value) {
       lastSyncCount,
       lastSyncError,
       lastSyncMessage,
+      lastImportSource,
+      lastImportAt,
+      lastImportStatus,
+      lastImportCount,
+      lastImportError,
+      lastImportRangeFrom,
+      lastImportRangeTo,
+      lastImportedBatchId,
+      lastSeenProviderCursor,
     },
   };
 
