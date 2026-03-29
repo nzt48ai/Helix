@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
   Dna,
@@ -716,81 +716,6 @@ function IdentityAvatar({ identity }) {
   );
 }
 
-function clampValue(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function createSharePathModel({ shareType, directionLabel, entryValue, stopValue, targetValue, replayResultValue = 0 }) {
-  const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
-  const isShort = normalizedDirection === "SHORT";
-  const safeEntry = Number.isFinite(entryValue) ? entryValue : 0;
-  const safeStop = Number.isFinite(stopValue) ? stopValue : safeEntry;
-  const safeTarget = Number.isFinite(targetValue) ? targetValue : safeEntry;
-  const priceRange = Math.abs(safeTarget - safeStop) || Math.max(Math.abs(safeEntry) * 0.003, 1);
-  const verticalPadding = priceRange * 0.28;
-  const domainMin = Math.min(safeStop, safeEntry, safeTarget) - verticalPadding;
-  const domainMax = Math.max(safeStop, safeEntry, safeTarget) + verticalPadding;
-  const domainSpan = Math.max(domainMax - domainMin, 1e-6);
-  const yForPrice = (price) => clampValue(84 - ((price - domainMin) / domainSpan) * 68, 12, 88);
-
-  const entryY = yForPrice(safeEntry);
-  const stopY = yForPrice(safeStop);
-  const targetY = yForPrice(safeTarget);
-  const setupDip = isShort ? priceRange * 0.09 : -priceRange * 0.09;
-  const setupMid = safeEntry + (safeTarget - safeEntry) * 0.54 + setupDip;
-  const replayNoiseSign = isShort ? -1 : 1;
-  const replayExit = safeEntry + (safeTarget - safeEntry) * 0.82;
-  const journalExitRaw = safeEntry + (safeTarget - safeEntry) * (replayResultValue >= 0 ? 0.68 : 0.28);
-  const journalExit = clampValue(journalExitRaw, Math.min(safeStop, safeTarget), Math.max(safeStop, safeTarget));
-  const exitY = yForPrice(journalExit);
-
-  const pointsByMode = {
-    SETUP: [
-      { x: 14, y: entryY },
-      { x: 30, y: yForPrice(safeEntry + (setupMid - safeEntry) * 0.45) },
-      { x: 46, y: yForPrice(setupMid) },
-      { x: 66, y: yForPrice(safeEntry + (safeTarget - safeEntry) * 0.9) },
-      { x: 84, y: targetY },
-    ],
-    REPLAY: [
-      { x: 14, y: entryY },
-      { x: 24, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.14) },
-      { x: 34, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.06) },
-      { x: 47, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.18) },
-      { x: 59, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.28) },
-      { x: 72, y: yForPrice(replayExit) },
-      { x: 84, y: yForPrice(safeEntry + (safeTarget - safeEntry) * 0.94) },
-    ],
-    JOURNAL: [
-      { x: 14, y: entryY },
-      { x: 26, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.1) },
-      { x: 39, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.18) },
-      { x: 53, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.08) },
-      { x: 68, y: yForPrice(journalExit + replayNoiseSign * priceRange * 0.03) },
-      { x: 84, y: exitY },
-    ],
-  };
-
-  const points = pointsByMode[shareType] || pointsByMode.SETUP;
-  const pathD = points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(" ");
-
-  return {
-    pathD,
-    points,
-    entryMarker: { x: points[0].x, y: points[0].y },
-    stopMarker: { x: 9, y: stopY },
-    targetMarker: { x: 9, y: targetY },
-    exitMarker: { x: points[points.length - 1].x, y: points[points.length - 1].y },
-    referenceLines: [
-      { id: "target", y: targetY, tone: "rgba(74,222,128,0.22)" },
-      { id: "entry", y: entryY, tone: "rgba(148,163,184,0.24)" },
-      { id: "stop", y: stopY, tone: "rgba(251,113,133,0.22)" },
-    ],
-  };
-}
-
 function SharePortraitCard({
   shareType,
   selectedInstrumentKey,
@@ -799,12 +724,7 @@ function SharePortraitCard({
   entryValue,
   stopValue,
   targetValue,
-  visualPanelHeight,
-  replayPathLabel,
   rewardRiskRatio,
-  isJournalCard,
-  isReplayCard,
-  replayPathCurve,
   GIF_PREVIEW_DURATION_SECONDS,
   heroMetric,
   heroMetricAnimatedNumber = null,
@@ -814,12 +734,7 @@ function SharePortraitCard({
   setupMissingMessage = "",
   identity,
   disableMotion = false,
-  replayResultValue = 0,
 }) {
-  const chartId = useId().replace(/:/g, "");
-  const chartBgGradientId = `${chartId}-share-chart-bg`;
-  const chartFocusGradientId = `${chartId}-share-chart-focus`;
-  const chartPathGradientId = `${chartId}-share-chart-path`;
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
   const premiumPillBaseClassName =
@@ -842,20 +757,7 @@ function SharePortraitCard({
   const directionPillClassName = cn(
     getPremiumPillClassName(normalizedDirection)
   );
-  const chartModel = useMemo(
-    () =>
-      createSharePathModel({
-        shareType,
-        directionLabel,
-        entryValue,
-        stopValue,
-        targetValue,
-        replayResultValue,
-      }),
-    [directionLabel, entryValue, replayResultValue, shareType, stopValue, targetValue]
-  );
-  const chartModeLabel = shareType === "SETUP" ? "PROJECTED PATH" : shareType === "REPLAY" ? "SIMULATED PATH" : "COMPLETED PATH";
-  const pathEase = [0.23, 1, 0.32, 1];
+  const isJournalCard = shareType === "JOURNAL";
   const hasDirectionalStoryLine = !isJournalCard && (normalizedDirection === "LONG" || normalizedDirection === "SHORT");
   const directionalStoryLine = hasDirectionalStoryLine
     ? `${normalizedDirection} from ${entryValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → ${targetValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -901,79 +803,10 @@ function SharePortraitCard({
           ))}
         </div>
 
-        <div
-          className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(243,248,255,0.52))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(136,156,191,0.12)]"
-          style={{ height: `${visualPanelHeight}px` }}
-        >
-          <div className="mb-4 flex items-baseline justify-between gap-3">
-            <div className="min-w-0 truncate text-[19px] font-semibold uppercase tracking-[0.12em] text-slate-600">{chartModeLabel}</div>
-            <div className="shrink-0 whitespace-nowrap text-[22px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
-          </div>
-          <svg viewBox="0 0 100 100" className="h-[calc(100%-52px)] w-full rounded-[20px]">
-            <defs>
-              <linearGradient id={chartBgGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
-                <stop offset="100%" stopColor="rgba(241,246,255,0.34)" />
-              </linearGradient>
-              <radialGradient id={chartFocusGradientId} cx="50%" cy="52%" r="46%">
-                <stop offset="0%" stopColor="rgba(116,152,255,0.10)" />
-                <stop offset="100%" stopColor="rgba(116,152,255,0)" />
-              </radialGradient>
-              <linearGradient id={chartPathGradientId} x1="22%" y1="16%" x2="84%" y2="82%">
-                <stop offset="0%" stopColor="#8B7CFF" />
-                <stop offset="52%" stopColor="#5B8CFF" />
-                <stop offset="100%" stopColor="#4FD9FF" />
-              </linearGradient>
-            </defs>
-            <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartBgGradientId})`} />
-            <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartFocusGradientId})`} />
-            {chartModel.referenceLines.map((line) => (
-              <line key={line.id} x1="10" x2="90" y1={line.y} y2={line.y} stroke={line.tone} strokeWidth="0.85" />
-            ))}
-            <motion.path
-              d={chartModel.pathD}
-              fill="none"
-              stroke={`url(#${chartPathGradientId})`}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              initial={shouldReduce ? { pathLength: 1 } : { pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={
-                shouldReduce
-                  ? { duration: 0 }
-                  : { duration: 3.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.5 }
-              }
-            />
-            <circle cx={chartModel.entryMarker.x} cy={chartModel.entryMarker.y} r="1.45" fill="rgba(226,232,240,0.95)" />
-            <circle cx={chartModel.stopMarker.x} cy={chartModel.stopMarker.y} r="1.35" fill="rgba(251,113,133,0.85)" />
-            <circle cx={chartModel.targetMarker.x} cy={chartModel.targetMarker.y} r="1.35" fill="rgba(74,222,128,0.85)" />
-            {isJournalCard ? (
-              <>
-                <circle cx={chartModel.exitMarker.x} cy={chartModel.exitMarker.y} r="2" fill="rgba(237,248,255,0.98)" stroke="rgba(56,189,248,0.85)" strokeWidth="0.9" />
-                <circle cx={chartModel.exitMarker.x} cy={chartModel.exitMarker.y} r="3.25" fill="none" stroke="rgba(56,189,248,0.24)" strokeWidth="0.72" />
-              </>
-            ) : null}
-            {isReplayCard ? (
-              <motion.circle
-                r="1.9"
-                fill="rgba(237,248,255,0.96)"
-                stroke="rgba(126,211,252,0.96)"
-                strokeWidth="0.84"
-                animate={{
-                  cx: chartModel.points.map((point) => point.x),
-                  cy: chartModel.points.map((point) => point.y),
-                }}
-                transition={{ duration: 3.8, ease: pathEase, repeat: shouldReduce ? 0 : Infinity, repeatDelay: 0.5 }}
-              />
-            ) : null}
-          </svg>
-        </div>
-
-        <div className="mt-6 min-w-0 text-center">
+        <div className="mt-5 min-w-0 text-center">
           <div
             className={cn(
-              "mx-auto mt-3 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
+              "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
               HERO_NUMBER_TEXT_CLASS
             )}
           >
@@ -988,7 +821,7 @@ function SharePortraitCard({
 
         <div
           className={cn(
-            hasDirectionalStoryLine ? "mt-4 grid gap-4" : "mt-3 grid gap-4",
+            hasDirectionalStoryLine ? "mt-5 grid gap-4" : "mt-4 grid gap-4",
             secondaryMetrics.length === 3 ? "grid-cols-3" : secondaryMetrics.length === 2 ? "grid-cols-2" : "grid-cols-2"
           )}
         >
@@ -3262,11 +3095,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
   const [setupCardTimeMs, setSetupCardTimeMs] = useState(() => Date.now());
   const shareCardExportRef = useRef(null);
   const GIF_PREVIEW_DURATION_SECONDS = 5.8;
-  const hasReplayTruePath = riskPoints > 0 && rewardPoints > 0;
-  const replayPathLabel = hasReplayTruePath ? "True Path" : "Replay Path";
-  const replayPathCurve = hasReplayTruePath
-    ? "M 26 50 C 32 48, 37 60, 44 58 C 50 55, 53 43, 60 40 C 66 37, 70 30, 74 24"
-    : "M 26 50 C 33 52, 38 60, 45 56 C 51 53, 54 45, 61 44 C 66 43, 70 34, 74 30";
 
   useEffect(() => {
     if (shareType !== "SETUP") return undefined;
@@ -3398,9 +3226,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
     GIF_PREVIEW_DURATION_SECONDS,
   ]);
 
-  const visualPanelHeight = shareType === "JOURNAL" ? 312 : 358;
-  const isReplayCard = shareType === "REPLAY";
-  const isJournalCard = shareType === "JOURNAL";
   const footerLabel = shareType === "JOURNAL" ? "Tracked with HELIX" : "Calculated with HELIX";
   const isSetupCard = shareType === "SETUP";
   const setupDirectionLabel = direction;
@@ -3428,12 +3253,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             entryValue={setupCardEntry}
             stopValue={setupCardStop}
             targetValue={setupCardTarget}
-            visualPanelHeight={visualPanelHeight}
-            replayPathLabel={replayPathLabel}
             rewardRiskRatio={rewardRiskRatio}
-            isJournalCard={isJournalCard}
-            isReplayCard={isReplayCard}
-            replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
             heroMetricAnimatedNumber={heroMetricAnimation?.value ?? null}
@@ -3443,7 +3263,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion={false}
-            replayResultValue={replayResult}
           />
         </div>
         <SegmentedControl
@@ -3480,12 +3299,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             entryValue={setupCardEntry}
             stopValue={setupCardStop}
             targetValue={setupCardTarget}
-            visualPanelHeight={visualPanelHeight}
-            replayPathLabel={replayPathLabel}
             rewardRiskRatio={rewardRiskRatio}
-            isJournalCard={isJournalCard}
-            isReplayCard={isReplayCard}
-            replayPathCurve={replayPathCurve}
             GIF_PREVIEW_DURATION_SECONDS={GIF_PREVIEW_DURATION_SECONDS}
             heroMetric={heroMetric}
             heroMetricAnimatedNumber={heroMetricAnimation?.value ?? null}
@@ -3495,7 +3309,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion
-            replayResultValue={replayResult}
           />
         </div>
       </div>
