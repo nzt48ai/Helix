@@ -44,8 +44,6 @@ import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
 import {
   buildTradeDeduplicationKey,
   detectCsvFormat,
-  estimateDuplicateCount,
-  getImportPresets,
   normalizeCsvRowsToTrades,
   parseCsvText,
 } from "./csvImport";
@@ -2538,6 +2536,7 @@ function DashboardScreen({
   trades = [],
   tradeTypeFilter = DASHBOARD_TRADE_TYPE_FILTER_ALL,
   onTradeTypeFilterChange,
+  onImportCsvTrades,
   shareIdentity,
   debugEnabled = false,
 }) {
@@ -2548,6 +2547,14 @@ function DashboardScreen({
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState("");
+  const csvInputRef = useRef(null);
+  const [csvImportState, setCsvImportState] = useState({
+    step: "upload",
+    files: [],
+    summary: null,
+    isImporting: false,
+    error: "",
+  });
 
   const normalizedTrades = useMemo(
     () =>
@@ -2764,6 +2771,134 @@ function DashboardScreen({
     worstTrade,
   ]);
 
+  const buildBatchPreview = useCallback(
+    (fileEntries) => {
+      const runningKeys = new Set(sanitizeTrades(trades).map((trade) => buildStableTradeFingerprint(trade)));
+      const nextFiles = fileEntries.map((entry) => {
+        const previewTrades = normalizeCsvRowsToTrades(entry.rows, { presetId: entry.selectedPresetId });
+        let duplicateEstimate = 0;
+        previewTrades.forEach((trade) => {
+          const key = buildStableTradeFingerprint(trade);
+          if (runningKeys.has(key)) {
+            duplicateEstimate += 1;
+            return;
+          }
+          runningKeys.add(key);
+        });
+        return {
+          ...entry,
+          previewTrades,
+          summary: {
+            rowCount: entry.rows.length,
+            parsedCount: previewTrades.length,
+            totalPnl: previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0),
+            duplicateEstimate,
+          },
+        };
+      });
+      const combinedSummary = nextFiles.reduce(
+        (acc, entry) => {
+          acc.filesCount += 1;
+          acc.rowsFound += entry.summary?.rowCount || 0;
+          acc.validRows += entry.summary?.parsedCount || 0;
+          acc.totalPnl += entry.summary?.totalPnl || 0;
+          acc.duplicateEstimate += entry.summary?.duplicateEstimate || 0;
+          return acc;
+        },
+        { filesCount: 0, rowsFound: 0, validRows: 0, totalPnl: 0, duplicateEstimate: 0 }
+      );
+      return { nextFiles, combinedSummary };
+    },
+    [trades]
+  );
+
+  const openCsvImportPicker = useCallback(() => {
+    csvInputRef.current?.click();
+  }, []);
+
+  const handleCsvFileSelection = useCallback(async (event) => {
+    const selectedFiles = Array.from(event?.target?.files || []);
+    if (!selectedFiles.length) return;
+    try {
+      const parsedFiles = [];
+      for (const file of selectedFiles) {
+        const text = await file.text();
+        const parsed = parseCsvText(text);
+        if (!parsed.headers.length || !parsed.rows.length) continue;
+        const detection = detectCsvFormat(parsed.headers);
+        const fallbackPresetId = "generic-futures-csv-v1";
+        parsedFiles.push({
+          id: `${file.name}-${file.lastModified}-${file.size}`,
+          fileName: file.name,
+          rows: parsed.rows,
+          detection,
+          presetOptions: detection.candidates || [],
+          selectedPresetId: detection.confidence === "low" ? fallbackPresetId : detection.recommendedPresetId || fallbackPresetId,
+          needsChoice: detection.confidence === "medium",
+        });
+      }
+      if (!parsedFiles.length) {
+        setCsvImportState((prev) => ({ ...prev, step: "upload", files: [], summary: null, error: "CSV file appears empty." }));
+        return;
+      }
+      const { nextFiles, combinedSummary } = buildBatchPreview(parsedFiles);
+      setCsvImportState({
+        step: nextFiles.some((entry) => entry.needsChoice) ? "detect" : "preview",
+        files: nextFiles,
+        summary: combinedSummary,
+        isImporting: false,
+        error: "",
+      });
+    } catch (error) {
+      setCsvImportState((prev) => ({ ...prev, error: error?.message || "Unable to read CSV file." }));
+    } finally {
+      if (event?.target) event.target.value = "";
+    }
+  }, [buildBatchPreview]);
+
+  const chooseDetectedPresetForFile = useCallback(
+    (fileId, presetId) => {
+      setCsvImportState((prev) => {
+        const next = prev.files.map((entry) =>
+          entry.id === fileId ? { ...entry, selectedPresetId: presetId || "generic-futures-csv-v1", needsChoice: false } : entry
+        );
+        const { nextFiles, combinedSummary } = buildBatchPreview(next);
+        return {
+          ...prev,
+          files: nextFiles,
+          summary: combinedSummary,
+          step: nextFiles.some((entry) => entry.needsChoice) ? "detect" : "preview",
+        };
+      });
+    },
+    [buildBatchPreview]
+  );
+
+  const commitCsvImport = useCallback(async () => {
+    if (typeof onImportCsvTrades !== "function" || !csvImportState.files.length) return;
+    const previewTrades = csvImportState.files.flatMap((entry) => entry.previewTrades || []);
+    if (!previewTrades.length) return;
+    setCsvImportState((prev) => ({ ...prev, isImporting: true, error: "" }));
+    try {
+      const result = await onImportCsvTrades({ trades: previewTrades });
+      setCsvImportState((prev) => ({
+        ...prev,
+        step: "summary",
+        isImporting: false,
+        summary: {
+          ...(prev.summary || {}),
+          importedTrades: Number(result?.importedCount || 0),
+          duplicatesSkipped: Number(result?.dedupedCount || 0),
+          invalidRows: Math.max(0, Number((prev.summary?.rowsFound || 0) - (prev.summary?.validRows || 0))),
+        },
+      }));
+    } catch (error) {
+      setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
+    }
+  }, [csvImportState.files, onImportCsvTrades]);
+
+  const hasTrades = filteredTrades.length > 0;
+
   const width = 320;
   const lineHeight = 132;
   const lineMax = Math.max(...performanceSeries, 100);
@@ -2796,6 +2931,14 @@ function DashboardScreen({
               {isGeneratingPdf ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
               {isGeneratingPdf ? "Generating…" : "Export PDF"}
             </button>
+            <button
+              type="button"
+              onClick={openCsvImportPicker}
+              className="inline-flex items-center gap-1.5 rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-[0_8px_20px_rgba(148,163,184,0.2)] hover:bg-white"
+            >
+              Import CSV
+            </button>
+            <input ref={csvInputRef} type="file" accept=".csv,text/csv" multiple className="hidden" onChange={handleCsvFileSelection} />
           </div>
         )}
       />
@@ -2818,11 +2961,71 @@ function DashboardScreen({
           </div>
         </div>
       </GlassCard>
-      <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
-        <TinyLabel>Trade Data</TinyLabel>
-        <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights are sourced from CSV imports</div>
-        <div className="mt-2 text-[12px] text-slate-500">Upload trades from Profile → Trade import → Import preview trades to populate Insights.</div>
-      </GlassCard>
+      {!hasTrades ? (
+        <GlassCard className="flex min-h-[220px] items-center justify-center rounded-[30px] p-8">
+          <div className="text-center">
+            <div className="text-[24px] font-semibold tracking-[-0.03em] text-slate-700">No trades yet</div>
+            <div className="mt-2 text-[13px] text-slate-500">Import trades to generate insights</div>
+            <button
+              type="button"
+              onClick={openCsvImportPicker}
+              className="mt-6 inline-flex rounded-[14px] border border-white/75 bg-white/75 px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-[0_10px_24px_rgba(148,163,184,0.2)] hover:bg-white"
+            >
+              Import CSV
+            </button>
+          </div>
+        </GlassCard>
+      ) : null}
+      {csvImportState.files.length ? (
+        <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
+          <TinyLabel>CSV import</TinyLabel>
+          <div className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-slate-700">
+            {csvImportState.summary?.filesCount || csvImportState.files.length} file{(csvImportState.summary?.filesCount || csvImportState.files.length) === 1 ? "" : "s"} selected
+          </div>
+          {csvImportState.step === "detect" ? (
+            <div className="mt-3 space-y-2">
+              {csvImportState.files.filter((entry) => entry.needsChoice).map((entry) => (
+                <div key={entry.id} className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
+                  <div className="font-semibold text-slate-700">{entry.fileName}</div>
+                  <div className="mt-1 text-[10px] text-slate-500">Choose detected format</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {(entry.presetOptions.length ? entry.presetOptions : [{ presetId: "generic-futures-csv-v1", label: "Generic Futures CSV" }]).map((option) => (
+                      <button
+                        key={option.presetId}
+                        type="button"
+                        onClick={() => chooseDetectedPresetForFile(entry.id, option.presetId)}
+                        className="rounded-[10px] border border-white/70 bg-white/70 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-white"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-2 text-[11px] text-slate-500">
+            Rows found {csvImportState.summary?.rowsFound || 0} · Valid rows {csvImportState.summary?.validRows || 0} · Duplicates estimate {csvImportState.summary?.duplicateEstimate || 0}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">Net P/L preview {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}</div>
+          <button
+            type="button"
+            onClick={commitCsvImport}
+            disabled={csvImportState.isImporting || csvImportState.step === "detect"}
+            className="mt-3 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[11px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {csvImportState.isImporting ? "Importing…" : "Confirm import"}
+          </button>
+          {csvImportState.step === "summary" ? (
+            <div className="mt-2 text-[11px] text-slate-500">
+              Files imported {csvImportState.summary?.filesCount || 0} · Rows found {csvImportState.summary?.rowsFound || 0} · Valid rows {csvImportState.summary?.validRows || 0} · Imported trades {csvImportState.summary?.importedTrades || 0} · Duplicates skipped {csvImportState.summary?.duplicatesSkipped || 0} · Invalid/skipped rows {csvImportState.summary?.invalidRows || 0}
+            </div>
+          ) : null}
+          {csvImportState.error ? <div className="mt-2 text-[11px] text-rose-500">{csvImportState.error}</div> : null}
+        </GlassCard>
+      ) : null}
+      {hasTrades ? (
+        <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
         <MetricRowCard label="Win Rate" value={activeSnapshot.winRate} tone={activeSnapshot.winRateTone} />
@@ -2985,6 +3188,8 @@ function DashboardScreen({
           ))}
         </div>
       </GlassCard>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -3269,27 +3474,10 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
 
 function JournalScreen({
   profileState,
-  localTrades = [],
   onProfileStateChange,
   onResetPreferences,
-  onImportCsvTrades,
   debugEnabled = false,
 }) {
-  const [csvImportState, setCsvImportState] = useState({
-    step: "upload",
-    accountId: "",
-    accountName: "",
-    fileName: "",
-    rows: [],
-    headers: [],
-    detection: null,
-    selectedPresetId: "",
-    presetOptions: [],
-    previewTrades: [],
-    summary: null,
-    isImporting: false,
-    error: "",
-  });
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
     return source
@@ -3323,102 +3511,6 @@ function JournalScreen({
     [onProfileStateChange]
   );
 
-  const handleCsvFileSelection = useCallback(async (event, account) => {
-    const file = event?.target?.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = parseCsvText(text);
-      if (!parsed.headers.length || !parsed.rows.length) {
-        setCsvImportState((prev) => ({
-          ...prev,
-          step: "upload",
-          error: "CSV file appears empty.",
-          rows: [],
-          previewTrades: [],
-          summary: null,
-          presetOptions: [],
-        }));
-        return;
-      }
-      const detection = detectCsvFormat(parsed.headers);
-      const fallbackPresetId = "generic-futures-csv-v1";
-      const hasChoiceStep = detection.confidence === "medium";
-      const selectedPresetId = detection.confidence === "low" ? fallbackPresetId : detection.recommendedPresetId || fallbackPresetId;
-      const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId: selectedPresetId, accountId: account.id });
-      const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
-      const duplicateEstimate = estimateDuplicateCount(localTrades, previewTrades);
-
-      setCsvImportState({
-        step: hasChoiceStep ? "detect" : "preview",
-        accountId: account.id,
-        accountName: account.name,
-        fileName: file.name,
-        rows: parsed.rows,
-        headers: parsed.headers,
-        detection,
-        selectedPresetId,
-        presetOptions: detection.candidates || [],
-        previewTrades,
-        summary: {
-          rowCount: parsed.rows.length,
-          parsedCount: previewTrades.length,
-          totalPnl,
-          duplicateEstimate,
-        },
-        isImporting: false,
-        error: "",
-      });
-    } catch (error) {
-      setCsvImportState((prev) => ({ ...prev, error: error?.message || "Unable to read CSV file." }));
-    } finally {
-      if (event?.target) event.target.value = "";
-    }
-  }, [localTrades]);
-
-  const chooseDetectedPreset = useCallback(
-    (presetId) => {
-      const nextPresetId = presetId || "generic-futures-csv-v1";
-      const previewTrades = normalizeCsvRowsToTrades(csvImportState.rows, { presetId: nextPresetId, accountId: "" });
-      const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
-      const duplicateEstimate = estimateDuplicateCount(localTrades, previewTrades);
-      setCsvImportState((prev) => ({
-        ...prev,
-        step: "preview",
-        selectedPresetId: nextPresetId,
-        previewTrades,
-        summary: {
-          ...(prev.summary || {}),
-          parsedCount: previewTrades.length,
-          totalPnl,
-          duplicateEstimate,
-        },
-      }));
-    },
-    [csvImportState.rows, localTrades]
-  );
-
-  const commitCsvImport = useCallback(async () => {
-    if (!csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
-    setCsvImportState((prev) => ({ ...prev, isImporting: true, error: "" }));
-    try {
-      const result = await onImportCsvTrades({ trades: csvImportState.previewTrades });
-      setCsvImportState((prev) => ({
-        ...prev,
-        step: "summary",
-        isImporting: false,
-        summary: {
-          ...prev.summary,
-          importedCount: Number(result?.importedCount || 0),
-          dedupedCount: Number(result?.dedupedCount || 0),
-        },
-      }));
-    } catch (error) {
-      setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
-    }
-  }, [csvImportState.previewTrades, onImportCsvTrades]);
-
-  const selectedPreset = getImportPresets().find((item) => item.id === csvImportState.selectedPresetId);
 
   return (
     <div className="space-y-4 pb-4">
@@ -3459,67 +3551,6 @@ function JournalScreen({
               />
             </div>
           </label>
-        </div>
-      </GlassCard>
-
-      <GlassCard className="rounded-[30px] p-5">
-        <TinyLabel>Trade import</TinyLabel>
-        <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Import CSV trades</div>
-        <div className="mt-1 text-[12px] text-slate-500">Upload CSV files directly to local trades. Account mapping is disabled.</div>
-        <div className="mt-3 space-y-2">
-          <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
-            Select CSV file
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(event) => handleCsvFileSelection(event, { id: "", name: "Imported Trades" })}
-            />
-          </label>
-          {csvImportState.fileName ? (
-            <div className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
-              <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
-              <div className="mt-0.5">
-                Step {csvImportState.step === "detect" ? "2" : csvImportState.step === "preview" ? "3" : csvImportState.step === "summary" ? "5" : "1"} ·
-                Detected: {selectedPreset?.label || "Generic Futures CSV"} ({csvImportState.detection?.confidence || "low"} confidence)
-              </div>
-              {csvImportState.step === "detect" ? (
-                <div className="mt-2 space-y-1.5">
-                  <div className="text-[10px] text-slate-500">Choose detected format</div>
-                  {(csvImportState.presetOptions.length ? csvImportState.presetOptions : [{ presetId: "generic-futures-csv-v1", label: "Generic Futures CSV" }]).map((option) => (
-                    <button
-                      key={option.presetId}
-                      type="button"
-                      onClick={() => chooseDetectedPreset(option.presetId)}
-                      className="mr-1.5 rounded-[10px] border border-white/70 bg-white/70 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-white"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-1.5 text-[10px] text-slate-500">
-                Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows valid · {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
-              </div>
-              <div className="mt-1 text-[10px] text-slate-500">
-                Source: {selectedPreset?.source || "csv"} · Duplicates estimate {csvImportState.summary?.duplicateEstimate || 0}
-              </div>
-              <button
-                type="button"
-                onClick={commitCsvImport}
-                disabled={csvImportState.isImporting || !csvImportState.previewTrades.length || csvImportState.step === "detect"}
-                className="mt-2 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {csvImportState.isImporting ? "Importing…" : "Step 4 · Confirm import"}
-              </button>
-              {csvImportState.summary?.importedCount !== undefined ? (
-                <div className="mt-1 text-[10px] text-slate-500">
-                  Imported {csvImportState.summary.importedCount} · Duplicates skipped {csvImportState.summary.dedupedCount || 0}
-                </div>
-              ) : null}
-              {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
-            </div>
-          ) : null}
         </div>
       </GlassCard>
 
@@ -3924,16 +3955,15 @@ export default function App() {
         trades={csvTrades}
         tradeTypeFilter={viewState.dashboardTradeTypeFilter}
         onTradeTypeFilterChange={(dashboardTradeTypeFilter) => setViewState((prev) => ({ ...prev, dashboardTradeTypeFilter }))}
+        onImportCsvTrades={importCsvTrades}
         shareIdentity={shareIdentity}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
       <JournalScreen
         profileState={profileState}
-        localTrades={csvTrades}
         onProfileStateChange={setProfileState}
         onResetPreferences={resetPreferences}
-        onImportCsvTrades={importCsvTrades}
         debugEnabled={debugEnabled}
       />
     ) : (
