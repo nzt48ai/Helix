@@ -41,6 +41,7 @@ import { resolveScreenComponentName, resolveTabRoute, syncTabStateFromHash } fro
 import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments } from "./instruments.js";
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
 import { PROP_FIRM_TEMPLATE_CONFIG } from "./accountTemplates";
+import { detectCsvFormat, getImportPresets, normalizeCsvRowsToTrades, parseCsvText } from "./csvImport";
 import {
   clearTradovateOAuthParamsFromLocation,
   consumePendingPropTradovateFlow,
@@ -3339,7 +3340,14 @@ function getAccountRowMeta(account) {
   };
 }
 
-function JournalScreen({ profileState, onProfileStateChange, onResetPreferences, onSyncTradovateAccountTrades, debugEnabled = false }) {
+function JournalScreen({
+  profileState,
+  onProfileStateChange,
+  onResetPreferences,
+  onSyncTradovateAccountTrades,
+  onImportCsvTrades,
+  debugEnabled = false,
+}) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [accountFlowStep, setAccountFlowStep] = useState(1);
@@ -3350,6 +3358,19 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
   const [tradovateAccounts, setTradovateAccounts] = useState([]);
   const [isTradovateBusy, setIsTradovateBusy] = useState(false);
   const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
+  const [csvImportState, setCsvImportState] = useState({
+    accountId: "",
+    accountName: "",
+    fileName: "",
+    rows: [],
+    headers: [],
+    detection: null,
+    selectedPresetId: "",
+    previewTrades: [],
+    summary: null,
+    isImporting: false,
+    error: "",
+  });
 
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
@@ -3407,15 +3428,123 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     setAccountForm((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  const resetCsvImportState = useCallback(() => {
+    setCsvImportState({
+      accountId: "",
+      accountName: "",
+      fileName: "",
+      rows: [],
+      headers: [],
+      detection: null,
+      selectedPresetId: "",
+      previewTrades: [],
+      summary: null,
+      isImporting: false,
+      error: "",
+    });
+  }, []);
+
+  const handleCsvFileSelection = useCallback(
+    async (event, account) => {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = parseCsvText(text);
+        if (!parsed.headers.length || !parsed.rows.length) {
+          setCsvImportState((prev) => ({ ...prev, error: "CSV file appears empty.", rows: [], previewTrades: [], summary: null }));
+          return;
+        }
+        const detection = detectCsvFormat(parsed.headers);
+        const presetId = detection.recommendedPresetId || "generic_futures";
+        const previewTrades = normalizeCsvRowsToTrades(parsed.rows, { presetId, accountId: account.id });
+        const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
+
+        setCsvImportState({
+          accountId: account.id,
+          accountName: account.name,
+          fileName: file.name,
+          rows: parsed.rows,
+          headers: parsed.headers,
+          detection,
+          selectedPresetId: presetId,
+          previewTrades,
+          summary: {
+            rowCount: parsed.rows.length,
+            parsedCount: previewTrades.length,
+            totalPnl,
+          },
+          isImporting: false,
+          error: "",
+        });
+      } catch (error) {
+        setCsvImportState((prev) => ({ ...prev, error: error?.message || "Unable to read CSV file." }));
+      } finally {
+        if (event?.target) event.target.value = "";
+      }
+    },
+    []
+  );
+
+  const handleChangeCsvPreset = useCallback((presetId) => {
+    setCsvImportState((prev) => {
+      if (!prev.rows.length) return prev;
+      const previewTrades = normalizeCsvRowsToTrades(prev.rows, { presetId, accountId: prev.accountId });
+      const totalPnl = previewTrades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0);
+      return {
+        ...prev,
+        selectedPresetId: presetId,
+        previewTrades,
+        summary: {
+          rowCount: prev.rows.length,
+          parsedCount: previewTrades.length,
+          totalPnl,
+        },
+      };
+    });
+  }, []);
+
+  const commitCsvImport = useCallback(async () => {
+    if (!csvImportState.accountId || !csvImportState.previewTrades.length || typeof onImportCsvTrades !== "function") return;
+    setCsvImportState((prev) => ({ ...prev, isImporting: true, error: "" }));
+    try {
+      const result = await onImportCsvTrades({
+        accountId: csvImportState.accountId,
+        trades: csvImportState.previewTrades,
+      });
+      setCsvImportState((prev) => ({
+        ...prev,
+        isImporting: false,
+        summary: {
+          ...prev.summary,
+          importedCount: Number(result?.importedCount || 0),
+          dedupedCount: Number(result?.dedupedCount || 0),
+        },
+      }));
+      setSyncStateByAccountId((prev) => ({
+        ...prev,
+        [csvImportState.accountId]: {
+          status: "success",
+          message: `Imported ${Number(result?.importedCount || 0)} trade${Number(result?.importedCount || 0) === 1 ? "" : "s"}${Number(result?.dedupedCount || 0) ? ` · ${Number(result?.dedupedCount || 0)} duplicate${Number(result?.dedupedCount || 0) === 1 ? "" : "s"} skipped` : ""}.`,
+          syncedAt: Date.now(),
+        },
+      }));
+    } catch (error) {
+      setCsvImportState((prev) => ({ ...prev, isImporting: false, error: error?.message || "Import failed." }));
+    }
+  }, [csvImportState.accountId, csvImportState.previewTrades, onImportCsvTrades]);
+
   const openAddAccountFlow = useCallback(() => {
     setIsAddAccountOpen(true);
     resetAccountForm();
-  }, [resetAccountForm]);
+    resetCsvImportState();
+  }, [resetAccountForm, resetCsvImportState]);
 
   const closeAddAccountFlow = useCallback(() => {
     setIsAddAccountOpen(false);
     resetAccountForm();
-  }, [resetAccountForm]);
+    resetCsvImportState();
+  }, [resetAccountForm, resetCsvImportState]);
 
   const handleAccountFlowBack = useCallback(() => {
     setAccountFormError("");
@@ -3617,21 +3746,43 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
     };
   }, [accountForm]);
 
-  const createAccountFromFlow = useCallback(() => {
+  const createAccountFromFlow = useCallback(async () => {
     const validatedAccount = buildValidatedAccount();
     if (!validatedAccount) return;
+    const createdAccountId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     onProfileStateChange((prev) => {
       const safePrev = sanitizeProfileState(prev);
       const existingAccounts = Array.isArray(safePrev.accounts) ? safePrev.accounts : [];
       return sanitizeProfileState({
         ...safePrev,
-        accounts: [...existingAccounts, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...validatedAccount }],
+        accounts: [...existingAccounts, { id: createdAccountId, ...validatedAccount }],
       });
     });
-    setAccountFlowNotice("Account added.");
+    if (
+      validatedAccount.type === "prop" &&
+      validatedAccount.connectionMethod === "csv" &&
+      csvImportState.accountId === "__pending_new__" &&
+      csvImportState.previewTrades.length &&
+      typeof onImportCsvTrades === "function"
+    ) {
+      try {
+        const result = await onImportCsvTrades({
+          accountId: createdAccountId,
+          trades: csvImportState.previewTrades.map((trade) => ({ ...trade, accountId: createdAccountId })),
+        });
+        setAccountFlowNotice(
+          `Account added. Imported ${Number(result?.importedCount || 0)} trade${Number(result?.importedCount || 0) === 1 ? "" : "s"}${Number(result?.dedupedCount || 0) ? ` · ${Number(result?.dedupedCount || 0)} duplicates skipped` : ""}.`
+        );
+      } catch (error) {
+        setAccountFlowNotice(`Account added. CSV import failed: ${error?.message || "Unknown error."}`);
+      }
+    } else {
+      setAccountFlowNotice("Account added.");
+    }
     setIsAddAccountOpen(false);
     resetAccountForm();
-  }, [buildValidatedAccount, onProfileStateChange, resetAccountForm]);
+    resetCsvImportState();
+  }, [buildValidatedAccount, csvImportState, onImportCsvTrades, onProfileStateChange, resetAccountForm, resetCsvImportState]);
 
   const handleSelectPropFirm = useCallback((firmId) => {
     const firm = PROP_FIRM_TEMPLATE_CONFIG.find((item) => item.id === firmId);
@@ -3806,6 +3957,66 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                     </div>
                   </div>
                 ) : null}
+                <div className="mt-2 space-y-2">
+                  <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
+                    Import CSV
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      onChange={(event) => handleCsvFileSelection(event, account)}
+                    />
+                  </label>
+                  {csvImportState.accountId === account.id && csvImportState.fileName ? (
+                    <div className="rounded-[12px] border border-white/70 bg-white/50 p-2.5 text-[11px] text-slate-600">
+                      <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
+                      <div className="mt-0.5">
+                        Detected:{" "}
+                        <span className="font-semibold">
+                          {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"}
+                        </span>{" "}
+                        ({csvImportState.detection?.confidence || "low"} confidence)
+                      </div>
+                      {csvImportState.detection?.confidence !== "high" && csvImportState.detection?.candidates?.length ? (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {csvImportState.detection.candidates.map((candidate) => (
+                            <button
+                              key={candidate.presetId}
+                              type="button"
+                              onClick={() => handleChangeCsvPreset(candidate.presetId)}
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                                csvImportState.selectedPresetId === candidate.presetId
+                                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                                  : "border-white/70 bg-white/70 text-slate-600"
+                              )}
+                            >
+                              {candidate.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-1.5 text-[10px] text-slate-500">
+                        Preview: {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows ·{" "}
+                        {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={commitCsvImport}
+                        disabled={csvImportState.isImporting || !csvImportState.previewTrades.length}
+                        className="mt-2 rounded-[10px] border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {csvImportState.isImporting ? "Importing…" : "Import preview trades"}
+                      </button>
+                      {csvImportState.summary?.importedCount !== undefined ? (
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          Imported {csvImportState.summary.importedCount} · Duplicates skipped {csvImportState.summary.dedupedCount || 0}
+                        </div>
+                      ) : null}
+                      {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
               );
             })
@@ -4021,8 +4232,50 @@ function JournalScreen({ profileState, onProfileStateChange, onResetPreferences,
                     </div>
                   ) : null}
                   {accountForm.connectionMethod === "csv" ? (
-                    <div className="rounded-[14px] border border-white/70 bg-white/40 px-3 py-2 text-[11px] text-slate-500">
-                      CSV linking remains placeholder in this pass. You can still attach the prop account manually.
+                    <div className="space-y-2 rounded-[14px] border border-white/70 bg-white/40 px-3 py-2 text-[11px] text-slate-500">
+                      <div>Upload a CSV export. Helix auto-detects supported formats and previews before import.</div>
+                      <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/60 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
+                        Select CSV file
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          className="hidden"
+                          onChange={(event) => handleCsvFileSelection(event, { id: "__pending_new__", name: accountForm.name || "New prop account" })}
+                        />
+                      </label>
+                      {csvImportState.accountId === "__pending_new__" && csvImportState.fileName ? (
+                        <div className="rounded-[10px] border border-white/70 bg-white/55 p-2 text-[10px] text-slate-600">
+                          <div className="font-semibold text-slate-700">{csvImportState.fileName}</div>
+                          <div className="mt-0.5">
+                            Detected {getImportPresets().find((item) => item.id === csvImportState.selectedPresetId)?.label || "Generic Futures CSV"} (
+                            {csvImportState.detection?.confidence || "low"})
+                          </div>
+                          {csvImportState.detection?.confidence !== "high" && csvImportState.detection?.candidates?.length ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {csvImportState.detection.candidates.map((candidate) => (
+                                <button
+                                  key={candidate.presetId}
+                                  type="button"
+                                  onClick={() => handleChangeCsvPreset(candidate.presetId)}
+                                  className={cn(
+                                    "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                                    csvImportState.selectedPresetId === candidate.presetId
+                                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                                      : "border-white/70 bg-white/70 text-slate-600"
+                                  )}
+                                >
+                                  {candidate.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="mt-1 text-[10px] text-slate-500">
+                            Preview {csvImportState.summary?.parsedCount || 0}/{csvImportState.summary?.rowCount || 0} rows ·{" "}
+                            {formatCompactCurrency(csvImportState.summary?.totalPnl || 0)}
+                          </div>
+                          {csvImportState.error ? <div className="mt-1 text-[10px] text-rose-500">{csvImportState.error}</div> : null}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {accountForm.connectionMethod !== "tradovate" ? (
@@ -4383,6 +4636,25 @@ export default function App() {
     [trades]
   );
 
+  const importCsvTradesForAccount = useCallback(
+    async ({ accountId, trades: incomingTrades }) => {
+      if (!accountId || !Array.isArray(incomingTrades) || !incomingTrades.length) {
+        return { importedCount: 0, dedupedCount: 0 };
+      }
+      const existingTrades = sanitizeTrades(trades);
+      const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
+      const normalizedIncoming = sanitizeTrades(incomingTrades.map((trade) => ({ ...trade, accountId })));
+      const dedupedIncoming = normalizedIncoming.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
+      const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
+      setTrades(mergedTrades);
+      return {
+        importedCount: dedupedIncoming.length,
+        dedupedCount: Math.max(0, normalizedIncoming.length - dedupedIncoming.length),
+      };
+    },
+    [trades]
+  );
+
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
     const instrument = positionState.instrument || "MNQ";
@@ -4585,6 +4857,7 @@ export default function App() {
         onProfileStateChange={setProfileState}
         onResetPreferences={resetPreferences}
         onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
+        onImportCsvTrades={importCsvTradesForAccount}
         debugEnabled={debugEnabled}
       />
     ) : (
