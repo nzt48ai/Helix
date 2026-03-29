@@ -137,6 +137,10 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
           providerAccountId: "12345",
           providerAccountName: "Main Eval",
           connectionStatus: "connected",
+          lastSyncAt: "2026-03-01T10:00:00.000Z",
+          lastSyncStatus: "success",
+          lastSyncCount: "7",
+          lastSyncError: "",
         },
       },
       {
@@ -156,9 +160,45 @@ test("prop account fields are sanitized safely for legacy and malformed payloads
   assert.equal(profile.accounts[0].status, "funded");
   assert.equal(profile.accounts[0].linkedProvider?.provider, "tradovate");
   assert.equal(profile.accounts[0].linkedProvider?.providerAccountId, "12345");
+  assert.equal(profile.accounts[0].linkedProvider?.lastSyncAt, "2026-03-01T10:00:00.000Z");
+  assert.equal(profile.accounts[0].linkedProvider?.lastSyncStatus, "success");
+  assert.equal(profile.accounts[0].linkedProvider?.lastSyncCount, 7);
+  assert.equal(profile.accounts[0].linkedProvider?.lastSyncError, null);
+  assert.equal(profile.accounts[0].tradeSync?.lastSyncCount, 7);
   assert.equal(profile.accounts[1].dailyLossLimit, null);
   assert.equal(profile.accounts[1].status, "active");
   assert.equal(profile.accounts[1].linkedProvider, null);
+});
+
+test("legacy sync metadata in connection payload hydrates into both connection and tradeSync safely", () => {
+  const profile = sanitizeProfileState({
+    accounts: [
+      {
+        id: "prop-legacy",
+        name: "Legacy Link",
+        type: "prop",
+        startingBalance: 50000,
+        currentBalance: 51000,
+        connection: {
+          provider: "tradovate",
+          providerAccountId: "TV-9",
+          providerAccountName: "Legacy",
+          connectionStatus: "connected",
+          lastSyncAt: "2026-03-20T08:00:00.000Z",
+          lastSyncStatus: "syncing",
+          lastSyncCount: 3,
+          lastSyncError: "Transient timeout",
+        },
+      },
+    ],
+  });
+
+  const account = profile.accounts[0];
+  assert.equal(account.connection?.lastSyncStatus, "syncing");
+  assert.equal(account.connection?.lastSyncCount, 3);
+  assert.equal(account.tradeSync?.lastSyncAt, "2026-03-20T08:00:00.000Z");
+  assert.equal(account.tradeSync?.lastSyncStatus, "syncing");
+  assert.equal(account.tradeSync?.lastSyncError, "Transient timeout");
 });
 
 test("profile persistence reset clears profile state and defaults accounts", () => {

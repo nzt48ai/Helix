@@ -57,6 +57,28 @@ export const PROFILE_DEFAULTS = {
 
 const PROFILE_ACCOUNT_TYPES = new Set(["personal", "prop", "sim", "paper", "helixtrade"]);
 const PROP_ACCOUNT_STATUSES = new Set(["active", "breached", "passed", "funded"]);
+const SYNC_STATUSES = new Set(["success", "error", "syncing"]);
+
+function sanitizeLastSyncAt(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeLastSyncStatus(value) {
+  return typeof value === "string" && SYNC_STATUSES.has(value.trim().toLowerCase()) ? value.trim().toLowerCase() : null;
+}
+
+function sanitizeLastSyncCount(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function sanitizeLastSyncError(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeLastSyncMessage(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 function sanitizeProfileAccount(value) {
   if (!value || typeof value !== "object") return null;
@@ -72,6 +94,12 @@ function sanitizeProfileAccount(value) {
 
   const rawConnection = value.connection && typeof value.connection === "object" ? value.connection : null;
   const rawLinkedProvider = value.linkedProvider && typeof value.linkedProvider === "object" ? value.linkedProvider : null;
+  const rawTradeSync = value.tradeSync && typeof value.tradeSync === "object" ? value.tradeSync : null;
+  const lastSyncAt = sanitizeLastSyncAt((rawConnection || rawLinkedProvider)?.lastSyncAt ?? rawTradeSync?.lastSyncAt);
+  const lastSyncStatus = sanitizeLastSyncStatus((rawConnection || rawLinkedProvider)?.lastSyncStatus ?? rawTradeSync?.lastSyncStatus);
+  const lastSyncCount = sanitizeLastSyncCount((rawConnection || rawLinkedProvider)?.lastSyncCount ?? rawTradeSync?.lastSyncCount);
+  const lastSyncError = sanitizeLastSyncError((rawConnection || rawLinkedProvider)?.lastSyncError ?? rawTradeSync?.lastSyncError);
+  const lastSyncMessage = sanitizeLastSyncMessage(rawTradeSync?.lastSyncMessage);
   const normalizedLinkedProvider =
     (rawConnection || rawLinkedProvider)
       ? {
@@ -87,6 +115,10 @@ function sanitizeProfileAccount(value) {
               ? (rawConnection || rawLinkedProvider).providerAccountName.trim()
               : null,
           connectionStatus: (rawConnection || rawLinkedProvider).connectionStatus === "connected" ? "connected" : null,
+          lastSyncAt,
+          lastSyncStatus,
+          lastSyncCount,
+          lastSyncError,
         }
       : null;
   const linkedProvider =
@@ -106,22 +138,13 @@ function sanitizeProfileAccount(value) {
     isHelixLinked: typeof value.isHelixLinked === "boolean" ? value.isHelixLinked : false,
     linkedProvider,
     connection: linkedProvider,
-    tradeSync: value.tradeSync && typeof value.tradeSync === "object"
-      ? {
-          lastSyncAt:
-            typeof value.tradeSync.lastSyncAt === "string" && value.tradeSync.lastSyncAt.trim()
-              ? value.tradeSync.lastSyncAt.trim()
-              : null,
-          lastSyncStatus:
-            value.tradeSync.lastSyncStatus === "success" || value.tradeSync.lastSyncStatus === "error"
-              ? value.tradeSync.lastSyncStatus
-              : null,
-          lastSyncMessage:
-            typeof value.tradeSync.lastSyncMessage === "string" && value.tradeSync.lastSyncMessage.trim()
-              ? value.tradeSync.lastSyncMessage.trim()
-              : null,
-        }
-      : null,
+    tradeSync: {
+      lastSyncAt,
+      lastSyncStatus,
+      lastSyncCount,
+      lastSyncError,
+      lastSyncMessage,
+    },
   };
 
   if (type !== "prop") {
