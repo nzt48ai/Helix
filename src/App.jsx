@@ -114,6 +114,8 @@ const DASHBOARD_TRADE_TYPE_FILTER_PAPER = "paper";
 const UNASSIGNED_ACCOUNT_GROUP_ID = "__unassigned__";
 const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
 const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
+const PROFILE_LOCAL_BACKUP_STORAGE_KEY = "helix.profile.settings.local-backup.v1";
+const PROFILE_CLOUD_SAVE_DEBOUNCE_MS = 800;
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -272,6 +274,28 @@ function formatSecondsLabel(seconds) {
 
 function createTradeId() {
   return `trade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readProfileBackupFromStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(PROFILE_LOCAL_BACKUP_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistProfileBackupToStorage(profile) {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(PROFILE_LOCAL_BACKUP_STORAGE_KEY, JSON.stringify(profile));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildStableTradeFingerprint(value) {
@@ -3445,6 +3469,7 @@ function JournalScreen({
   onSyncTradovateAccountTrades,
   onImportCsvTrades,
   onSignOut,
+  cloudSyncState = { isLoading: false, isSaving: false, error: "" },
   debugEnabled = false,
 }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
@@ -3975,6 +4000,9 @@ function JournalScreen({
             Sign out
           </button>
         ) : null}
+        {cloudSyncState.isLoading ? <div className="mt-2 text-[12px] text-slate-500">Loading profile from cloud…</div> : null}
+        {!cloudSyncState.isLoading && cloudSyncState.isSaving ? <div className="mt-2 text-[12px] text-slate-500">Saving profile…</div> : null}
+        {cloudSyncState.error ? <div className="mt-2 text-[12px] text-amber-700">{cloudSyncState.error}</div> : null}
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[20px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
             {profileInitials}
@@ -4638,7 +4666,16 @@ export default function App() {
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
   const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
+  const [cloudProfileState, setCloudProfileState] = useState({
+    isLoading: false,
+    isSaving: false,
+    error: "",
+    lastLoadedUserId: "",
+  });
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
+  const hasHydratedCloudProfileRef = useRef(false);
+  const lastSavedProfilePayloadRef = useRef("");
+  const profileSaveTimeoutRef = useRef(null);
   const { evaluatedTrades, propProgressByAccountId } = useMemo(
     () => evaluatePropRuleViolations(trades, profileState.accounts),
     [trades, profileState.accounts]
@@ -5000,6 +5037,9 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     persistProfileState(profileState);
+    if (isAuthenticated) {
+      persistProfileBackupToStorage(profileState);
+    }
   }, [profileState]);
 
   useEffect(() => {
@@ -5021,6 +5061,139 @@ export default function App() {
       data?.subscription?.unsubscribe();
     };
   }, [authConfigured]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.profile) {
+      hasHydratedCloudProfileRef.current = false;
+      lastSavedProfilePayloadRef.current = "";
+      if (profileSaveTimeoutRef.current) {
+        window.clearTimeout(profileSaveTimeoutRef.current);
+        profileSaveTimeoutRef.current = null;
+      }
+      setCloudProfileState((prev) => ({
+        ...prev,
+        isLoading: false,
+        isSaving: false,
+        error: "",
+        lastLoadedUserId: "",
+      }));
+      return;
+    }
+
+    let cancelled = false;
+    const localProfileSnapshot = sanitizeProfileState(readStoredProfileState() || readProfileBackupFromStorage() || PROFILE_DEFAULTS);
+
+    setCloudProfileState((prev) => ({ ...prev, isLoading: true, error: "" }));
+
+    (async () => {
+      try {
+        const cloudRow = await supabase.profile.fetchByUserId({
+          userId: authUser.id,
+          accessToken: authSession.access_token,
+        });
+
+        if (cancelled) return;
+        if (cloudRow?.profile_data) {
+          const sanitizedCloudProfile = sanitizeProfileState(cloudRow.profile_data);
+          const cloudPayload = JSON.stringify(sanitizedCloudProfile);
+          hasHydratedCloudProfileRef.current = true;
+          lastSavedProfilePayloadRef.current = cloudPayload;
+          setProfileState(sanitizedCloudProfile);
+        } else {
+          const seededProfile = sanitizeProfileState(localProfileSnapshot);
+          await supabase.profile.upsertByUserId({
+            userId: authUser.id,
+            accessToken: authSession.access_token,
+            profile: seededProfile,
+          });
+          if (cancelled) return;
+          hasHydratedCloudProfileRef.current = true;
+          lastSavedProfilePayloadRef.current = JSON.stringify(seededProfile);
+          setProfileState(seededProfile);
+        }
+
+        setCloudProfileState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: "",
+          lastLoadedUserId: authUser.id,
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        hasHydratedCloudProfileRef.current = true;
+        const backupProfile = sanitizeProfileState(readProfileBackupFromStorage() || localProfileSnapshot);
+        lastSavedProfilePayloadRef.current = JSON.stringify(backupProfile);
+        setProfileState(backupProfile);
+        setCloudProfileState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: "Cloud profile unavailable. Using local profile data.",
+          lastLoadedUserId: authUser.id,
+        }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.access_token, authUser?.id, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.profile) return;
+    if (!hasHydratedCloudProfileRef.current) return;
+    if (cloudProfileState.lastLoadedUserId !== authUser.id) return;
+    if (cloudProfileState.isLoading) return;
+
+    const sanitizedProfile = sanitizeProfileState(profileState);
+    const payload = JSON.stringify(sanitizedProfile);
+    if (payload === lastSavedProfilePayloadRef.current) return;
+
+    if (profileSaveTimeoutRef.current) {
+      window.clearTimeout(profileSaveTimeoutRef.current);
+      profileSaveTimeoutRef.current = null;
+    }
+
+    profileSaveTimeoutRef.current = window.setTimeout(async () => {
+      setCloudProfileState((prev) => ({ ...prev, isSaving: true, error: "" }));
+      try {
+        await supabase.profile.upsertByUserId({
+          userId: authUser.id,
+          accessToken: authSession.access_token,
+          profile: sanitizedProfile,
+        });
+        lastSavedProfilePayloadRef.current = payload;
+        persistProfileBackupToStorage(sanitizedProfile);
+        setCloudProfileState((prev) => ({ ...prev, isSaving: false, error: "" }));
+      } catch {
+        setCloudProfileState((prev) => ({
+          ...prev,
+          isSaving: false,
+          error: "Unable to sync profile changes right now. Local profile changes are still saved.",
+        }));
+      }
+    }, PROFILE_CLOUD_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (profileSaveTimeoutRef.current) {
+        window.clearTimeout(profileSaveTimeoutRef.current);
+        profileSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    authSession?.access_token,
+    authUser?.id,
+    cloudProfileState.isLoading,
+    cloudProfileState.lastLoadedUserId,
+    isAuthenticated,
+    profileState,
+  ]);
+
+  useEffect(() => () => {
+    if (profileSaveTimeoutRef.current) {
+      window.clearTimeout(profileSaveTimeoutRef.current);
+      profileSaveTimeoutRef.current = null;
+    }
+  }, []);
 
   const screen =
     activeTab === "position" ? (
@@ -5054,6 +5227,7 @@ export default function App() {
           onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
           onImportCsvTrades={importCsvTradesForAccount}
           onSignOut={handleSignOut}
+          cloudSyncState={cloudProfileState}
           debugEnabled={debugEnabled}
         />
       ) : (
