@@ -925,14 +925,17 @@ function SharePortraitCard({
 
         <div
           className={cn(
-            hasDirectionalStoryLine ? "mt-6 grid gap-4.5" : "mt-5 grid gap-4.5",
+            hasDirectionalStoryLine ? "mt-6 grid gap-3.5" : "mt-5 grid gap-3.5",
             secondaryMetrics.length === 3 ? "grid-cols-3" : secondaryMetrics.length === 2 ? "grid-cols-2" : "grid-cols-2"
           )}
         >
           {secondaryMetrics.map((metric) => (
-            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] bg-white/48 px-4 py-[15px] shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]">
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.14em] text-slate-500/90">{metric.label}</div>
-              <div className="mt-3.5 overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-medium text-slate-700/90 tabular-nums">
+            <div
+              key={metric.label}
+              className="flex min-w-0 h-full flex-col justify-between overflow-hidden rounded-[18px] border border-white/45 bg-white/42 px-[14px] py-[12px] shadow-[0_6px_16px_rgba(148,163,184,0.07),inset_0_1px_0_rgba(255,255,255,0.66)]"
+            >
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.16em] text-slate-500/80">{metric.label}</div>
+              <div className="mt-2.5 overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-semibold text-slate-700/92 tabular-nums">
                 {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
                   <AnimatedFormattedNumber value={metric.animatedNumber} formatter={metric.formatter} />
                 ) : (
