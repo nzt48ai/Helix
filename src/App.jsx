@@ -3331,8 +3331,8 @@ function JournalScreen({
   );
 
   const resetAccountForm = useCallback(() => {
-    setAccountForm(createEmptyAccountForm());
-    setAccountFlowStep(1);
+    setAccountForm({ ...createEmptyAccountForm(), type: "prop" });
+    setAccountFlowStep(2);
     setSelectedPropFirmId("");
     setSelectedTemplateId("");
     setAccountFormError("");
@@ -3472,7 +3472,7 @@ function JournalScreen({
   const handleAccountFlowBack = useCallback(() => {
     setAccountFormError("");
     setAccountFlowNotice("");
-    setAccountFlowStep((prev) => Math.max(1, prev - 1));
+    setAccountFlowStep((prev) => Math.max(2, prev - 1));
   }, []);
 
   const selectedFirm = useMemo(
@@ -3855,27 +3855,6 @@ function JournalScreen({
                 </button>
               </div>
 
-              {accountFlowStep === 1 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Account type</div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {ADD_ACCOUNT_TYPES.map((item) => (
-                      <button
-                        key={item.value}
-                        type="button"
-                        onClick={() => {
-                          updateAccountFormField("type", item.value);
-                          setAccountFlowStep(2);
-                        }}
-                        className="rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-left transition-colors hover:bg-white/70"
-                      >
-                        <div className="text-[12px] font-semibold text-slate-700">{item.label}</div>
-                        <div className="mt-0.5 text-[11px] text-slate-500">{item.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
 
               {normalizeAccountType(accountForm.type) === "personal" && accountFlowStep === 2 ? (
                 <div className="space-y-3">
@@ -3911,7 +3890,7 @@ function JournalScreen({
 
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 2 ? (
                 <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select prop firm</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1 · Select prop firm</div>
                   <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
                     {PROP_FIRM_TEMPLATE_CONFIG.map((firm) => (
                       <button
@@ -3932,7 +3911,7 @@ function JournalScreen({
 
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 3 ? (
                 <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Select template</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2 · Select template</div>
                   {selectedFirm?.templates?.length ? (
                     <div className="grid max-h-[42dvh] grid-cols-1 gap-2 overflow-y-auto pr-1">
                       {selectedFirm.templates.map((template) => (
@@ -3960,7 +3939,7 @@ function JournalScreen({
 
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 4 ? (
                 <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4 · Connection method</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3 · Connection method</div>
                   <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className="w-full rounded-[12px] border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-[11px] font-semibold text-slate-700">Upload CSV</button>
                   <div className="text-[11px] text-slate-500">CSV import is the only supported trade source for Insights.</div>
                 </div>
@@ -3969,7 +3948,7 @@ function JournalScreen({
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 5 ? (
                 <div className="space-y-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Step 5 · Confirm prop account
+                    Step 4 · Confirm prop account
                   </div>
                   <label className="block">
                     <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
@@ -4076,7 +4055,7 @@ function JournalScreen({
                 <button
                   type="button"
                   onClick={handleAccountFlowBack}
-                  disabled={accountFlowStep === 1}
+                  disabled={accountFlowStep === 2}
                   className="rounded-[12px] border border-white/70 bg-white/45 px-3 py-1.5 text-[12px] font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Back
