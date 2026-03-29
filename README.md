@@ -69,9 +69,14 @@ VITE_SUPABASE_ANON_KEY=<your-supabase-anon-key>
 
 Without these variables, the app still runs in local-first mode, but Profile login is disabled and the locked state explains how to enable it.
 
-### Supabase Profile sync (logged-in Profile tab only)
+### Supabase Profile + normalized trade ledger sync (logged-in users)
 
-This pass syncs **Profile-only** settings for logged-in users. All non-Profile domains (trades, insights, calendar, replay, etc.) remain local-only.
+Logged-in users sync:
+
+- Profile settings (`public.user_profiles`)
+- Normalized trade ledger rows (`public.trade_ledger`)
+
+Logged-out users remain local-first and local-only.
 
 Create this table in Supabase SQL editor:
 
@@ -117,6 +122,8 @@ with check (auth.uid() = user_id);
 ```
 
 The app stores one row per user (`user_profiles.user_id`) and writes sanitized profile JSON into `profile_data` so the existing local profile shape can be reused with minimal changes.
+
+For normalized trade rows, apply `supabase/trade_ledger.sql` in Supabase SQL editor. The app writes one row per trade and upserts with `(user_id, dedupe_key)` to prevent duplicates across repeated imports/syncs.
 
 Backend route scaffold implemented:
 

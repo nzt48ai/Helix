@@ -2,6 +2,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const AUTH_STORAGE_KEY = "helix.supabase.auth.session.v1";
 const SUPABASE_PROFILE_TABLE = "user_profiles";
+const SUPABASE_TRADE_LEDGER_TABLE = "trade_ledger";
 
 function createAuthClient() {
   let currentSession = null;
@@ -147,6 +148,36 @@ function createAuthClient() {
         return record || null;
       },
     },
+    tradeLedger: {
+      async fetchByUserId({ userId, accessToken }) {
+        if (!userId || !accessToken) throw new Error("Missing Supabase trade ledger fetch inputs.");
+        const encodedUserId = encodeURIComponent(userId);
+        const data = await requestRest({
+          path: SUPABASE_TRADE_LEDGER_TABLE,
+          method: "GET",
+          accessToken,
+          query:
+            `?select=*&user_id=eq.${encodedUserId}` +
+            "&order=updated_at.desc.nullslast,created_at.desc.nullslast&limit=10000",
+        });
+        return Array.isArray(data) ? data : [];
+      },
+      async upsertBatch({ accessToken, rows }) {
+        if (!accessToken) throw new Error("Missing Supabase trade ledger upsert token.");
+        if (!Array.isArray(rows) || !rows.length) return [];
+        const payload = rows
+          .map((row) => (row && typeof row === "object" ? row : null))
+          .filter(Boolean);
+        if (!payload.length) return [];
+        return requestRest({
+          path: SUPABASE_TRADE_LEDGER_TABLE,
+          method: "POST",
+          accessToken,
+          query: "?on_conflict=user_id,dedupe_key",
+          body: payload,
+        });
+      },
+    },
   };
 }
 
@@ -159,4 +190,8 @@ export function isAuthConfigured() {
 
 export function getSupabaseProfileTableName() {
   return SUPABASE_PROFILE_TABLE;
+}
+
+export function getSupabaseTradeLedgerTableName() {
+  return SUPABASE_TRADE_LEDGER_TABLE;
 }

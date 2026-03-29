@@ -116,6 +116,7 @@ const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
 const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
 const PROFILE_LOCAL_BACKUP_STORAGE_KEY = "helix.profile.settings.local-backup.v1";
 const PROFILE_CLOUD_SAVE_DEBOUNCE_MS = 800;
+const TRADE_CLOUD_SAVE_DEBOUNCE_MS = 600;
 const RECONCILIATION_DISMISS_STORAGE_KEY = "helix.reconciliation.dismiss.v1";
 const RECONCILIATION_REMIND_LATER_MS = 1000 * 60 * 60 * 24 * 3;
 
@@ -302,9 +303,9 @@ function persistProfileBackupToStorage(profile) {
 
 function buildStableTradeFingerprint(value) {
   const source = String(value?.source || "manual").trim().toLowerCase();
-  const providerTradeId = String(value?.providerTradeId || "").trim();
-  if (source && providerTradeId) return `${source}:${providerTradeId}`;
   const accountId = String(value?.accountId || "").trim();
+  const providerTradeId = String(value?.providerTradeId || "").trim();
+  if (source && providerTradeId) return `${source}:${providerTradeId}:${accountId}`;
   const instrument = String(value?.instrument || value?.symbol || "").trim().toUpperCase();
   const timestamp = Number(value?.timestamp || 0);
   const pnl = Number(value?.pnl || 0);
@@ -312,6 +313,24 @@ function buildStableTradeFingerprint(value) {
   const entryPrice = Number(value?.entryPrice || 0);
   const exitPrice = Number(value?.exitPrice || 0);
   return `fallback:${accountId}|${instrument}|${timestamp}|${pnl}|${quantity}|${entryPrice}|${exitPrice}`;
+}
+
+function createTradeCloudDedupeKey(trade, userId = "") {
+  const source = String(trade?.source || "manual").trim().toLowerCase();
+  const accountId = String(trade?.accountId || "").trim();
+  const providerTradeId = String(trade?.providerTradeId || "").trim();
+  if (userId && source && providerTradeId && accountId) {
+    return `provider:${userId}:${source}:${accountId}:${providerTradeId}`;
+  }
+  const stableId = String(trade?.id || "").trim();
+  if (stableId) return `id:${stableId}`;
+  const instrument = String(trade?.instrument || trade?.symbol || "").trim().toUpperCase();
+  const openedAt = String(trade?.openedAt || "").trim();
+  const entryPrice = Number(trade?.entryPrice || 0);
+  const exitPrice = Number(trade?.exitPrice || 0);
+  const quantity = Number(trade?.quantity || 0);
+  const pnl = Number(trade?.netPnl ?? trade?.pnl ?? 0);
+  return `fallback:${accountId}|${instrument}|${openedAt}|${entryPrice}|${exitPrice}|${quantity}|${pnl}`;
 }
 
 function createEmptyAccountForm() {
@@ -395,6 +414,69 @@ function sanitizeTrade(value) {
 function sanitizeTrades(value) {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeTrade).filter(Boolean);
+}
+
+function mapTradeToCloudRow(trade, userId) {
+  const normalizedTrade = sanitizeTrade(trade);
+  if (!normalizedTrade || !userId) return null;
+  return {
+    id: normalizedTrade.id,
+    user_id: userId,
+    dedupe_key: createTradeCloudDedupeKey(normalizedTrade, userId),
+    account_id: normalizedTrade.accountId || null,
+    source: normalizedTrade.source || "manual",
+    import_source: normalizedTrade.source || "manual",
+    provider_trade_id: normalizedTrade.providerTradeId || null,
+    symbol: normalizedTrade.instrument || "MNQ",
+    side: normalizedTrade.side || null,
+    entry_price: normalizedTrade.entryPrice,
+    exit_price: normalizedTrade.exitPrice,
+    quantity: normalizedTrade.quantity,
+    opened_at: normalizedTrade.openedAt,
+    closed_at: normalizedTrade.closedAt,
+    executed_at: Number.isFinite(normalizedTrade.timestamp) ? new Date(normalizedTrade.timestamp).toISOString() : null,
+    pnl: normalizedTrade.pnl,
+    commission: normalizedTrade.commission,
+    fees: normalizedTrade.fees,
+    net_pnl: normalizedTrade.netPnl,
+    trade_type: normalizedTrade.tradeType,
+    rule_violation: Boolean(normalizedTrade.ruleViolation),
+    rule_violation_reason: normalizedTrade.ruleViolationReason,
+    created_at: new Date(normalizedTrade.timestamp).toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mapCloudRowToTrade(row) {
+  if (!row || typeof row !== "object") return null;
+  const closedAtIso = typeof row.closed_at === "string" && row.closed_at.trim() ? row.closed_at.trim() : null;
+  const openedAtIso = typeof row.opened_at === "string" && row.opened_at.trim() ? row.opened_at.trim() : null;
+  const executedAtIso = typeof row.executed_at === "string" && row.executed_at.trim() ? row.executed_at.trim() : null;
+  const createdAtIso = typeof row.created_at === "string" && row.created_at.trim() ? row.created_at.trim() : null;
+  const timestampCandidate = closedAtIso || executedAtIso || openedAtIso || createdAtIso;
+  const timestampMs = timestampCandidate ? new Date(timestampCandidate).getTime() : Number.NaN;
+
+  return sanitizeTrade({
+    id: typeof row.id === "string" && row.id.trim() ? row.id.trim() : createTradeId(),
+    accountId: typeof row.account_id === "string" ? row.account_id : "",
+    source: typeof row.source === "string" ? row.source : "manual",
+    providerTradeId: typeof row.provider_trade_id === "string" ? row.provider_trade_id : null,
+    instrument: typeof row.symbol === "string" && row.symbol.trim() ? row.symbol.trim().toUpperCase() : "MNQ",
+    side: typeof row.side === "string" ? row.side : null,
+    entryPrice: row.entry_price,
+    exitPrice: row.exit_price,
+    quantity: row.quantity,
+    openedAt: openedAtIso,
+    closedAt: closedAtIso,
+    timestamp: Number.isFinite(timestampMs) ? timestampMs : Date.now(),
+    pnl: row.pnl,
+    commission: row.commission,
+    fees: row.fees,
+    netPnl: row.net_pnl,
+    tradeType: row.trade_type,
+    ruleViolation: Boolean(row.rule_violation),
+    ruleViolationReason: typeof row.rule_violation_reason === "string" ? row.rule_violation_reason : null,
+  });
 }
 
 function readReconciliationDismissState() {
@@ -4210,7 +4292,7 @@ function JournalScreen({
           <div className="mt-3 rounded-[14px] border border-amber-200/90 bg-amber-50/70 p-3 text-[12px] text-amber-900">
             <div className="font-semibold">Trade reconciliation needed on this device</div>
             <div className="mt-1 text-[11px] text-amber-800">
-              Account metadata syncs across devices, but full trade history stays local for now. Re-sync or re-import on this device when needed.
+              Account metadata and normalized trade history sync across devices. If a sync/import fails, local cache remains available on this device.
             </div>
           </div>
         ) : null}
@@ -4898,10 +4980,19 @@ export default function App() {
     error: "",
     lastLoadedUserId: "",
   });
+  const [cloudTradeState, setCloudTradeState] = useState({
+    isLoading: false,
+    isSaving: false,
+    error: "",
+    lastLoadedUserId: "",
+  });
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
   const hasHydratedCloudProfileRef = useRef(false);
+  const hasHydratedCloudTradesRef = useRef(false);
   const lastSavedProfilePayloadRef = useRef("");
+  const lastSavedTradePayloadRef = useRef("");
   const profileSaveTimeoutRef = useRef(null);
+  const tradeSaveTimeoutRef = useRef(null);
   const { evaluatedTrades, propProgressByAccountId } = useMemo(
     () => evaluatePropRuleViolations(trades, profileState.accounts),
     [trades, profileState.accounts]
@@ -5492,6 +5583,158 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.tradeLedger) {
+      hasHydratedCloudTradesRef.current = false;
+      lastSavedTradePayloadRef.current = "";
+      if (tradeSaveTimeoutRef.current) {
+        window.clearTimeout(tradeSaveTimeoutRef.current);
+        tradeSaveTimeoutRef.current = null;
+      }
+      setCloudTradeState((prev) => ({
+        ...prev,
+        isLoading: false,
+        isSaving: false,
+        error: "",
+        lastLoadedUserId: "",
+      }));
+      return;
+    }
+
+    let cancelled = false;
+    const localTradesSnapshot = sanitizeTrades(readStoredAppState()?.trades);
+
+    setCloudTradeState((prev) => ({ ...prev, isLoading: true, error: "" }));
+
+    (async () => {
+      try {
+        const cloudRows = await supabase.tradeLedger.fetchByUserId({
+          userId: authUser.id,
+          accessToken: authSession.access_token,
+        });
+        if (cancelled) return;
+
+        const cloudTrades = sanitizeTrades(cloudRows.map(mapCloudRowToTrade));
+        const localByKey = new Map(localTradesSnapshot.map((trade) => [createTradeCloudDedupeKey(trade, authUser.id), trade]));
+        const cloudByKey = new Map(cloudTrades.map((trade) => [createTradeCloudDedupeKey(trade, authUser.id), trade]));
+        const localMissingFromCloud = localTradesSnapshot.filter((trade) => !cloudByKey.has(createTradeCloudDedupeKey(trade, authUser.id)));
+
+        let nextTrades = cloudTrades;
+        if (!cloudTrades.length && localTradesSnapshot.length) {
+          await supabase.tradeLedger.upsertBatch({
+            accessToken: authSession.access_token,
+            rows: localTradesSnapshot.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean),
+          });
+          if (cancelled) return;
+          nextTrades = localTradesSnapshot;
+        } else if (cloudTrades.length && localMissingFromCloud.length) {
+          await supabase.tradeLedger.upsertBatch({
+            accessToken: authSession.access_token,
+            rows: localMissingFromCloud.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean),
+          });
+          if (cancelled) return;
+          nextTrades = mergeTradesWithDedupe(cloudTrades, localMissingFromCloud);
+        } else if (!cloudTrades.length) {
+          nextTrades = [];
+        }
+
+        const mergedWithCurrentLocal = mergeTradesWithDedupe(nextTrades, Array.from(localByKey.values()));
+        const normalizedNext = sanitizeTrades(mergedWithCurrentLocal);
+        const payload = JSON.stringify(normalizedNext);
+        hasHydratedCloudTradesRef.current = true;
+        lastSavedTradePayloadRef.current = payload;
+        setTrades(normalizedNext);
+        setCloudTradeState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: "",
+          lastLoadedUserId: authUser.id,
+        }));
+      } catch {
+        if (cancelled) return;
+        hasHydratedCloudTradesRef.current = true;
+        const backupTrades = sanitizeTrades(readStoredAppState()?.trades);
+        lastSavedTradePayloadRef.current = JSON.stringify(backupTrades);
+        setTrades(backupTrades);
+        setCloudTradeState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: "Cloud trade ledger unavailable. Using local trade data.",
+          lastLoadedUserId: authUser.id,
+        }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.access_token, authUser?.id, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.tradeLedger) return;
+    if (!hasHydratedCloudTradesRef.current) return;
+    if (cloudTradeState.lastLoadedUserId !== authUser.id) return;
+    if (cloudTradeState.isLoading) return;
+
+    const sanitizedEvaluatedTrades = sanitizeTrades(evaluatedTrades);
+    const payload = JSON.stringify(sanitizedEvaluatedTrades);
+    if (payload === lastSavedTradePayloadRef.current) return;
+
+    if (tradeSaveTimeoutRef.current) {
+      window.clearTimeout(tradeSaveTimeoutRef.current);
+      tradeSaveTimeoutRef.current = null;
+    }
+
+    tradeSaveTimeoutRef.current = window.setTimeout(async () => {
+      setCloudTradeState((prev) => ({ ...prev, isSaving: true, error: "" }));
+      try {
+        const rows = sanitizedEvaluatedTrades.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean);
+        await supabase.tradeLedger.upsertBatch({
+          accessToken: authSession.access_token,
+          rows,
+        });
+        lastSavedTradePayloadRef.current = payload;
+        setCloudTradeState((prev) => ({ ...prev, isSaving: false, error: "" }));
+      } catch {
+        setCloudTradeState((prev) => ({
+          ...prev,
+          isSaving: false,
+          error: "Unable to sync trades right now. Local trade changes are still saved.",
+        }));
+      }
+    }, TRADE_CLOUD_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (tradeSaveTimeoutRef.current) {
+        window.clearTimeout(tradeSaveTimeoutRef.current);
+        tradeSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    authSession?.access_token,
+    authUser?.id,
+    cloudTradeState.isLoading,
+    cloudTradeState.lastLoadedUserId,
+    evaluatedTrades,
+    isAuthenticated,
+  ]);
+
+  useEffect(() => () => {
+    if (tradeSaveTimeoutRef.current) {
+      window.clearTimeout(tradeSaveTimeoutRef.current);
+      tradeSaveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const combinedCloudSyncState = useMemo(() => {
+    const errorMessage = [cloudProfileState.error, cloudTradeState.error].filter(Boolean).join(" ");
+    return {
+      isLoading: cloudProfileState.isLoading || cloudTradeState.isLoading,
+      isSaving: cloudProfileState.isSaving || cloudTradeState.isSaving,
+      error: errorMessage,
+    };
+  }, [cloudProfileState.error, cloudProfileState.isLoading, cloudProfileState.isSaving, cloudTradeState.error, cloudTradeState.isLoading, cloudTradeState.isSaving]);
+
   const screen =
     activeTab === "position" ? (
       <PositionScreen positionState={positionState} setPositionState={setPositionState} debugEnabled={debugEnabled} />
@@ -5526,7 +5769,7 @@ export default function App() {
           onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
           onImportCsvTrades={importCsvTradesForAccount}
           onSignOut={handleSignOut}
-          cloudSyncState={cloudProfileState}
+          cloudSyncState={combinedCloudSyncState}
           debugEnabled={debugEnabled}
         />
       ) : (
