@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
-  Brain,
+  Dna,
   Crown,
   Calculator,
   Eye,
@@ -52,7 +52,7 @@ const NAV_META = {
   position: { label: "Position", icon: Calculator },
   compound: { label: "Compound", icon: TrendingUp },
   share: { label: "Share", icon: Plus },
-  dashboard: { label: "Insights", icon: Brain },
+  dashboard: { label: "Insights", icon: Dna },
   journal: { label: "Profile", icon: Eye },
 };
 
