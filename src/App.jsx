@@ -751,17 +751,19 @@ function createInsightsPdfReport({
   return new Blob([pdf], { type: "application/pdf" });
 }
 
-function GlassCard({ children, className = "", padded = true, highlight = false }) {
+function GlassCard({ children, className = "", padded = true, highlight = false, transparent = false }) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] shadow-[0_16px_44px_rgba(139,157,193,0.16),0_4px_16px_rgba(166,180,209,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-[18px]",
-        highlight && "bg-[linear-gradient(180deg,rgba(233,241,255,0.68),rgba(255,255,255,0.26))]",
+        "relative overflow-hidden rounded-[28px]",
+        !transparent &&
+          "border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.24))] shadow-[0_16px_44px_rgba(139,157,193,0.16),0_4px_16px_rgba(166,180,209,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-[18px]",
+        !transparent && highlight && "bg-[linear-gradient(180deg,rgba(233,241,255,0.68),rgba(255,255,255,0.26))]",
         padded && "p-5",
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_36%)]" />
+      {!transparent ? <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_36%)]" /> : null}
       <div className="relative">{children}</div>
     </div>
   );
@@ -1485,7 +1487,7 @@ function ProjectionChart({
   };
 
   return (
-    <GlassCard className={cn("rounded-[28px] p-4 sm:rounded-[30px]", compact && "rounded-[24px] p-3")}>
+    <GlassCard transparent={blendBackground} className={cn("rounded-[28px] p-4 sm:rounded-[30px]", compact && "rounded-[24px] p-3")}>
       {!hideHeader ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
