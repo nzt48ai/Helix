@@ -8,6 +8,12 @@ Helix is a single-page trading helper app with five tabs: **Position**, **Compou
 npm install
 ```
 
+Create a local env file before running the app:
+
+```bash
+cp .env.example .env.local
+```
+
 ## Run locally
 
 ```bash
