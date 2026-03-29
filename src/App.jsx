@@ -42,17 +42,6 @@ import { getDefaultInstrumentShortcuts, getInstrumentBySymbol, searchInstruments
 import { triggerLightHaptic, triggerMediumHaptic } from "./haptics";
 import { PROP_FIRM_TEMPLATE_CONFIG } from "./accountTemplates";
 import { detectCsvFormat, getImportPresets, normalizeCsvRowsToTrades, parseCsvText } from "./csvImport";
-import {
-  clearTradovateOAuthParamsFromLocation,
-  consumePendingPropTradovateFlow,
-  createReturnToUrl,
-  disconnectTradovateSession,
-  fetchTradovateAccounts,
-  persistPendingPropTradovateFlow,
-  readTradovateOAuthResultFromLocation,
-  startTradovateOAuth,
-  syncTradovateTrades,
-} from "./tradovateConnection";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -380,57 +369,6 @@ function deriveTradeImportRange(trades = []) {
     from: new Date(Math.min(...timestamps)).toISOString(),
     to: new Date(Math.max(...timestamps)).toISOString(),
   };
-}
-
-function deriveTradovateTradeSide(providerTrade = {}) {
-  const normalized = String(providerTrade.side || providerTrade.action || providerTrade.direction || "")
-    .trim()
-    .toLowerCase();
-  if (["sell", "short", "s"].includes(normalized)) return "short";
-  if (["buy", "long", "b"].includes(normalized)) return "long";
-  return null;
-}
-
-function normalizeTradovateTrade(providerTrade, helixAccountId) {
-  if (!providerTrade || typeof providerTrade !== "object") return null;
-  const providerTradeIdCandidate = providerTrade.providerTradeId ?? providerTrade.id ?? providerTrade.fillPairId ?? providerTrade.tradeId ?? null;
-  const providerTradeId = providerTradeIdCandidate === null || providerTradeIdCandidate === undefined ? null : String(providerTradeIdCandidate).trim() || null;
-  const symbol = String(providerTrade.symbol || providerTrade.contractSymbol || providerTrade.instrument || "MNQ").trim().toUpperCase();
-  const openedAtCandidate = providerTrade.openedAt || providerTrade.entryTimestamp || providerTrade.entryTime || providerTrade.timestamp || null;
-  const closedAtCandidate = providerTrade.closedAt || providerTrade.exitTimestamp || providerTrade.exitTime || providerTrade.timestamp || openedAtCandidate || null;
-  const openedAtDate = openedAtCandidate ? new Date(openedAtCandidate) : null;
-  const closedAtDate = closedAtCandidate ? new Date(closedAtCandidate) : null;
-  const openedAt = openedAtDate && !Number.isNaN(openedAtDate.getTime()) ? openedAtDate.toISOString() : null;
-  const closedAt = closedAtDate && !Number.isNaN(closedAtDate.getTime()) ? closedAtDate.toISOString() : openedAt;
-  const timestamp = closedAt ? new Date(closedAt).getTime() : openedAt ? new Date(openedAt).getTime() : null;
-  const pnl = Number(providerTrade.pnl ?? providerTrade.realizedPnl ?? 0);
-  const commission = Number(providerTrade.commission ?? 0);
-  const fees = Number(providerTrade.fees ?? providerTrade.fee ?? 0);
-  const netPnl = Number.isFinite(Number(providerTrade.netPnl)) ? Number(providerTrade.netPnl) : (Number.isFinite(pnl) ? pnl - commission - fees : 0);
-
-  if (!Number.isFinite(timestamp)) return null;
-
-  return sanitizeTrade({
-    id: providerTradeId ? `tv-${helixAccountId}-${providerTradeId}` : `tv-${helixAccountId}-${buildStableTradeFingerprint(providerTrade)}`,
-    accountId: helixAccountId,
-    source: "tradovate",
-    providerTradeId,
-    instrument: symbol || "MNQ",
-    side: deriveTradovateTradeSide(providerTrade),
-    entryPrice: Number(providerTrade.entryPrice ?? providerTrade.avgEntryPrice ?? providerTrade.price ?? 0),
-    exitPrice: Number(providerTrade.exitPrice ?? providerTrade.avgExitPrice ?? providerTrade.price ?? 0),
-    quantity: Number(providerTrade.quantity ?? providerTrade.qty ?? providerTrade.contracts ?? 0),
-    openedAt,
-    closedAt,
-    timestamp,
-    pnl: Number.isFinite(pnl) ? pnl : 0,
-    commission: Number.isFinite(commission) ? commission : 0,
-    fees: Number.isFinite(fees) ? fees : 0,
-    netPnl: Number.isFinite(netPnl) ? netPnl : 0,
-    tradeType: "live",
-    ruleViolation: false,
-    ruleViolationReason: null,
-  });
 }
 
 function mergeTradesWithDedupe(existingTrades = [], incomingTrades = []) {
@@ -2550,7 +2488,6 @@ function DashboardScreen({
   onSelectedAccountIdsChange,
   onIncludeUnassignedChange,
   onTradeTypeFilterChange,
-  onSaveTrade,
   debugEnabled = false,
 }) {
   const fallbackSnapshot = createFallbackDashboardSnapshot(formatCurrency(0));
@@ -2572,28 +2509,7 @@ function DashboardScreen({
     });
     return map;
   }, [accounts]);
-  const [tradeForm, setTradeForm] = useState(() => {
-    const firstAccountId = accounts[0]?.id || "";
-    return {
-      pnl: "",
-      accountId: firstAccountId,
-      rMultiple: "",
-      tradeType: DASHBOARD_TRADE_TYPE_FILTER_LIVE,
-    };
-  });
-  const [tradeFormError, setTradeFormError] = useState("");
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
-
-  useEffect(() => {
-    setTradeForm((prev) => {
-      const normalizedAccountId = normalizeTradeAccountId(prev.accountId, validAccountIds);
-      if (normalizedAccountId === prev.accountId) return prev;
-      return {
-        ...prev,
-        accountId: accounts[0]?.id || "",
-      };
-    });
-  }, [accounts, validAccountIds]);
 
   const normalizedTrades = useMemo(
     () =>
@@ -2723,28 +2639,6 @@ function DashboardScreen({
     })
     .join(" ");
   const hasMeaningfulContent = performanceSeries.length > 0 && sessionMix.length > 0 && Boolean(activeSnapshot.accountBalance);
-  const submitTrade = (event) => {
-    event.preventDefault();
-    const parsedPnl = Number(tradeForm.pnl);
-    if (!Number.isFinite(parsedPnl) || parsedPnl === 0) {
-      setTradeFormError("Enter a valid non-zero P/L.");
-      return;
-    }
-    const accountId = normalizeTradeAccountId(tradeForm.accountId, validAccountIds);
-    const parsedRMultiple = tradeForm.rMultiple === "" ? null : Number(tradeForm.rMultiple);
-    onSaveTrade({
-      id: createTradeId(),
-      timestamp: Date.now(),
-      pnl: parsedPnl,
-      instrument: activeSnapshot.instrument,
-      accountId,
-      rMultiple: Number.isFinite(parsedRMultiple) ? parsedRMultiple : null,
-      tradeType: tradeForm.tradeType === DASHBOARD_TRADE_TYPE_FILTER_PAPER ? DASHBOARD_TRADE_TYPE_FILTER_PAPER : DASHBOARD_TRADE_TYPE_FILTER_LIVE,
-    });
-    setTradeForm((prev) => ({ ...prev, pnl: "", rMultiple: "" }));
-    setTradeFormError("");
-  };
-
   return (
     <div className="space-y-4 pb-4">
       <DebugRenderMarker enabled={debugEnabled} markerText="DASHBOARD SCREEN" />
@@ -2811,67 +2705,9 @@ function DashboardScreen({
         </div>
       </GlassCard>
       <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
-        <TinyLabel>Save Trade</TinyLabel>
-        <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Log a result to Insights</div>
-        <form onSubmit={submitTrade} className="mt-3 space-y-3">
-          <label className="block">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">P/L</div>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={tradeForm.pnl}
-              onChange={(event) => setTradeForm((prev) => ({ ...prev, pnl: event.target.value }))}
-              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-              placeholder="e.g. 250 or -120"
-            />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account</div>
-            <select
-              value={tradeForm.accountId}
-              onChange={(event) => setTradeForm((prev) => ({ ...prev, accountId: event.target.value }))}
-              className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
-            >
-              <option value="">Unassigned</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">R Multiple</div>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={tradeForm.rMultiple}
-                onChange={(event) => setTradeForm((prev) => ({ ...prev, rMultiple: event.target.value }))}
-                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none placeholder:text-slate-400 focus:border-blue-200"
-                placeholder="e.g. 1.5"
-              />
-            </label>
-            <label className="block">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Trade Type</div>
-              <select
-                value={tradeForm.tradeType}
-                onChange={(event) => setTradeForm((prev) => ({ ...prev, tradeType: event.target.value }))}
-                className="w-full rounded-[16px] border border-white/75 bg-white/50 px-3 py-2.5 text-[14px] font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none focus:border-blue-200"
-              >
-                <option value={DASHBOARD_TRADE_TYPE_FILTER_LIVE}>Live</option>
-                <option value={DASHBOARD_TRADE_TYPE_FILTER_PAPER}>Paper</option>
-              </select>
-            </label>
-          </div>
-          {tradeFormError ? <div className="text-[12px] text-rose-500">{tradeFormError}</div> : null}
-          <button
-            type="submit"
-            className="w-full rounded-[18px] border border-white/70 bg-white/36 px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_8px_20px_rgba(140,158,194,0.10),inset_0_1px_0_rgba(255,255,255,0.94)] transition-colors hover:bg-white/46"
-          >
-            Save trade
-          </button>
-        </form>
+        <TinyLabel>Trade Data</TinyLabel>
+        <div className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Insights are sourced from CSV imports</div>
+        <div className="mt-2 text-[12px] text-slate-500">Upload trades from Profile → Accounts → Import CSV to populate Insights.</div>
       </GlassCard>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricRowCard label="Account Balance" value={activeSnapshot.accountBalance} />
@@ -3400,7 +3236,6 @@ function JournalScreen({
   localTrades = [],
   onProfileStateChange,
   onResetPreferences,
-  onSyncTradovateAccountTrades,
   onImportCsvTrades,
   debugEnabled = false,
 }) {
@@ -3411,8 +3246,6 @@ function JournalScreen({
   const [accountFlowNotice, setAccountFlowNotice] = useState("");
   const [selectedPropFirmId, setSelectedPropFirmId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [tradovateAccounts, setTradovateAccounts] = useState([]);
-  const [isTradovateBusy, setIsTradovateBusy] = useState(false);
   const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
   const [csvImportState, setCsvImportState] = useState({
     accountId: "",
@@ -3466,8 +3299,6 @@ function JournalScreen({
     setAccountFlowStep(1);
     setSelectedPropFirmId("");
     setSelectedTemplateId("");
-    setTradovateAccounts([]);
-    setIsTradovateBusy(false);
     setAccountFormError("");
     setAccountFlowNotice("");
   }, []);
@@ -3613,91 +3444,6 @@ function JournalScreen({
     [selectedPropFirmId]
   );
 
-  const loadTradovateAccounts = useCallback(async () => {
-    setIsTradovateBusy(true);
-    try {
-      const response = await fetchTradovateAccounts();
-      setTradovateAccounts(Array.isArray(response.accounts) ? response.accounts : []);
-      setAccountForm((prev) => ({ ...prev, tradovateSessionId: "connected" }));
-      setAccountFlowNotice("Tradovate connected. Select an account to continue.");
-      setAccountFormError("");
-    } catch (error) {
-      setAccountFormError(error.message || "Unable to load Tradovate accounts.");
-      setTradovateAccounts([]);
-    } finally {
-      setIsTradovateBusy(false);
-    }
-  }, []);
-
-  const startTradovateConnection = useCallback(async () => {
-    if (isTradovateBusy) return;
-    setIsTradovateBusy(true);
-    setAccountFormError("");
-    setAccountFlowNotice("");
-
-    try {
-      persistPendingPropTradovateFlow({
-        isAddAccountOpen: true,
-        accountFlowStep: 5,
-        selectedPropFirmId,
-        selectedTemplateId,
-        accountForm,
-      });
-      const { authorizeUrl } = await startTradovateOAuth(createReturnToUrl());
-      if (!authorizeUrl) throw new Error("Missing Tradovate authorization URL.");
-      window.location.assign(authorizeUrl);
-    } catch (error) {
-      setAccountFormError(error.message || "Unable to start Tradovate connection.");
-      setIsTradovateBusy(false);
-    }
-  }, [accountForm, isTradovateBusy, selectedPropFirmId, selectedTemplateId]);
-
-  const handleDisconnectTradovate = useCallback(async () => {
-    const sessionId = accountForm.tradovateSessionId;
-    if (!sessionId) return;
-    setIsTradovateBusy(true);
-    try {
-      await disconnectTradovateSession();
-    } catch {
-      // Best effort disconnect for in-memory session cleanup.
-    } finally {
-      setAccountForm((prev) => ({
-        ...prev,
-        tradovateSessionId: "",
-        linkedProviderAccountId: "",
-        linkedProviderAccountName: "",
-      }));
-      setTradovateAccounts([]);
-      setIsTradovateBusy(false);
-      setAccountFlowNotice("Tradovate disconnected.");
-    }
-  }, [accountForm.tradovateSessionId]);
-
-  useEffect(() => {
-    const oauthResult = readTradovateOAuthResultFromLocation();
-    if (!oauthResult) return;
-
-    const pendingFlow = consumePendingPropTradovateFlow();
-    if (pendingFlow?.isAddAccountOpen) {
-      setIsAddAccountOpen(true);
-      setAccountFlowStep(pendingFlow.accountFlowStep || 5);
-      setSelectedPropFirmId(pendingFlow.selectedPropFirmId || "");
-      setSelectedTemplateId(pendingFlow.selectedTemplateId || "");
-      setAccountForm((prev) => ({ ...prev, ...(pendingFlow.accountForm || {}) }));
-    }
-
-    if (oauthResult.status === "success") {
-      setIsAddAccountOpen(true);
-      setAccountFlowStep(6);
-      loadTradovateAccounts();
-    } else if (oauthResult.status === "error") {
-      setIsAddAccountOpen(true);
-      setAccountFlowStep(5);
-      setAccountFormError(`Tradovate connection failed: ${oauthResult.error || "Unknown error"}.`);
-    }
-
-    clearTradovateOAuthParamsFromLocation();
-  }, [loadTradovateAccounts]);
 
   const buildValidatedAccount = useCallback(() => {
     const type = normalizeAccountType(accountForm.type);
@@ -3714,8 +3460,6 @@ function JournalScreen({
     const profitTarget = Number(accountForm.profitTarget);
     const status = String(accountForm.status || "").trim().toLowerCase();
     const connectionMethod = String(accountForm.connectionMethod || "").trim();
-    const linkedProviderAccountId = String(accountForm.linkedProviderAccountId || "").trim();
-    const linkedProviderAccountName = String(accountForm.linkedProviderAccountName || "").trim();
 
     if (!ACCOUNT_SOURCE_OPTIONS.some((item) => normalizeAccountType(item.value) === type)) {
       setAccountFormError("Please choose Personal, Prop, or Helix Trade.");
@@ -3757,14 +3501,6 @@ function JournalScreen({
       setAccountFormError("Prop status must be active, breached, passed, or funded.");
       return null;
     }
-    if (isProp && connectionMethod === "tradovate" && !accountForm.tradovateSessionId) {
-      setAccountFormError("Connect Tradovate before attaching this account.");
-      return null;
-    }
-    if (isProp && connectionMethod === "tradovate" && !linkedProviderAccountId) {
-      setAccountFormError("Select a Tradovate account to link.");
-      return null;
-    }
 
     setAccountFormError("");
     return {
@@ -3778,25 +3514,9 @@ function JournalScreen({
       maxDrawdown: isProp ? maxDrawdown : null,
       profitTarget: isProp ? profitTarget : null,
       status: isProp ? status : null,
-      connectionMethod: isProp ? connectionMethod || "manual" : null,
-      linkedProvider:
-        isProp && connectionMethod === "tradovate"
-          ? {
-              provider: "tradovate",
-              providerAccountId: linkedProviderAccountId,
-              providerAccountName: linkedProviderAccountName || linkedProviderAccountId,
-              connectionStatus: "connected",
-            }
-          : null,
-      connection:
-        isProp && connectionMethod === "tradovate"
-          ? {
-              provider: "tradovate",
-              providerAccountId: linkedProviderAccountId,
-              providerAccountName: linkedProviderAccountName || linkedProviderAccountId,
-              connectionStatus: "connected",
-            }
-          : null,
+      connectionMethod: isProp ? connectionMethod || "csv" : null,
+      linkedProvider: null,
+      connection: null,
       linkedSource: isHelixTrade ? "helixTrade" : null,
       isHelixLinked: isHelixTrade,
     };
@@ -3888,38 +3608,6 @@ function JournalScreen({
     [onProfileStateChange]
   );
 
-  const handleSyncTrades = useCallback(
-    async (account) => {
-      if (!account?.id || typeof onSyncTradovateAccountTrades !== "function") return;
-      const accountId = account.id;
-      setSyncStateByAccountId((prev) => ({
-        ...prev,
-        [accountId]: { status: "syncing", message: "Syncing trades…" },
-      }));
-      try {
-        const result = await onSyncTradovateAccountTrades(account);
-        const importedCount = Number(result?.importedCount || 0);
-        const dedupedCount = Number(result?.dedupedCount || 0);
-        const summary = `Imported ${importedCount} trade${importedCount === 1 ? "" : "s"}${dedupedCount > 0 ? ` · ${dedupedCount} duplicate${dedupedCount === 1 ? "" : "s"} skipped` : ""}.`;
-        setSyncStateByAccountId((prev) => ({
-          ...prev,
-          [accountId]: { status: "success", message: summary, syncedAt: Date.now() },
-        }));
-      } catch (error) {
-        setSyncStateByAccountId((prev) => ({
-          ...prev,
-          [accountId]: { status: "error", message: error?.message || "Sync failed." },
-        }));
-      }
-    },
-    [onSyncTradovateAccountTrades]
-  );
-
-  const openCsvPickerForAccount = useCallback((accountId) => {
-    const input = csvFileInputByAccountIdRef.current[accountId];
-    if (input && typeof input.click === "function") input.click();
-  }, []);
-
 
   return (
     <div className="space-y-4 pb-4">
@@ -3969,21 +3657,6 @@ function JournalScreen({
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
-              const providerConnection = account?.connection || account?.linkedProvider || null;
-              const isLinkedTradovate =
-                account?.type === "prop" &&
-                providerConnection?.provider === "tradovate" &&
-                providerConnection?.providerAccountId &&
-                providerConnection?.connectionStatus === "connected";
-              const syncState = syncStateByAccountId[account.id] || null;
-              const lastSyncAt = account?.tradeSync?.lastSyncAt ? new Date(account.tradeSync.lastSyncAt) : null;
-              const lastSyncLabel =
-                lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
-                  ? `Last sync: ${lastSyncAt.toLocaleDateString("en-US")} ${lastSyncAt.toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}`
-                  : null;
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -4004,21 +3677,6 @@ function JournalScreen({
                     Delete
                   </button>
                 </div>
-                {isLinkedTradovate ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSyncTrades(account)}
-                      disabled={syncState?.status === "syncing"}
-                      className="rounded-[11px] border border-blue-200/80 bg-blue-50/70 px-2.5 py-1 text-[11px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {syncState?.status === "syncing" ? "Syncing…" : "Sync Trades"}
-                    </button>
-                    <div className="text-[11px] text-slate-500">
-                      {syncState?.message || account?.tradeSync?.lastSyncMessage || lastSyncLabel || "Manual sync required to import trades."}
-                    </div>
-                  </div>
-                ) : null}
                 <div className="mt-2 space-y-2">
                   <label className="inline-flex cursor-pointer items-center rounded-[11px] border border-white/70 bg-white/55 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white/75">
                     Import CSV
@@ -4233,18 +3891,15 @@ function JournalScreen({
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 4 ? (
                 <div className="space-y-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4 · Connection method</div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "tradovate"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "tradovate" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Connect Tradovate account</button>
-                    <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className={cn("rounded-[12px] border px-2.5 py-2 text-[11px] font-semibold", accountForm.connectionMethod === "csv" ? "border-blue-200 bg-blue-50/70 text-slate-700" : "border-white/70 bg-white/55 text-slate-700")}>Upload CSV</button>
-                  </div>
-                  <div className="text-[11px] text-slate-500">Choose how this prop account will be attached.</div>
+                  <button type="button" onClick={() => { updateAccountFormField("connectionMethod", "csv"); setAccountFlowStep(5); }} className="w-full rounded-[12px] border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-[11px] font-semibold text-slate-700">Upload CSV</button>
+                  <div className="text-[11px] text-slate-500">CSV import is the only supported trade source for Insights.</div>
                 </div>
               ) : null}
 
               {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 5 ? (
                 <div className="space-y-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {accountForm.connectionMethod === "tradovate" ? "Step 5 · Connect Tradovate" : "Step 5 · Confirm prop account"}
+                    Step 5 · Confirm prop account
                   </div>
                   <label className="block">
                     <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Account name</div>
@@ -4256,47 +3911,6 @@ function JournalScreen({
                       placeholder="PA 50K"
                     />
                   </label>
-                  {accountForm.connectionMethod === "tradovate" ? (
-                    <div className="space-y-2 rounded-[14px] border border-white/70 bg-white/40 p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tradovate link</div>
-                        {accountForm.tradovateSessionId ? (
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                            Connected
-                          </span>
-                        ) : null}
-                      </div>
-                      {!accountForm.tradovateSessionId ? (
-                        <button
-                          type="button"
-                          onClick={startTradovateConnection}
-                          disabled={isTradovateBusy}
-                          className="w-full rounded-[12px] border border-white/70 bg-white/65 px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isTradovateBusy ? "Redirecting to Tradovate..." : "Connect Tradovate"}
-                        </button>
-                      ) : (
-                        <div className="space-y-2">
-                          {isTradovateBusy ? <div className="text-[11px] text-slate-500">Loading linked session…</div> : null}
-                          <button
-                            type="button"
-                            onClick={() => setAccountFlowStep(6)}
-                            disabled={isTradovateBusy}
-                            className="w-full rounded-[12px] border border-white/70 bg-white/65 px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Continue to account picker
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDisconnectTradovate}
-                            className="w-full rounded-[12px] border border-white/70 bg-white/55 px-3 py-1.5 text-[11px] font-semibold text-slate-600"
-                          >
-                            Disconnect Tradovate
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
                   {accountForm.connectionMethod === "csv" ? (
                     <div className="space-y-2 rounded-[14px] border border-white/70 bg-white/40 px-3 py-2 text-[11px] text-slate-500">
                       <div>Upload a CSV export. Helix auto-detects supported formats and previews before import.</div>
@@ -4344,59 +3958,16 @@ function JournalScreen({
                       ) : null}
                     </div>
                   ) : null}
-                  {accountForm.connectionMethod !== "tradovate" ? (
-                    <button
-                      type="button"
-                      onClick={createAccountFromFlow}
-                      className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70"
-                    >
-                      Attach Prop Account
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {normalizeAccountType(accountForm.type) === "prop" && accountFlowStep === 6 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Step 6 · Pick Tradovate account</div>
-                  <div className="rounded-[14px] border border-white/70 bg-white/40 p-2.5">
-                    <div className="text-[11px] text-slate-500">Select the Tradovate account to link.</div>
-                    {isTradovateBusy ? <div className="mt-2 text-[11px] text-slate-500">Loading accounts…</div> : null}
-                    {!isTradovateBusy && !tradovateAccounts.length ? (
-                      <div className="mt-2 text-[11px] text-slate-500">No Tradovate accounts were returned for this session.</div>
-                    ) : null}
-                    {tradovateAccounts.length ? (
-                      <div className="mt-2 grid max-h-[30dvh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
-                        {tradovateAccounts.map((item) => (
-                          <button
-                            key={item.providerAccountId}
-                            type="button"
-                            onClick={() => {
-                              updateAccountFormField("linkedProviderAccountId", item.providerAccountId);
-                              updateAccountFormField("linkedProviderAccountName", item.providerAccountName);
-                              if (!String(accountForm.name || "").trim()) {
-                                updateAccountFormField("name", item.providerAccountName);
-                              }
-                            }}
-                            className={cn(
-                              "rounded-[12px] border px-2.5 py-2 text-left text-[11px] font-semibold",
-                              accountForm.linkedProviderAccountId === item.providerAccountId
-                                ? "border-blue-200 bg-blue-50/70 text-slate-700"
-                                : "border-white/70 bg-white/55 text-slate-700"
-                            )}
-                          >
-                            <div>{item.providerAccountName}</div>
-                            <div className="mt-0.5 text-[10px] font-medium text-slate-500">ID: {item.providerAccountId}</div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <button type="button" onClick={createAccountFromFlow} className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70">
+                  <button
+                    type="button"
+                    onClick={createAccountFromFlow}
+                    className="w-full rounded-[14px] border border-white/70 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-white/70"
+                  >
                     Attach Prop Account
                   </button>
                 </div>
               ) : null}
+
 
               {normalizeAccountType(accountForm.type) === "helixTrade" && accountFlowStep === 2 ? (
                 <div className="space-y-3">
@@ -4651,103 +4222,6 @@ export default function App() {
     setTrades([]);
   };
 
-  const syncTradovateTradesForAccount = useCallback(
-    async (account) => {
-      const providerConnection = account?.connection || account?.linkedProvider || null;
-      if (
-        !account?.id ||
-        account?.type !== "prop" ||
-        providerConnection?.provider !== "tradovate" ||
-        !providerConnection?.providerAccountId
-      ) {
-        throw new Error("Only linked Tradovate prop accounts can be synced.");
-      }
-
-      try {
-        const response = await syncTradovateTrades({
-          helixAccountId: account.id,
-          providerAccountId: providerConnection.providerAccountId,
-        });
-        const providerTrades = Array.isArray(response?.trades) ? response.trades : [];
-        const normalizedTrades = providerTrades
-          .map((trade) => normalizeTradovateTrade(trade, account.id))
-          .filter(Boolean);
-
-        const existingTrades = sanitizeTrades(trades);
-        const existingKeySet = new Set(existingTrades.map((trade) => buildStableTradeFingerprint(trade)));
-        const dedupedIncoming = normalizedTrades.filter((trade) => !existingKeySet.has(buildStableTradeFingerprint(trade)));
-        const mergedTrades = mergeTradesWithDedupe(existingTrades, dedupedIncoming);
-        setTrades(mergedTrades);
-        const syncRange = deriveTradeImportRange(normalizedTrades);
-
-        const nowIso = new Date().toISOString();
-        setProfileState((prev) =>
-          sanitizeProfileState({
-            ...prev,
-            accounts: (prev?.accounts || []).map((item) =>
-              item.id === account.id
-                ? {
-                    ...item,
-                    tradeSync: {
-                      ...(item.tradeSync || {}),
-                      lastSyncAt: nowIso,
-                      lastSyncStatus: "success",
-                      lastSyncCount: dedupedIncoming.length,
-                      lastSyncError: null,
-                      lastSyncMessage: `Imported ${dedupedIncoming.length} trade${dedupedIncoming.length === 1 ? "" : "s"}.`,
-                      lastImportSource: "tradovate",
-                      lastImportAt: nowIso,
-                      lastImportStatus: "success",
-                      lastImportCount: dedupedIncoming.length,
-                      lastImportError: null,
-                      lastImportRangeFrom: syncRange.from,
-                      lastImportRangeTo: syncRange.to,
-                      lastSeenProviderCursor:
-                        typeof response?.cursor === "string" && response.cursor.trim() ? response.cursor.trim() : item?.tradeSync?.lastSeenProviderCursor || null,
-                    },
-                  }
-                : item
-            ),
-          })
-        );
-
-        return {
-          importedCount: dedupedIncoming.length,
-          dedupedCount: Math.max(0, normalizedTrades.length - dedupedIncoming.length),
-        };
-      } catch (error) {
-        const nowIso = new Date().toISOString();
-        setProfileState((prev) =>
-          sanitizeProfileState({
-            ...prev,
-            accounts: (prev?.accounts || []).map((item) =>
-              item.id === account.id
-                ? {
-                    ...item,
-                    tradeSync: {
-                      ...(item.tradeSync || {}),
-                      lastSyncAt: nowIso,
-                      lastSyncStatus: "error",
-                      lastSyncCount: 0,
-                      lastSyncError: error?.message || "Sync failed.",
-                      lastSyncMessage: error?.message || "Sync failed.",
-                      lastImportSource: "tradovate",
-                      lastImportAt: nowIso,
-                      lastImportStatus: "error",
-                      lastImportCount: 0,
-                      lastImportError: error?.message || "Sync failed.",
-                    },
-                  }
-                : item
-            ),
-          })
-        );
-        throw error;
-      }
-    },
-    [trades]
-  );
-
   const importCsvTradesForAccount = useCallback(
     async ({ accountId, trades: incomingTrades }) => {
       if (!accountId || !Array.isArray(incomingTrades) || !incomingTrades.length) {
@@ -4816,6 +4290,8 @@ export default function App() {
     },
     [trades]
   );
+
+  const csvTrades = useMemo(() => trades.filter((trade) => String(trade?.source || "").toLowerCase() === "csv"), [trades]);
 
   const dashboardSnapshot = useMemo(() => {
     const accountBalanceNumber = Math.max(0, parseNumberString(positionState.accountBalance || "0"));
@@ -5000,7 +4476,7 @@ export default function App() {
         dashboardSnapshot={dashboardSnapshot}
         range={viewState.dashboardRange}
         onRangeChange={(dashboardRange) => setViewState((prev) => ({ ...prev, dashboardRange }))}
-        trades={evaluatedTrades}
+        trades={csvTrades}
         accounts={accountsWithPropProgress}
         accountFilterMode={viewState.dashboardAccountFilterMode}
         selectedAccountIds={viewState.dashboardSelectedAccountIds}
@@ -5010,16 +4486,14 @@ export default function App() {
         onSelectedAccountIdsChange={(dashboardSelectedAccountIds) => setViewState((prev) => ({ ...prev, dashboardSelectedAccountIds }))}
         onIncludeUnassignedChange={(dashboardIncludeUnassigned) => setViewState((prev) => ({ ...prev, dashboardIncludeUnassigned }))}
         onTradeTypeFilterChange={(dashboardTradeTypeFilter) => setViewState((prev) => ({ ...prev, dashboardTradeTypeFilter }))}
-        onSaveTrade={(trade) => setTrades((prev) => [sanitizeTrade(trade), ...prev].filter(Boolean))}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
       <JournalScreen
         profileState={profileState}
-        localTrades={trades}
+        localTrades={csvTrades}
         onProfileStateChange={setProfileState}
         onResetPreferences={resetPreferences}
-        onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
         onImportCsvTrades={importCsvTradesForAccount}
         debugEnabled={debugEnabled}
       />
