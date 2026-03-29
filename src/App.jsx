@@ -3511,11 +3511,19 @@ function BottomNav({ activeTab, onTabChange }) {
                 type="button"
                 className={cn(
                   "relative z-10 flex min-h-[42px] touch-manipulation flex-col items-center justify-center rounded-full px-2 py-2.5 text-center transition-colors duration-200 focus:outline-none",
-                  active ? "text-blue-600" : "text-slate-400/58 hover:text-slate-500/80"
+                  active ? "text-blue-600" : "text-slate-400/42 hover:text-slate-500/60"
                 )}
               >
                 <Icon className="relative z-10" size={17} strokeWidth={2.1} />
-                <span className={cn("relative z-10 mt-1 flex min-h-[10px] w-full items-center justify-center text-center font-semibold leading-[1] tracking-[-0.01em] opacity-[0.96]", key === "share" ? "text-[10px]" : "text-[8px]")}>{label}</span>
+                <span
+                  className={cn(
+                    "relative z-10 mt-1 flex min-h-[10px] w-full items-center justify-center text-center leading-[1] tracking-[-0.01em] transition-colors duration-200",
+                    active ? "font-semibold text-blue-600/92" : "font-medium text-slate-400/52",
+                    key === "share" ? "text-[10px]" : "text-[8px]"
+                  )}
+                >
+                  {label}
+                </span>
               </motion.button>
             );
           })}
