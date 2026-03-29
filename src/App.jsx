@@ -872,15 +872,15 @@ function SharePortraitCard({
 
         <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
 
-        <div className="mt-6 grid w-full grid-cols-3 gap-4">
+        <div className="mt-6 grid w-full grid-cols-3 gap-4.5">
           {[
             { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
             { label: "STOP", value: stopValue, tone: "text-rose-400" },
             { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
           ].map((item) => (
-            <div key={item.label} className="min-w-0 rounded-[20px] border border-white/55 bg-white/46 p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.54)] flex flex-col items-center justify-center">
+            <div key={item.label} className="min-w-0 rounded-[20px] bg-white/52 px-4 py-[15px] text-center shadow-[0_8px_20px_rgba(148,163,184,0.09),inset_0_1px_0_rgba(255,255,255,0.72)] flex flex-col items-center justify-center">
               <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
-              <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+              <div className={cn("mt-3.5 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
                 {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
             </div>
@@ -889,7 +889,7 @@ function SharePortraitCard({
 
         {/* Replay and Journal chart hooks intentionally deferred until their dedicated data sources are defined. */}
         {shareType === "SETUP" && setupProjectionChart?.isReady ? (
-          <div className="mt-4">
+          <div className="mt-5">
             <ProjectionChart
               points={setupProjectionChart.points}
               bandUpper={setupProjectionChart.bandUpper}
@@ -905,7 +905,7 @@ function SharePortraitCard({
           </div>
         ) : null}
 
-        <div className="mt-5 min-w-0 text-center">
+        <div className="mt-6 min-w-0 text-center">
           <div
             className={cn(
               "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
@@ -918,19 +918,19 @@ function SharePortraitCard({
               heroMetric
             )}
           </div>
-          {hasDirectionalStoryLine ? <div className="mt-3 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
+          {hasDirectionalStoryLine ? <div className="mt-3.5 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
         </div>
 
         <div
           className={cn(
-            hasDirectionalStoryLine ? "mt-5 grid gap-4" : "mt-4 grid gap-4",
+            hasDirectionalStoryLine ? "mt-6 grid gap-4.5" : "mt-5 grid gap-4.5",
             secondaryMetrics.length === 3 ? "grid-cols-3" : secondaryMetrics.length === 2 ? "grid-cols-2" : "grid-cols-2"
           )}
         >
           {secondaryMetrics.map((metric) => (
-            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] border border-white/50 bg-white/42 p-4">
+            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] bg-white/48 px-4 py-[15px] shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]">
               <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
-              <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">
+              <div className="mt-3.5 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">
                 {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
                   <AnimatedFormattedNumber value={metric.animatedNumber} formatter={metric.formatter} />
                 ) : (
@@ -1473,7 +1473,7 @@ function ProjectionChart({
         className={cn(
           "overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.14))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55),inset_0_-12px_20px_rgba(148,163,184,0.05)]",
           hideHeader ? "mt-0" : "mt-4",
-          compact && "rounded-[20px] p-2.5"
+          compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.2))] p-2.5 shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]"
         )}
       >
         <div
