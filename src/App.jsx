@@ -716,6 +716,81 @@ function IdentityAvatar({ identity }) {
   );
 }
 
+function clampValue(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function createSharePathModel({ shareType, directionLabel, entryValue, stopValue, targetValue, replayResultValue = 0 }) {
+  const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
+  const isShort = normalizedDirection === "SHORT";
+  const safeEntry = Number.isFinite(entryValue) ? entryValue : 0;
+  const safeStop = Number.isFinite(stopValue) ? stopValue : safeEntry;
+  const safeTarget = Number.isFinite(targetValue) ? targetValue : safeEntry;
+  const priceRange = Math.abs(safeTarget - safeStop) || Math.max(Math.abs(safeEntry) * 0.003, 1);
+  const verticalPadding = priceRange * 0.28;
+  const domainMin = Math.min(safeStop, safeEntry, safeTarget) - verticalPadding;
+  const domainMax = Math.max(safeStop, safeEntry, safeTarget) + verticalPadding;
+  const domainSpan = Math.max(domainMax - domainMin, 1e-6);
+  const yForPrice = (price) => clampValue(84 - ((price - domainMin) / domainSpan) * 68, 12, 88);
+
+  const entryY = yForPrice(safeEntry);
+  const stopY = yForPrice(safeStop);
+  const targetY = yForPrice(safeTarget);
+  const setupDip = isShort ? priceRange * 0.09 : -priceRange * 0.09;
+  const setupMid = safeEntry + (safeTarget - safeEntry) * 0.54 + setupDip;
+  const replayNoiseSign = isShort ? -1 : 1;
+  const replayExit = safeEntry + (safeTarget - safeEntry) * 0.82;
+  const journalExitRaw = safeEntry + (safeTarget - safeEntry) * (replayResultValue >= 0 ? 0.68 : 0.28);
+  const journalExit = clampValue(journalExitRaw, Math.min(safeStop, safeTarget), Math.max(safeStop, safeTarget));
+  const exitY = yForPrice(journalExit);
+
+  const pointsByMode = {
+    SETUP: [
+      { x: 14, y: entryY },
+      { x: 30, y: yForPrice(safeEntry + (setupMid - safeEntry) * 0.45) },
+      { x: 46, y: yForPrice(setupMid) },
+      { x: 66, y: yForPrice(safeEntry + (safeTarget - safeEntry) * 0.9) },
+      { x: 84, y: targetY },
+    ],
+    REPLAY: [
+      { x: 14, y: entryY },
+      { x: 24, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.14) },
+      { x: 34, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.06) },
+      { x: 47, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.18) },
+      { x: 59, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.28) },
+      { x: 72, y: yForPrice(replayExit) },
+      { x: 84, y: yForPrice(safeEntry + (safeTarget - safeEntry) * 0.94) },
+    ],
+    JOURNAL: [
+      { x: 14, y: entryY },
+      { x: 26, y: yForPrice(safeEntry - replayNoiseSign * priceRange * 0.1) },
+      { x: 39, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.18) },
+      { x: 53, y: yForPrice(safeEntry + replayNoiseSign * priceRange * 0.08) },
+      { x: 68, y: yForPrice(journalExit + replayNoiseSign * priceRange * 0.03) },
+      { x: 84, y: exitY },
+    ],
+  };
+
+  const points = pointsByMode[shareType] || pointsByMode.SETUP;
+  const pathD = points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ");
+
+  return {
+    pathD,
+    points,
+    entryMarker: { x: points[0].x, y: points[0].y },
+    stopMarker: { x: 9, y: stopY },
+    targetMarker: { x: 9, y: targetY },
+    exitMarker: { x: points[points.length - 1].x, y: points[points.length - 1].y },
+    referenceLines: [
+      { id: "target", y: targetY, tone: "rgba(74,222,128,0.22)" },
+      { id: "entry", y: entryY, tone: "rgba(148,163,184,0.24)" },
+      { id: "stop", y: stopY, tone: "rgba(251,113,133,0.22)" },
+    ],
+  };
+}
+
 function SharePortraitCard({
   shareType,
   selectedInstrumentKey,
@@ -739,6 +814,7 @@ function SharePortraitCard({
   setupMissingMessage = "",
   identity,
   disableMotion = false,
+  replayResultValue = 0,
 }) {
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
@@ -762,29 +838,19 @@ function SharePortraitCard({
   const directionPillClassName = cn(
     getPremiumPillClassName(normalizedDirection)
   );
-  const chartTargetY = 22;
-  const chartEntryY = 50;
-  const chartStopY = 78;
-  const chartPathStartX = 26;
-  const chartPathEndX = 74;
-  const zoneLines = [
-    { label: "TARGET", y: chartTargetY, tone: "rgba(16,185,129,0.38)", value: targetValue },
-    { label: "ENTRY", y: chartEntryY, tone: "rgba(71,85,105,0.32)", value: entryValue },
-    { label: "STOP", y: chartStopY, tone: "rgba(244,63,94,0.36)", value: stopValue },
-  ];
-  const formatLevelValue = (value) =>
-    Number(value || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-  const setupProjectedCurve = `M ${chartPathStartX} ${chartEntryY} C 35 ${chartEntryY - 1.5}, 45 ${chartEntryY - 12}, 55 ${chartEntryY - 16} C 63 ${chartEntryY - 20}, 69 ${chartTargetY + 2}, ${chartPathEndX} ${chartTargetY}`;
-  const truePathCurve = isReplayCard
-    ? replayPathCurve
-    : setupProjectedCurve;
-  const replayMarkerKeyframes = { cx: [26, 34, 46, 56, 66, 74], cy: [50, 48, 58, 44, 34, 24] };
-  const setupMarkerPosition = { cx: chartPathEndX, cy: chartTargetY };
-  const journalCurve = "M 26 70 C 34 67, 40 60, 46 56 C 52 52, 57 57, 62 48 C 66 41, 70 33, 74 26";
-  const chartModeLabel = shareType === "SETUP" ? "PROJECTED PATH" : shareType === "REPLAY" ? "TRUE PATH" : "EQUITY CURVE";
+  const chartModel = useMemo(
+    () =>
+      createSharePathModel({
+        shareType,
+        directionLabel,
+        entryValue,
+        stopValue,
+        targetValue,
+        replayResultValue,
+      }),
+    [directionLabel, entryValue, replayResultValue, shareType, stopValue, targetValue]
+  );
+  const chartModeLabel = shareType === "SETUP" ? "PROJECTED PATH" : shareType === "REPLAY" ? "SIMULATED PATH" : "COMPLETED PATH";
   const pathEase = [0.23, 1, 0.32, 1];
   const hasDirectionalStoryLine = !isJournalCard && (normalizedDirection === "LONG" || normalizedDirection === "SHORT");
   const directionalStoryLine = hasDirectionalStoryLine
@@ -857,86 +923,41 @@ function SharePortraitCard({
             </defs>
             <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-bg)" />
             <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-focus)" />
-            {zoneLines.map((zone) => (
-              <g key={zone.label}>
-                <line x1="20" x2="80" y1={zone.y} y2={zone.y} stroke={zone.tone} strokeWidth="0.9" />
-                <text x="2" y={zone.y + 1.5} fill={zone.tone} fontSize="5.2" letterSpacing="0.68" fontWeight="600">
-                  {zone.label}
-                </text>
-                <text
-                  x="98"
-                  y={zone.y + 1.6}
-                  fill={zone.tone}
-                  fontSize="6.4"
-                  textAnchor="end"
-                  fontWeight="600"
-                  style={{ fontVariantNumeric: "tabular-nums" }}
-                >
-                  {formatLevelValue(zone.value)}
-                </text>
-              </g>
+            {chartModel.referenceLines.map((line) => (
+              <line key={line.id} x1="10" x2="90" y1={line.y} y2={line.y} stroke={line.tone} strokeWidth="0.85" />
             ))}
+            <motion.path
+              d={chartModel.pathD}
+              fill="none"
+              stroke="url(#share-chart-path)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 3.8, ease: pathEase, repeat: isReplayCard && !shouldReduce ? Infinity : 0, repeatDelay: 0.5 }}
+            />
+            <circle cx={chartModel.entryMarker.x} cy={chartModel.entryMarker.y} r="1.45" fill="rgba(226,232,240,0.95)" />
+            <circle cx={chartModel.stopMarker.x} cy={chartModel.stopMarker.y} r="1.35" fill="rgba(251,113,133,0.85)" />
+            <circle cx={chartModel.targetMarker.x} cy={chartModel.targetMarker.y} r="1.35" fill="rgba(74,222,128,0.85)" />
             {isJournalCard ? (
-              <motion.path
-                d={journalCurve}
-                fill="none"
-                stroke="url(#share-chart-path)"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 5.8, ease: pathEase, repeat: Infinity, repeatDelay: 0.35 }}
+              <>
+                <circle cx={chartModel.exitMarker.x} cy={chartModel.exitMarker.y} r="2" fill="rgba(237,248,255,0.98)" stroke="rgba(56,189,248,0.85)" strokeWidth="0.9" />
+                <circle cx={chartModel.exitMarker.x} cy={chartModel.exitMarker.y} r="3.25" fill="none" stroke="rgba(56,189,248,0.24)" strokeWidth="0.72" />
+              </>
+            ) : null}
+            {isReplayCard ? (
+              <motion.circle
+                r="1.9"
+                fill="rgba(237,248,255,0.96)"
+                stroke="rgba(126,211,252,0.96)"
+                strokeWidth="0.84"
+                animate={{
+                  cx: chartModel.points.map((point) => point.x),
+                  cy: chartModel.points.map((point) => point.y),
+                }}
+                transition={{ duration: 3.8, ease: pathEase, repeat: shouldReduce ? 0 : Infinity, repeatDelay: 0.5 }}
               />
-            ) : (
-              <>
-                <motion.path
-                  d={truePathCurve}
-                  fill="none"
-                  stroke="url(#share-chart-path)"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 5.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
-                />
-                {!isReplayCard ? (
-                  <path
-                    d={`M ${chartPathEndX} ${chartTargetY} C 77 ${chartTargetY - 1}, 79 ${chartTargetY - 0.4}, 81 ${chartTargetY - 0.2}`}
-                    fill="none"
-                    stroke="url(#share-chart-path)"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeDasharray="1.6 2.2"
-                    opacity="0.6"
-                  />
-                ) : null}
-                <motion.circle
-                  cx={isReplayCard ? 26 : setupMarkerPosition.cx}
-                  cy={isReplayCard ? 50 : setupMarkerPosition.cy}
-                  r="2.1"
-                  fill="rgba(237,248,255,0.96)"
-                  stroke="rgba(126,211,252,0.96)"
-                  strokeWidth="0.9"
-                  animate={isReplayCard ? replayMarkerKeyframes : undefined}
-                  transition={{ duration: 5.8, ease: pathEase, repeat: isReplayCard ? Infinity : 0, repeatDelay: 0.35 }}
-                />
-                <circle
-                  cx={isReplayCard ? 26 : setupMarkerPosition.cx}
-                  cy={isReplayCard ? 50 : setupMarkerPosition.cy}
-                  r="3.2"
-                  fill="none"
-                  stroke="rgba(125,211,252,0.35)"
-                  strokeWidth="0.75"
-                />
-              </>
-            )}
-            {isJournalCard ? (
-              <>
-                <circle cx="74" cy="26" r="2.1" fill="rgba(237,248,255,0.96)" stroke="rgba(126,211,252,0.96)" strokeWidth="0.9" />
-                <circle cx="74" cy="26" r="3.2" fill="none" stroke="rgba(125,211,252,0.35)" strokeWidth="0.75" />
-              </>
             ) : null}
           </svg>
         </div>
@@ -3414,6 +3435,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion={false}
+            replayResultValue={replayResult}
           />
         </div>
         <SegmentedControl
@@ -3465,6 +3487,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion
+            replayResultValue={replayResult}
           />
         </div>
       </div>
