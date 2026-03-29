@@ -11,8 +11,6 @@ import {
   Sparkles,
   TrendingUp,
   X,
-  Lock,
-  LogOut,
 } from "lucide-react";
 import {
   COMPOUND_DEFAULTS,
@@ -55,7 +53,6 @@ import {
   startTradovateOAuth,
   syncTradovateTrades,
 } from "./tradovateConnection";
-import { isAuthConfigured, supabase } from "./supabaseAuth";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -114,11 +111,6 @@ const DASHBOARD_TRADE_TYPE_FILTER_PAPER = "paper";
 const UNASSIGNED_ACCOUNT_GROUP_ID = "__unassigned__";
 const RULE_REASON_DAILY_LOSS = "Daily loss limit exceeded";
 const RULE_REASON_MAX_DRAWDOWN = "Max drawdown exceeded";
-const PROFILE_LOCAL_BACKUP_STORAGE_KEY = "helix.profile.settings.local-backup.v1";
-const PROFILE_CLOUD_SAVE_DEBOUNCE_MS = 800;
-const TRADE_CLOUD_SAVE_DEBOUNCE_MS = 600;
-const RECONCILIATION_DISMISS_STORAGE_KEY = "helix.reconciliation.dismiss.v1";
-const RECONCILIATION_REMIND_LATER_MS = 1000 * 60 * 60 * 24 * 3;
 
 function keepDigitsOnly(value, maxDigits = 12, fallback = "") {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, maxDigits);
@@ -215,28 +207,6 @@ function formatDateInTimeZoneMmDdYy(value = Date.now(), timeZone = "America/New_
   });
 }
 
-function formatRelativeTimeFromNow(value) {
-  const timeValue = Number(value);
-  if (!Number.isFinite(timeValue) || timeValue <= 0) return "";
-  const deltaMs = timeValue - Date.now();
-  const minuteMs = 1000 * 60;
-  const hourMs = minuteMs * 60;
-  const dayMs = hourMs * 24;
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  const absDeltaMs = Math.abs(deltaMs);
-
-  if (absDeltaMs < hourMs) {
-    const minutes = Math.max(1, Math.round(deltaMs / minuteMs));
-    return rtf.format(minutes, "minute");
-  }
-  if (absDeltaMs < dayMs * 2) {
-    const hours = Math.round(deltaMs / hourMs);
-    return rtf.format(hours, "hour");
-  }
-  const days = Math.round(deltaMs / dayMs);
-  return rtf.format(days, "day");
-}
-
 function formatAbbreviatedNumber(value, { suffix = "", prefix = "", threshold = 99999 } = {}) {
   const safeValue = Number(value);
   if (!Number.isFinite(safeValue)) return `${prefix}0${suffix}`;
@@ -301,28 +271,6 @@ function createTradeId() {
   return `trade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function readProfileBackupFromStorage() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(PROFILE_LOCAL_BACKUP_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistProfileBackupToStorage(profile) {
-  if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(PROFILE_LOCAL_BACKUP_STORAGE_KEY, JSON.stringify(profile));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function buildStableTradeFingerprint(value) {
   const source = String(value?.source || "manual").trim().toLowerCase();
   const accountId = String(value?.accountId || "").trim();
@@ -335,24 +283,6 @@ function buildStableTradeFingerprint(value) {
   const entryPrice = Number(value?.entryPrice || 0);
   const exitPrice = Number(value?.exitPrice || 0);
   return `fallback:${accountId}|${instrument}|${timestamp}|${pnl}|${quantity}|${entryPrice}|${exitPrice}`;
-}
-
-function createTradeCloudDedupeKey(trade, userId = "") {
-  const source = String(trade?.source || "manual").trim().toLowerCase();
-  const accountId = String(trade?.accountId || "").trim();
-  const providerTradeId = String(trade?.providerTradeId || "").trim();
-  if (userId && source && providerTradeId && accountId) {
-    return `provider:${userId}:${source}:${accountId}:${providerTradeId}`;
-  }
-  const stableId = String(trade?.id || "").trim();
-  if (stableId) return `id:${stableId}`;
-  const instrument = String(trade?.instrument || trade?.symbol || "").trim().toUpperCase();
-  const openedAt = String(trade?.openedAt || "").trim();
-  const entryPrice = Number(trade?.entryPrice || 0);
-  const exitPrice = Number(trade?.exitPrice || 0);
-  const quantity = Number(trade?.quantity || 0);
-  const pnl = Number(trade?.netPnl ?? trade?.pnl ?? 0);
-  return `fallback:${accountId}|${instrument}|${openedAt}|${entryPrice}|${exitPrice}|${quantity}|${pnl}`;
 }
 
 function createEmptyAccountForm() {
@@ -436,91 +366,6 @@ function sanitizeTrade(value) {
 function sanitizeTrades(value) {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeTrade).filter(Boolean);
-}
-
-function mapTradeToCloudRow(trade, userId) {
-  const normalizedTrade = sanitizeTrade(trade);
-  if (!normalizedTrade || !userId) return null;
-  return {
-    id: normalizedTrade.id,
-    user_id: userId,
-    dedupe_key: createTradeCloudDedupeKey(normalizedTrade, userId),
-    account_id: normalizedTrade.accountId || null,
-    source: normalizedTrade.source || "manual",
-    import_source: normalizedTrade.source || "manual",
-    provider_trade_id: normalizedTrade.providerTradeId || null,
-    symbol: normalizedTrade.instrument || "MNQ",
-    side: normalizedTrade.side || null,
-    entry_price: normalizedTrade.entryPrice,
-    exit_price: normalizedTrade.exitPrice,
-    quantity: normalizedTrade.quantity,
-    opened_at: normalizedTrade.openedAt,
-    closed_at: normalizedTrade.closedAt,
-    executed_at: Number.isFinite(normalizedTrade.timestamp) ? new Date(normalizedTrade.timestamp).toISOString() : null,
-    pnl: normalizedTrade.pnl,
-    commission: normalizedTrade.commission,
-    fees: normalizedTrade.fees,
-    net_pnl: normalizedTrade.netPnl,
-    trade_type: normalizedTrade.tradeType,
-    rule_violation: Boolean(normalizedTrade.ruleViolation),
-    rule_violation_reason: normalizedTrade.ruleViolationReason,
-    created_at: new Date(normalizedTrade.timestamp).toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function mapCloudRowToTrade(row) {
-  if (!row || typeof row !== "object") return null;
-  const closedAtIso = typeof row.closed_at === "string" && row.closed_at.trim() ? row.closed_at.trim() : null;
-  const openedAtIso = typeof row.opened_at === "string" && row.opened_at.trim() ? row.opened_at.trim() : null;
-  const executedAtIso = typeof row.executed_at === "string" && row.executed_at.trim() ? row.executed_at.trim() : null;
-  const createdAtIso = typeof row.created_at === "string" && row.created_at.trim() ? row.created_at.trim() : null;
-  const timestampCandidate = closedAtIso || executedAtIso || openedAtIso || createdAtIso;
-  const timestampMs = timestampCandidate ? new Date(timestampCandidate).getTime() : Number.NaN;
-
-  return sanitizeTrade({
-    id: typeof row.id === "string" && row.id.trim() ? row.id.trim() : createTradeId(),
-    accountId: typeof row.account_id === "string" ? row.account_id : "",
-    source: typeof row.source === "string" ? row.source : "manual",
-    providerTradeId: typeof row.provider_trade_id === "string" ? row.provider_trade_id : null,
-    instrument: typeof row.symbol === "string" && row.symbol.trim() ? row.symbol.trim().toUpperCase() : "MNQ",
-    side: typeof row.side === "string" ? row.side : null,
-    entryPrice: row.entry_price,
-    exitPrice: row.exit_price,
-    quantity: row.quantity,
-    openedAt: openedAtIso,
-    closedAt: closedAtIso,
-    timestamp: Number.isFinite(timestampMs) ? timestampMs : Date.now(),
-    pnl: row.pnl,
-    commission: row.commission,
-    fees: row.fees,
-    netPnl: row.net_pnl,
-    tradeType: row.trade_type,
-    ruleViolation: Boolean(row.rule_violation),
-    ruleViolationReason: typeof row.rule_violation_reason === "string" ? row.rule_violation_reason : null,
-  });
-}
-
-function readReconciliationDismissState() {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(RECONCILIATION_DISMISS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistReconciliationDismissState(state) {
-  if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(RECONCILIATION_DISMISS_STORAGE_KEY, JSON.stringify(state && typeof state === "object" ? state : {}));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function deriveTradeImportRange(trades = []) {
@@ -3550,75 +3395,13 @@ function getAccountRowMeta(account) {
   };
 }
 
-function ProfileLockedScreen({ authConfigured, authMode, setAuthMode, authForm, setAuthForm, authBusy, authError, onSubmit }) {
-  const isSignup = authMode === "signup";
-  return (
-    <div className="space-y-4 pb-4">
-      <ScreenHeader right={<TopIconPill icon={Lock} />} />
-      <GlassCard className="rounded-[30px] p-6">
-        <div className="mx-auto w-fit">
-          <HelixAvatar sizeClassName="h-16 w-16" textClassName="text-[20px]" />
-        </div>
-        <div className="mt-4 text-center text-[20px] font-semibold tracking-[-0.02em] text-slate-700">Unlock your Profile</div>
-        <div className="mt-2 text-center text-[13px] text-slate-500">Track multiple accounts, connect Tradovate, and sync across devices.</div>
-        <div className="mt-5 space-y-3 rounded-[22px] border border-white/65 bg-white/35 p-4">
-          <input
-            type="email"
-            value={authForm.email}
-            onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))}
-            placeholder="Email"
-            className="w-full rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
-          />
-          <input
-            type="password"
-            value={authForm.password}
-            onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
-            placeholder="Password"
-            className="w-full rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
-          />
-          <motion.button
-            type="button"
-            onClick={onSubmit}
-            disabled={authBusy || !authConfigured}
-            whileTap={authBusy ? undefined : { scale: 0.98, opacity: 0.9 }}
-            className={cn(
-              "w-full rounded-[16px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(233,244,255,0.45))] px-4 py-2.5 text-[14px] font-semibold text-slate-700",
-              (authBusy || !authConfigured) && "cursor-not-allowed opacity-60"
-            )}
-          >
-            {authBusy ? "Please wait..." : isSignup ? "Sign up" : "Log in"}
-          </motion.button>
-          <motion.button
-            type="button"
-            onClick={() => setAuthMode((prev) => (prev === "login" ? "signup" : "login"))}
-            whileTap={{ scale: 0.98, opacity: 0.9 }}
-            className="w-full rounded-[16px] border border-white/70 bg-white/50 px-4 py-2.5 text-[13px] font-medium text-slate-600"
-          >
-            {isSignup ? "Have an account? Log in" : "Need an account? Sign up"}
-          </motion.button>
-          {!authConfigured ? (
-            <div className="text-[12px] text-amber-700">
-              Set VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY (or SUPABASE_URL/SUPABASE_ANON_KEY) and restart the app to
-              enable login.
-            </div>
-          ) : null}
-          {authError ? <div className="text-[12px] text-rose-500">{authError}</div> : null}
-        </div>
-      </GlassCard>
-    </div>
-  );
-}
-
 function JournalScreen({
   profileState,
   localTrades = [],
-  isAuthenticated = false,
   onProfileStateChange,
   onResetPreferences,
   onSyncTradovateAccountTrades,
   onImportCsvTrades,
-  onSignOut,
-  cloudSyncState = { isLoading: false, isSaving: false, error: "", tradeLedger: null },
   debugEnabled = false,
 }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
@@ -3631,7 +3414,6 @@ function JournalScreen({
   const [tradovateAccounts, setTradovateAccounts] = useState([]);
   const [isTradovateBusy, setIsTradovateBusy] = useState(false);
   const [syncStateByAccountId, setSyncStateByAccountId] = useState({});
-  const [reconciliationDismissState, setReconciliationDismissState] = useState(() => readReconciliationDismissState());
   const [csvImportState, setCsvImportState] = useState({
     accountId: "",
     accountName: "",
@@ -3646,99 +3428,6 @@ function JournalScreen({
     error: "",
   });
   const csvFileInputByAccountIdRef = useRef({});
-
-  useEffect(() => {
-    setReconciliationDismissState(readReconciliationDismissState());
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    persistReconciliationDismissState(reconciliationDismissState);
-  }, [reconciliationDismissState]);
-
-  const localTradeCountByAccountId = useMemo(() => {
-    const next = new Map();
-    sanitizeTrades(localTrades).forEach((trade) => {
-      const accountId = typeof trade?.accountId === "string" ? trade.accountId.trim() : "";
-      if (!accountId) return;
-      next.set(accountId, (next.get(accountId) || 0) + 1);
-    });
-    return next;
-  }, [localTrades]);
-
-  const accountReconciliationById = useMemo(() => {
-    if (!isAuthenticated) return {};
-    const result = {};
-    profileState.accounts.forEach((account) => {
-      const accountId = account?.id;
-      if (!accountId) return;
-      const tradeSync = account?.tradeSync || {};
-      const localCount = Number(localTradeCountByAccountId.get(accountId) || 0);
-      const lastSyncCount = Number(tradeSync.lastSyncCount || 0);
-      const lastImportCount = Number(tradeSync.lastImportCount || 0);
-      const expectedCount = Math.max(lastSyncCount, lastImportCount);
-      const hasCloudBookkeeping = Boolean(
-        tradeSync.lastImportAt ||
-          tradeSync.lastSyncAt ||
-          tradeSync.lastImportSource ||
-          tradeSync.lastImportedBatchId ||
-          expectedCount > 0
-      );
-      const providerConnection = account?.connection || account?.linkedProvider || null;
-      const isTradovateLinked =
-        providerConnection?.provider === "tradovate" &&
-        providerConnection?.providerAccountId &&
-        providerConnection?.connectionStatus === "connected";
-      const recentSyncAtMs = tradeSync.lastSyncAt ? new Date(tradeSync.lastSyncAt).getTime() : NaN;
-      const hasRecentTradovateSync = Number.isFinite(recentSyncAtMs) && Date.now() - recentSyncAtMs <= 1000 * 60 * 60 * 24 * 30;
-      const missingAllLocalTrades = hasCloudBookkeeping && localCount === 0;
-      const hasLikelyPartialLocalTrades = expectedCount >= 10 && localCount > 0 && localCount <= Math.max(3, Math.floor(expectedCount * 0.35));
-      const needsTradovateRecovery = isTradovateLinked && hasRecentTradovateSync && localCount === 0;
-      const needsAction = Boolean(missingAllLocalTrades || hasLikelyPartialLocalTrades || needsTradovateRecovery);
-      const reason = missingAllLocalTrades
-        ? "Cloud sync/import history exists, but this device has no local trades for this account."
-        : hasLikelyPartialLocalTrades
-          ? "Cloud import/sync count suggests more trades than currently stored on this device."
-          : needsTradovateRecovery
-            ? "Tradovate sync history exists, but this device has not imported the local ledger yet."
-            : "";
-      const actionType = isTradovateLinked ? "sync" : tradeSync.lastImportSource === "csv" || account?.connectionMethod === "csv" ? "csv" : "info";
-      const signature = [
-        tradeSync.lastImportAt || "",
-        tradeSync.lastSyncAt || "",
-        tradeSync.lastImportCount || "",
-        tradeSync.lastSyncCount || "",
-        tradeSync.lastImportSource || "",
-        localCount,
-      ].join("|");
-      const dismissal = reconciliationDismissState?.[accountId] || null;
-      const hasMatchingDismissal = dismissal?.signature === signature;
-      const remindAt = Number(dismissal?.remindAt || 0);
-      const isRemindSuppressed = hasMatchingDismissal && Number.isFinite(remindAt) && remindAt > Date.now();
-      const isDismissed = hasMatchingDismissal && !isRemindSuppressed && dismissal?.mode === "dismissed";
-      result[accountId] = {
-        accountId,
-        localCount,
-        expectedCount,
-        needsAction,
-        reason,
-        actionType,
-        signature,
-        isVisible: needsAction && !isDismissed && !isRemindSuppressed,
-        isSuppressed: Boolean(isDismissed || isRemindSuppressed),
-      };
-    });
-    return result;
-  }, [isAuthenticated, localTradeCountByAccountId, profileState.accounts, reconciliationDismissState]);
-
-  const reconciliationItems = useMemo(
-    () => Object.values(accountReconciliationById).filter((item) => item.needsAction),
-    [accountReconciliationById]
-  );
-  const visibleReconciliationItems = useMemo(
-    () => reconciliationItems.filter((item) => item.isVisible),
-    [reconciliationItems]
-  );
-
   const profileInitials = useMemo(() => {
     const source = profileState.displayName || profileState.username || "HX";
     return source
@@ -3749,45 +3438,6 @@ function JournalScreen({
       .map((part) => part.charAt(0).toUpperCase())
       .join("") || "HX";
   }, [profileState.displayName, profileState.username]);
-
-  const tradeLedgerStatus = cloudSyncState?.tradeLedger || null;
-  const tradeLedgerStatusLabel = useMemo(() => {
-    if (!tradeLedgerStatus) return "";
-    switch (tradeLedgerStatus.status) {
-      case "hydrating":
-        return "Hydrating cloud trades…";
-      case "syncing":
-        return "Syncing changes…";
-      case "fallback-local":
-        return "Using local fallback";
-      case "error":
-        return "Cloud sync failed";
-      case "synced":
-        return "Synced to cloud";
-      default:
-        return "Cloud sync idle";
-    }
-  }, [tradeLedgerStatus]);
-  const tradeLedgerStatusDetail = useMemo(() => {
-    if (!tradeLedgerStatus) return "";
-    const lastSyncedAt = Number(tradeLedgerStatus.lastCloudWriteAt || tradeLedgerStatus.lastCloudHydratedAt || 0);
-    const relativeLastSynced = formatRelativeTimeFromNow(lastSyncedAt);
-    if (tradeLedgerStatus.status === "error" && tradeLedgerStatus.lastCloudError) {
-      return String(tradeLedgerStatus.lastCloudError);
-    }
-    if (tradeLedgerStatus.status === "fallback-local") {
-      return "Cloud trade ledger unavailable. Local cached trades are active.";
-    }
-    if (tradeLedgerStatus.status === "syncing") {
-      return tradeLedgerStatus.pendingUnsyncedChanges
-        ? "Unsynced changes pending upload."
-        : "Uploading trade changes to cloud.";
-    }
-    if (relativeLastSynced) {
-      return `Last synced ${relativeLastSynced}`;
-    }
-    return "Waiting for first cloud sync.";
-  }, [tradeLedgerStatus]);
 
   const updateField = useCallback(
     (key, value) => {
@@ -4270,31 +3920,6 @@ function JournalScreen({
     if (input && typeof input.click === "function") input.click();
   }, []);
 
-  const dismissReconciliation = useCallback((accountId, signature) => {
-    if (!accountId || !signature) return;
-    setReconciliationDismissState((prev) => ({
-      ...(prev || {}),
-      [accountId]: {
-        signature,
-        mode: "dismissed",
-        dismissedAt: new Date().toISOString(),
-        remindAt: null,
-      },
-    }));
-  }, []);
-
-  const remindReconciliationLater = useCallback((accountId, signature) => {
-    if (!accountId || !signature) return;
-    setReconciliationDismissState((prev) => ({
-      ...(prev || {}),
-      [accountId]: {
-        signature,
-        mode: "remind_later",
-        dismissedAt: new Date().toISOString(),
-        remindAt: Date.now() + RECONCILIATION_REMIND_LATER_MS,
-      },
-    }));
-  }, []);
 
   return (
     <div className="space-y-4 pb-4">
@@ -4303,38 +3928,6 @@ function JournalScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Profile</TinyLabel>
         <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Your profile</div>
-        {typeof onSignOut === "function" ? (
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="mt-3 inline-flex items-center gap-2 rounded-[14px] border border-white/75 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-600"
-          >
-            <LogOut size={14} />
-            Sign out
-          </button>
-        ) : null}
-        {cloudSyncState.isLoading ? <div className="mt-2 text-[12px] text-slate-500">Loading profile from cloud…</div> : null}
-        {!cloudSyncState.isLoading && cloudSyncState.isSaving ? <div className="mt-2 text-[12px] text-slate-500">Saving profile…</div> : null}
-        {cloudSyncState.error ? <div className="mt-2 text-[12px] text-amber-700">{cloudSyncState.error}</div> : null}
-        {tradeLedgerStatus ? (
-          <div
-            className={cn(
-              "mt-3 rounded-[14px] border px-3 py-2 text-[11px]",
-              tradeLedgerStatus.status === "synced"
-                ? "border-emerald-200/90 bg-emerald-50/70 text-emerald-800"
-                : tradeLedgerStatus.status === "syncing" || tradeLedgerStatus.status === "hydrating"
-                  ? "border-blue-200/90 bg-blue-50/70 text-blue-800"
-                  : tradeLedgerStatus.status === "fallback-local"
-                    ? "border-amber-200/90 bg-amber-50/75 text-amber-900"
-                    : tradeLedgerStatus.status === "error"
-                      ? "border-rose-200/90 bg-rose-50/75 text-rose-700"
-                      : "border-white/75 bg-white/55 text-slate-600"
-            )}
-          >
-            <div className="font-semibold">{tradeLedgerStatusLabel}</div>
-            <div className="mt-0.5 text-[10px] opacity-90">{tradeLedgerStatusDetail}</div>
-          </div>
-        ) : null}
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[20px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
             {profileInitials}
@@ -4373,14 +3966,6 @@ function JournalScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Accounts</TinyLabel>
         <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-700">Connected accounts</div>
-        {visibleReconciliationItems.length ? (
-          <div className="mt-3 rounded-[14px] border border-amber-200/90 bg-amber-50/70 p-3 text-[12px] text-amber-900">
-            <div className="font-semibold">Trade reconciliation needed on this device</div>
-            <div className="mt-1 text-[11px] text-amber-800">
-              Account metadata and normalized trade history sync across devices. If a sync/import fails, local cache remains available on this device.
-            </div>
-          </div>
-        ) : null}
         <div className="mt-3 space-y-3">
           {profileState.accounts.length ? (
             profileState.accounts.map((account) => {
@@ -4399,7 +3984,6 @@ function JournalScreen({
                       minute: "2-digit",
                     })}`
                   : null;
-              const reconciliationState = accountReconciliationById[account.id] || null;
               return (
               <div key={account.id} className="rounded-[16px] border border-white/65 bg-white/35 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3">
@@ -4432,54 +4016,6 @@ function JournalScreen({
                     </button>
                     <div className="text-[11px] text-slate-500">
                       {syncState?.message || account?.tradeSync?.lastSyncMessage || lastSyncLabel || "Manual sync required to import trades."}
-                    </div>
-                  </div>
-                ) : null}
-                {reconciliationState?.isVisible ? (
-                  <div className="mt-2 rounded-[12px] border border-amber-200/90 bg-amber-50/75 p-2.5">
-                    <div className="text-[11px] font-semibold text-amber-900">Missing local trade data likely</div>
-                    <div className="mt-1 text-[10px] text-amber-800">{reconciliationState.reason}</div>
-                    <div className="mt-1 text-[10px] text-amber-700">
-                      Local trades: {reconciliationState.localCount}
-                      {reconciliationState.expectedCount > 0 ? ` · Last cloud import/sync count: ${reconciliationState.expectedCount}` : ""}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {reconciliationState.actionType === "sync" ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSyncTrades(account)}
-                          disabled={syncState?.status === "syncing"}
-                          className="rounded-[10px] border border-amber-300/90 bg-amber-100/80 px-2.5 py-1 text-[10px] font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {syncState?.status === "syncing" ? "Syncing…" : "Sync Trades"}
-                        </button>
-                      ) : null}
-                      {reconciliationState.actionType === "csv" ? (
-                        <button
-                          type="button"
-                          onClick={() => openCsvPickerForAccount(account.id)}
-                          className="rounded-[10px] border border-amber-300/90 bg-amber-100/80 px-2.5 py-1 text-[10px] font-semibold text-amber-900"
-                        >
-                          Re-import CSV
-                        </button>
-                      ) : null}
-                      {reconciliationState.actionType === "info" ? (
-                        <div className="text-[10px] text-amber-800">Use this account's normal import flow to rebuild local trades on this device.</div>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => remindReconciliationLater(account.id, reconciliationState.signature)}
-                        className="rounded-[10px] border border-white/80 bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600"
-                      >
-                        Remind later
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => dismissReconciliation(account.id, reconciliationState.signature)}
-                        className="rounded-[10px] border border-white/80 bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600"
-                      >
-                        Dismiss
-                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -5043,13 +4579,6 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
-  const authConfigured = isAuthConfigured();
-  const [authSession, setAuthSession] = useState(null);
-  const [authUser, setAuthUser] = useState(null);
-  const [authMode, setAuthMode] = useState("login");
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState("");
   const [debugEnabled] = useState(() => (typeof window !== "undefined" ? isDebugModeEnabled(window.location.search, window.location.hash) : false));
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return "position";
@@ -5059,30 +4588,7 @@ export default function App() {
   const [compoundState, setCompoundState] = useState(() => sanitizeCompoundState(readStoredAppState()?.compoundState));
   const [viewState, setViewState] = useState(() => sanitizeViewState(readStoredAppState()?.viewState));
   const [profileState, setProfileState] = useState(() => sanitizeProfileState(readStoredProfileState()));
-  const [cloudProfileState, setCloudProfileState] = useState({
-    isLoading: false,
-    isSaving: false,
-    error: "",
-    lastLoadedUserId: "",
-  });
-  const [cloudTradeState, setCloudTradeState] = useState({
-    isLoading: false,
-    isSaving: false,
-    error: "",
-    lastLoadedUserId: "",
-    status: "idle",
-    lastCloudHydratedAt: 0,
-    lastCloudWriteAt: 0,
-    lastCloudError: "",
-    pendingUnsyncedChanges: 0,
-  });
   const [trades, setTrades] = useState(() => sanitizeTrades(readStoredAppState()?.trades));
-  const hasHydratedCloudProfileRef = useRef(false);
-  const hasHydratedCloudTradesRef = useRef(false);
-  const lastSavedProfilePayloadRef = useRef("");
-  const lastSavedTradePayloadRef = useRef("");
-  const profileSaveTimeoutRef = useRef(null);
-  const tradeSaveTimeoutRef = useRef(null);
   const { evaluatedTrades, propProgressByAccountId } = useMemo(
     () => evaluatePropRuleViolations(trades, profileState.accounts),
     [trades, profileState.accounts]
@@ -5100,7 +4606,6 @@ export default function App() {
     [profileState.accounts, propProgressByAccountId]
   );
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
-  const isAuthenticated = Boolean(authSession && authUser);
   const anonymousShareIdentity = useMemo(
     () => ({
       isAnonymous: true,
@@ -5113,54 +4618,22 @@ export default function App() {
     []
   );
   const shareIdentity = useMemo(() => {
-    if (!isAuthenticated) return anonymousShareIdentity;
     const normalizedUsername = String(profileState.username || "").replace(/^@+/, "").trim();
-    const fallbackUsername =
-      typeof authUser?.email === "string" && authUser.email.includes("@") ? authUser.email.split("@")[0] : "helixtrader";
+    const hasLocalIdentity = Boolean(normalizedUsername || profileState.displayName || profileState.avatar);
+    if (!hasLocalIdentity) return anonymousShareIdentity;
     return {
       isAnonymous: false,
       showAvatar: Boolean(profileState.shareSettings?.showAvatar),
       showUsername: Boolean(profileState.shareSettings?.showUsername),
-      username: `@${normalizedUsername || fallbackUsername}`,
+      username: `@${normalizedUsername || "helixtrader"}`,
       displayName: profileState.displayName || normalizedUsername || "Helix Trader",
       avatar: profileState.avatar || "",
     };
-  }, [anonymousShareIdentity, authUser?.email, isAuthenticated, profileState.avatar, profileState.displayName, profileState.shareSettings, profileState.username]);
+  }, [anonymousShareIdentity, profileState.avatar, profileState.displayName, profileState.shareSettings, profileState.username]);
   const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
     setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
   }, []);
 
-  const handleAuthSubmit = useCallback(async () => {
-    if (!authConfigured || !supabase) return;
-    const email = String(authForm.email || "").trim();
-    const password = String(authForm.password || "").trim();
-    if (!email || !password) {
-      setAuthError("Enter both email and password.");
-      return;
-    }
-    setAuthBusy(true);
-    setAuthError("");
-    try {
-      if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setAuthError("Signup successful. If required, confirm your email then log in.");
-        setAuthMode("login");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-    } catch (error) {
-      setAuthError(error?.message || "Authentication failed.");
-    } finally {
-      setAuthBusy(false);
-    }
-  }, [authConfigured, authForm.email, authForm.password, authMode]);
-
-  const handleSignOut = useCallback(async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-  }, []);
 
   const resetPreferences = () => {
     if (typeof window !== "undefined") {
@@ -5515,372 +4988,7 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     persistProfileState(profileState);
-    if (isAuthenticated) {
-      persistProfileBackupToStorage(profileState);
-    }
   }, [profileState]);
-
-  useEffect(() => {
-    if (!authConfigured || !supabase) return undefined;
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      const nextSession = data?.session || null;
-      setAuthSession(nextSession);
-      setAuthUser(nextSession?.user || null);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      setAuthSession(session || null);
-      setAuthUser(session?.user || null);
-    });
-    return () => {
-      mounted = false;
-      data?.subscription?.unsubscribe();
-    };
-  }, [authConfigured]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.profile) {
-      hasHydratedCloudProfileRef.current = false;
-      lastSavedProfilePayloadRef.current = "";
-      if (profileSaveTimeoutRef.current) {
-        window.clearTimeout(profileSaveTimeoutRef.current);
-        profileSaveTimeoutRef.current = null;
-      }
-      setCloudProfileState((prev) => ({
-        ...prev,
-        isLoading: false,
-        isSaving: false,
-        error: "",
-        lastLoadedUserId: "",
-      }));
-      return;
-    }
-
-    let cancelled = false;
-    const localProfileSnapshot = sanitizeProfileState(readStoredProfileState() || readProfileBackupFromStorage() || PROFILE_DEFAULTS);
-
-    setCloudProfileState((prev) => ({ ...prev, isLoading: true, error: "" }));
-
-    (async () => {
-      try {
-        const cloudRow = await supabase.profile.fetchByUserId({
-          userId: authUser.id,
-          accessToken: authSession.access_token,
-        });
-
-        if (cancelled) return;
-        if (cloudRow?.profile_data) {
-          const sanitizedCloudProfile = sanitizeProfileState(cloudRow.profile_data);
-          const cloudPayload = JSON.stringify(sanitizedCloudProfile);
-          hasHydratedCloudProfileRef.current = true;
-          lastSavedProfilePayloadRef.current = cloudPayload;
-          setProfileState(sanitizedCloudProfile);
-        } else {
-          const seededProfile = sanitizeProfileState(localProfileSnapshot);
-          await supabase.profile.upsertByUserId({
-            userId: authUser.id,
-            accessToken: authSession.access_token,
-            profile: seededProfile,
-          });
-          if (cancelled) return;
-          hasHydratedCloudProfileRef.current = true;
-          lastSavedProfilePayloadRef.current = JSON.stringify(seededProfile);
-          setProfileState(seededProfile);
-        }
-
-        setCloudProfileState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "",
-          lastLoadedUserId: authUser.id,
-        }));
-      } catch (error) {
-        if (cancelled) return;
-        hasHydratedCloudProfileRef.current = true;
-        const backupProfile = sanitizeProfileState(readProfileBackupFromStorage() || localProfileSnapshot);
-        lastSavedProfilePayloadRef.current = JSON.stringify(backupProfile);
-        setProfileState(backupProfile);
-        setCloudProfileState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "Cloud profile unavailable. Using local profile data.",
-          lastLoadedUserId: authUser.id,
-        }));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession?.access_token, authUser?.id, isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.profile) return;
-    if (!hasHydratedCloudProfileRef.current) return;
-    if (cloudProfileState.lastLoadedUserId !== authUser.id) return;
-    if (cloudProfileState.isLoading) return;
-
-    const sanitizedProfile = sanitizeProfileState(profileState);
-    const payload = JSON.stringify(sanitizedProfile);
-    if (payload === lastSavedProfilePayloadRef.current) return;
-
-    if (profileSaveTimeoutRef.current) {
-      window.clearTimeout(profileSaveTimeoutRef.current);
-      profileSaveTimeoutRef.current = null;
-    }
-
-    profileSaveTimeoutRef.current = window.setTimeout(async () => {
-      setCloudProfileState((prev) => ({ ...prev, isSaving: true, error: "" }));
-      try {
-        await supabase.profile.upsertByUserId({
-          userId: authUser.id,
-          accessToken: authSession.access_token,
-          profile: sanitizedProfile,
-        });
-        lastSavedProfilePayloadRef.current = payload;
-        persistProfileBackupToStorage(sanitizedProfile);
-        setCloudProfileState((prev) => ({ ...prev, isSaving: false, error: "" }));
-      } catch {
-        setCloudProfileState((prev) => ({
-          ...prev,
-          isSaving: false,
-          error: "Unable to sync profile changes right now. Local profile changes are still saved.",
-        }));
-      }
-    }, PROFILE_CLOUD_SAVE_DEBOUNCE_MS);
-
-    return () => {
-      if (profileSaveTimeoutRef.current) {
-        window.clearTimeout(profileSaveTimeoutRef.current);
-        profileSaveTimeoutRef.current = null;
-      }
-    };
-  }, [
-    authSession?.access_token,
-    authUser?.id,
-    cloudProfileState.isLoading,
-    cloudProfileState.lastLoadedUserId,
-    isAuthenticated,
-    profileState,
-  ]);
-
-  useEffect(() => () => {
-    if (profileSaveTimeoutRef.current) {
-      window.clearTimeout(profileSaveTimeoutRef.current);
-      profileSaveTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.tradeLedger) {
-      hasHydratedCloudTradesRef.current = false;
-      lastSavedTradePayloadRef.current = "";
-      if (tradeSaveTimeoutRef.current) {
-        window.clearTimeout(tradeSaveTimeoutRef.current);
-        tradeSaveTimeoutRef.current = null;
-      }
-      setCloudTradeState((prev) => ({
-        ...prev,
-        isLoading: false,
-        isSaving: false,
-        error: "",
-        lastLoadedUserId: "",
-        status: "idle",
-        lastCloudError: "",
-        pendingUnsyncedChanges: 0,
-      }));
-      return;
-    }
-
-    let cancelled = false;
-    const localTradesSnapshot = sanitizeTrades(readStoredAppState()?.trades);
-
-    setCloudTradeState((prev) => ({
-      ...prev,
-      isLoading: true,
-      error: "",
-      status: "hydrating",
-      lastCloudError: "",
-      pendingUnsyncedChanges: 0,
-    }));
-
-    (async () => {
-      try {
-        const cloudRows = await supabase.tradeLedger.fetchByUserId({
-          userId: authUser.id,
-          accessToken: authSession.access_token,
-        });
-        if (cancelled) return;
-
-        const cloudTrades = sanitizeTrades(cloudRows.map(mapCloudRowToTrade));
-        const localByKey = new Map(localTradesSnapshot.map((trade) => [createTradeCloudDedupeKey(trade, authUser.id), trade]));
-        const cloudByKey = new Map(cloudTrades.map((trade) => [createTradeCloudDedupeKey(trade, authUser.id), trade]));
-        const localMissingFromCloud = localTradesSnapshot.filter((trade) => !cloudByKey.has(createTradeCloudDedupeKey(trade, authUser.id)));
-
-        let nextTrades = cloudTrades;
-        if (!cloudTrades.length && localTradesSnapshot.length) {
-          await supabase.tradeLedger.upsertBatch({
-            accessToken: authSession.access_token,
-            rows: localTradesSnapshot.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean),
-          });
-          if (cancelled) return;
-          nextTrades = localTradesSnapshot;
-        } else if (cloudTrades.length && localMissingFromCloud.length) {
-          await supabase.tradeLedger.upsertBatch({
-            accessToken: authSession.access_token,
-            rows: localMissingFromCloud.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean),
-          });
-          if (cancelled) return;
-          nextTrades = mergeTradesWithDedupe(cloudTrades, localMissingFromCloud);
-        } else if (!cloudTrades.length) {
-          nextTrades = [];
-        }
-
-        const mergedWithCurrentLocal = mergeTradesWithDedupe(nextTrades, Array.from(localByKey.values()));
-        const normalizedNext = sanitizeTrades(mergedWithCurrentLocal);
-        const payload = JSON.stringify(normalizedNext);
-        hasHydratedCloudTradesRef.current = true;
-        lastSavedTradePayloadRef.current = payload;
-        setTrades(normalizedNext);
-        setCloudTradeState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "",
-          lastLoadedUserId: authUser.id,
-          status: "synced",
-          lastCloudHydratedAt: Date.now(),
-          lastCloudError: "",
-        }));
-      } catch (error) {
-        if (cancelled) return;
-        hasHydratedCloudTradesRef.current = true;
-        const backupTrades = sanitizeTrades(readStoredAppState()?.trades);
-        lastSavedTradePayloadRef.current = JSON.stringify(backupTrades);
-        setTrades(backupTrades);
-        setCloudTradeState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: "Cloud trade ledger unavailable. Using local trade data.",
-          lastLoadedUserId: authUser.id,
-          status: "fallback-local",
-          lastCloudError: error?.message || "Cloud trade ledger unavailable.",
-        }));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession?.access_token, authUser?.id, isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !authUser?.id || !authSession?.access_token || !supabase?.tradeLedger) return;
-    if (!hasHydratedCloudTradesRef.current) return;
-    if (cloudTradeState.lastLoadedUserId !== authUser.id) return;
-    if (cloudTradeState.isLoading) return;
-
-    const sanitizedEvaluatedTrades = sanitizeTrades(evaluatedTrades);
-    const payload = JSON.stringify(sanitizedEvaluatedTrades);
-    if (payload === lastSavedTradePayloadRef.current) return;
-
-    if (tradeSaveTimeoutRef.current) {
-      window.clearTimeout(tradeSaveTimeoutRef.current);
-      tradeSaveTimeoutRef.current = null;
-    }
-
-    setCloudTradeState((prev) => ({
-      ...prev,
-      status: "syncing",
-      pendingUnsyncedChanges: 1,
-      lastCloudError: "",
-    }));
-
-    tradeSaveTimeoutRef.current = window.setTimeout(async () => {
-      setCloudTradeState((prev) => ({
-        ...prev,
-        isSaving: true,
-        error: "",
-        status: "syncing",
-      }));
-      try {
-        const rows = sanitizedEvaluatedTrades.map((trade) => mapTradeToCloudRow(trade, authUser.id)).filter(Boolean);
-        await supabase.tradeLedger.upsertBatch({
-          accessToken: authSession.access_token,
-          rows,
-        });
-        lastSavedTradePayloadRef.current = payload;
-        setCloudTradeState((prev) => ({
-          ...prev,
-          isSaving: false,
-          error: "",
-          status: "synced",
-          lastCloudWriteAt: Date.now(),
-          pendingUnsyncedChanges: 0,
-          lastCloudError: "",
-        }));
-      } catch (error) {
-        setCloudTradeState((prev) => ({
-          ...prev,
-          isSaving: false,
-          status: "error",
-          error: "Unable to sync trades right now. Local trade changes are still saved.",
-          lastCloudError: error?.message || "Unable to sync trades right now.",
-          pendingUnsyncedChanges: 1,
-        }));
-      }
-    }, TRADE_CLOUD_SAVE_DEBOUNCE_MS);
-
-    return () => {
-      if (tradeSaveTimeoutRef.current) {
-        window.clearTimeout(tradeSaveTimeoutRef.current);
-        tradeSaveTimeoutRef.current = null;
-      }
-    };
-  }, [
-    authSession?.access_token,
-    authUser?.id,
-    cloudTradeState.isLoading,
-    cloudTradeState.lastLoadedUserId,
-    evaluatedTrades,
-    isAuthenticated,
-  ]);
-
-  useEffect(() => () => {
-    if (tradeSaveTimeoutRef.current) {
-      window.clearTimeout(tradeSaveTimeoutRef.current);
-      tradeSaveTimeoutRef.current = null;
-    }
-  }, []);
-
-  const combinedCloudSyncState = useMemo(() => {
-    const errorMessage = [cloudProfileState.error, cloudTradeState.error].filter(Boolean).join(" ");
-    return {
-      isLoading: cloudProfileState.isLoading || cloudTradeState.isLoading,
-      isSaving: cloudProfileState.isSaving || cloudTradeState.isSaving,
-      error: errorMessage,
-      tradeLedger: {
-        status: cloudTradeState.status,
-        lastCloudHydratedAt: cloudTradeState.lastCloudHydratedAt,
-        lastCloudWriteAt: cloudTradeState.lastCloudWriteAt,
-        lastCloudError: cloudTradeState.lastCloudError || cloudTradeState.error || "",
-        pendingUnsyncedChanges: cloudTradeState.pendingUnsyncedChanges,
-      },
-    };
-  }, [
-    cloudProfileState.error,
-    cloudProfileState.isLoading,
-    cloudProfileState.isSaving,
-    cloudTradeState.error,
-    cloudTradeState.isLoading,
-    cloudTradeState.isSaving,
-    cloudTradeState.lastCloudError,
-    cloudTradeState.lastCloudHydratedAt,
-    cloudTradeState.lastCloudWriteAt,
-    cloudTradeState.pendingUnsyncedChanges,
-    cloudTradeState.status,
-  ]);
 
   const screen =
     activeTab === "position" ? (
@@ -5906,31 +5014,15 @@ export default function App() {
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
-      isAuthenticated ? (
-        <JournalScreen
-          profileState={profileState}
-          localTrades={trades}
-          isAuthenticated={isAuthenticated}
-          onProfileStateChange={setProfileState}
-          onResetPreferences={resetPreferences}
-          onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
-          onImportCsvTrades={importCsvTradesForAccount}
-          onSignOut={handleSignOut}
-          cloudSyncState={combinedCloudSyncState}
-          debugEnabled={debugEnabled}
-        />
-      ) : (
-        <ProfileLockedScreen
-          authConfigured={authConfigured}
-          authMode={authMode}
-          setAuthMode={setAuthMode}
-          authForm={authForm}
-          setAuthForm={setAuthForm}
-          authBusy={authBusy}
-          authError={authError}
-          onSubmit={handleAuthSubmit}
-        />
-      )
+      <JournalScreen
+        profileState={profileState}
+        localTrades={trades}
+        onProfileStateChange={setProfileState}
+        onResetPreferences={resetPreferences}
+        onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
+        onImportCsvTrades={importCsvTradesForAccount}
+        debugEnabled={debugEnabled}
+      />
     ) : (
       <ShareScreen
         positionState={positionState}
