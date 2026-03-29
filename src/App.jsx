@@ -863,14 +863,16 @@ function SharePortraitCard({
           transition={shouldReduce ? TAB_CONTENT_TRANSITION : SHARE_CARD_TRANSITION}
         >
         <div className="flex items-center justify-between gap-3">
-          <div className={getPremiumPillClassName(shareType)}>
-            <span className="relative z-10">{shareType}</span>
+          <div className="min-w-0 flex items-center gap-2.5">
+            <div className={getPremiumPillClassName(shareType)}>
+              <span className="relative z-10">{shareType}</span>
+            </div>
+            <div className="min-w-0 text-[19px] font-semibold leading-none tracking-[-0.02em] text-slate-700/90">{selectedInstrumentKey}</div>
           </div>
-          <div className="min-w-0 flex-1 text-center text-[20px] font-semibold tracking-[-0.025em] text-slate-700/90">{selectedInstrumentKey}</div>
-          {normalizedDirection ? <div className={directionPillClassName}><span className="relative z-10">{normalizedDirection}</span></div> : null}
+          {normalizedDirection ? <div className={cn("ml-auto", directionPillClassName)}><span className="relative z-10">{normalizedDirection}</span></div> : null}
         </div>
 
-        <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
+        <div className="mt-2.5 pl-0.5 text-[12px] leading-[1.3] text-slate-500/90">{contextLine}</div>
 
         <div className="mt-6 grid w-full grid-cols-3 gap-4.5">
           {[
