@@ -54,14 +54,17 @@ export function parseCsvText(csvText = "") {
 
   const delimiter = lines[0].includes("\t") ? "\t" : ",";
   const headers = parseCsvLine(lines[0], delimiter).map((header) => toSafeString(header));
-  const rows = lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line, delimiter);
-    const row = {};
-    headers.forEach((header, index) => {
-      row[header] = toSafeString(cells[index]);
-    });
-    return row;
-  });
+  const rows = lines
+    .slice(1)
+    .map((line) => {
+      const cells = parseCsvLine(line, delimiter);
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = toSafeString(cells[index]);
+      });
+      return row;
+    })
+    .filter((row) => Object.values(row).some((value) => toSafeString(value)));
 
   return { headers, rows };
 }
@@ -97,71 +100,172 @@ function getField(row, aliases = []) {
   return "";
 }
 
-const PRESET_LIBRARY = [
+const CSV_PRESET_LIBRARY = [
   {
-    id: "tradovate",
+    id: "tradovate-csv-v1",
     label: "Tradovate CSV",
-    source: "tradovate_csv",
-    requiredHeaderAliases: [["symbol", "contract"]],
-    scoreHeaderAliases: ["buy/sell", "p&l", "net p/l", "closed at", "opened at", "commission", "fees"],
+    source: "tradovate",
+    version: 1,
+    matchHeaders: {
+      required: [["symbol", "contract"]],
+      strong: ["buy/sell", "net p/l", "closed at", "opened at"],
+      optional: ["commission", "fees", "trade id", "quantity", "entry price", "exit price"],
+    },
+    mapping: {
+      symbol: ["symbol", "contract"],
+      side: ["buy/sell", "side"],
+      entryPrice: ["entry price", "entry"],
+      exitPrice: ["exit price", "exit"],
+      quantity: ["quantity", "qty", "contracts"],
+      openedAt: ["opened at", "entry time", "entry date/time"],
+      closedAt: ["closed at", "exit time", "exit date/time", "date/time"],
+      pnl: ["net p/l", "p&l", "profit"],
+      commission: ["commission", "commissions"],
+      fees: ["fees", "exchange fee"],
+      providerTradeId: ["trade id", "trade #", "order id", "id"],
+    },
+    defaults: {
+      tradeType: "live",
+      importSource: "csv",
+    },
   },
   {
-    id: "tradestation",
-    label: "TradeStation CSV",
-    source: "tradestation_csv",
-    requiredHeaderAliases: [["symbol", "market symbol"]],
-    scoreHeaderAliases: ["entry date/time", "exit date/time", "profit/loss", "commission", "trade #", "quantity"],
-  },
-  {
-    id: "ninjatrader",
+    id: "ninjatrader-csv-v1",
     label: "NinjaTrader CSV",
-    source: "ninjatrader_csv",
-    requiredHeaderAliases: [["instrument", "symbol"]],
-    scoreHeaderAliases: ["market pos.", "entry price", "exit price", "entry time", "exit time", "profit", "account"],
+    source: "ninjatrader",
+    version: 1,
+    matchHeaders: {
+      required: [["instrument", "symbol"]],
+      strong: ["market pos.", "entry price", "exit price", "entry time", "exit time"],
+      optional: ["profit", "commission", "qty", "trade #", "account"],
+    },
+    mapping: {
+      symbol: ["instrument", "symbol"],
+      side: ["market pos.", "side", "action"],
+      entryPrice: ["entry price", "entry"],
+      exitPrice: ["exit price", "exit"],
+      quantity: ["qty", "quantity", "contracts"],
+      openedAt: ["entry time", "entry date/time", "opened at"],
+      closedAt: ["exit time", "exit date/time", "closed at", "date/time"],
+      pnl: ["profit", "profit/loss", "pnl"],
+      commission: ["commission", "commissions"],
+      fees: ["fees", "exchange fee"],
+      providerTradeId: ["trade #", "trade id", "id", "order id"],
+    },
+    defaults: {
+      tradeType: "live",
+      importSource: "csv",
+    },
   },
   {
-    id: "generic_futures",
+    id: "tradestation-csv-v1",
+    label: "TradeStation CSV",
+    source: "tradestation",
+    version: 1,
+    matchHeaders: {
+      required: [["symbol", "market symbol"]],
+      strong: ["entry date/time", "exit date/time", "profit/loss"],
+      optional: ["trade #", "quantity", "entry price", "exit price", "commission", "fees"],
+    },
+    mapping: {
+      symbol: ["market symbol", "symbol", "instrument"],
+      side: ["side", "action"],
+      entryPrice: ["entry price", "entry"],
+      exitPrice: ["exit price", "exit"],
+      quantity: ["quantity", "qty", "contracts"],
+      openedAt: ["entry date/time", "entry time", "opened at"],
+      closedAt: ["exit date/time", "exit time", "closed at"],
+      pnl: ["profit/loss", "net p/l", "p&l", "profit"],
+      commission: ["commission", "commissions"],
+      fees: ["fees"],
+      providerTradeId: ["trade #", "trade id", "id", "order id"],
+    },
+    defaults: {
+      tradeType: "live",
+      importSource: "csv",
+    },
+  },
+  {
+    id: "generic-futures-csv-v1",
     label: "Generic Futures CSV",
-    source: "generic_csv",
-    requiredHeaderAliases: [["symbol", "instrument", "contract"]],
-    scoreHeaderAliases: ["date", "time", "pnl", "profit", "side", "qty", "quantity", "entry", "exit"],
+    source: "csv",
+    version: 1,
+    matchHeaders: {
+      required: [["symbol", "instrument", "contract"]],
+      strong: ["date", "time", "entry", "exit", "pnl", "profit"],
+      optional: ["side", "qty", "quantity", "commission", "fees", "trade id"],
+    },
+    mapping: {
+      symbol: ["symbol", "instrument", "contract", "market symbol"],
+      side: ["side", "buy/sell", "market pos.", "action", "direction"],
+      entryPrice: ["entry price", "entry", "avg entry", "buy price"],
+      exitPrice: ["exit price", "exit", "avg exit", "sell price"],
+      quantity: ["qty", "quantity", "contracts"],
+      openedAt: ["opened at", "entry date/time", "entry time"],
+      closedAt: ["closed at", "exit date/time", "exit time", "date/time", "date"],
+      pnl: ["net p/l", "profit/loss", "p&l", "profit", "pnl"],
+      commission: ["commission", "commissions"],
+      fees: ["fees", "exchange fee"],
+      providerTradeId: ["trade #", "trade id", "id", "order id"],
+    },
+    defaults: {
+      tradeType: "live",
+      importSource: "csv",
+    },
   },
 ];
 
+const FALLBACK_PRESET_ID = "generic-futures-csv-v1";
+
+function buildPresetAliasMap(preset) {
+  return Object.fromEntries(
+    Object.entries(preset.mapping || {}).map(([fieldName, aliases]) => [fieldName, Array.isArray(aliases) ? aliases : []])
+  );
+}
+
+function resolvePresetById(presetId) {
+  return CSV_PRESET_LIBRARY.find((item) => item.id === presetId) || CSV_PRESET_LIBRARY[CSV_PRESET_LIBRARY.length - 1];
+}
+
 export function getImportPresets() {
-  return PRESET_LIBRARY.map((preset) => ({ id: preset.id, label: preset.label }));
+  return CSV_PRESET_LIBRARY.map((preset) => ({ id: preset.id, label: preset.label, source: preset.source, version: preset.version }));
 }
 
 export function detectCsvFormat(headers = []) {
   const normalizedHeaders = headers.map((header) => normalizeHeader(header));
 
-  const scored = PRESET_LIBRARY.map((preset) => {
-    const requiredMatches = preset.requiredHeaderAliases.reduce((count, group) => {
+  const scored = CSV_PRESET_LIBRARY.map((preset) => {
+    const requiredGroups = preset.matchHeaders?.required || [];
+    const strongHeaders = preset.matchHeaders?.strong || [];
+    const optionalHeaders = preset.matchHeaders?.optional || [];
+
+    const requiredMatches = requiredGroups.reduce((count, group) => {
       const hasGroup = group.some((alias) => normalizedHeaders.includes(normalizeHeader(alias)));
       return count + (hasGroup ? 1 : 0);
     }, 0);
 
-    const scoreMatches = preset.scoreHeaderAliases.reduce((count, alias) => {
-      return count + (normalizedHeaders.includes(normalizeHeader(alias)) ? 1 : 0);
-    }, 0);
+    const strongMatches = strongHeaders.reduce((count, alias) => count + (normalizedHeaders.includes(normalizeHeader(alias)) ? 1 : 0), 0);
+    const optionalMatches = optionalHeaders.reduce((count, alias) => count + (normalizedHeaders.includes(normalizeHeader(alias)) ? 1 : 0), 0);
+    const score = requiredMatches * 6 + strongMatches * 2 + optionalMatches;
 
-    const score = requiredMatches * 5 + scoreMatches;
     return {
       presetId: preset.id,
       label: preset.label,
+      source: preset.source,
       score,
       requiredMatches,
-      scoreMatches,
+      strongMatches,
+      optionalMatches,
     };
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0] || null;
   const second = scored[1] || null;
-  const recommendedPresetId = top && top.score > 0 ? top.presetId : "generic_futures";
+  const recommendedPresetId = top && top.score > 0 ? top.presetId : FALLBACK_PRESET_ID;
 
   let confidence = "low";
-  if (top && top.score >= 8 && (!second || top.score - second.score >= 3)) confidence = "high";
-  else if (top && top.score >= 5) confidence = "medium";
+  if (top && top.score >= 13 && (!second || top.score - second.score >= 3)) confidence = "high";
+  else if (top && top.score >= 8) confidence = "medium";
 
   return {
     confidence,
@@ -170,54 +274,84 @@ export function detectCsvFormat(headers = []) {
   };
 }
 
-function deriveSideFromRow(row) {
-  const sideRaw = getField(row, ["side", "buy/sell", "market pos.", "action", "direction"]).toLowerCase();
-  if (["buy", "long", "b"].some((value) => sideRaw.includes(value))) return "long";
-  if (["sell", "short", "s"].some((value) => sideRaw.includes(value))) return "short";
+function deriveSideFromRaw(sideRaw) {
+  const normalized = toSafeString(sideRaw).toLowerCase();
+  if (!normalized) return null;
+  if (["buy", "long", "b"].some((value) => normalized === value || normalized.startsWith(`${value} `))) return "long";
+  if (["sell", "short", "s"].some((value) => normalized === value || normalized.startsWith(`${value} `))) return "short";
   return null;
 }
 
-export function normalizeCsvRowsToTrades(rows = [], { presetId = "generic_futures" } = {}) {
-  const preset = PRESET_LIBRARY.find((item) => item.id === presetId) || PRESET_LIBRARY[PRESET_LIBRARY.length - 1];
+function buildTradeSignature(value) {
+  const symbol = String(value?.instrument || value?.symbol || "").trim().toUpperCase();
+  const openedAt = String(value?.openedAt || value?.closedAt || "").trim();
+  const entryPrice = Number(value?.entryPrice || 0);
+  const exitPrice = Number(value?.exitPrice || 0);
+  const quantity = Number(value?.quantity || 0);
+  const pnl = Number(value?.netPnl ?? value?.pnl ?? 0);
+  return `${symbol}|${openedAt}|${entryPrice}|${exitPrice}|${quantity}|${pnl}`;
+}
 
-  const normalized = rows
-    .map((row, index) => {
-      const symbol = getField(row, ["symbol", "instrument", "contract", "market symbol"]).toUpperCase() || "MNQ";
-      const pnl = parseNumber(getField(row, ["net p/l", "p&l", "profit/loss", "profit", "pnl"])) ?? 0;
-      const quantity = parseNumber(getField(row, ["qty", "quantity", "contracts"]));
-      const entryPrice = parseNumber(getField(row, ["entry price", "entry", "avg entry", "buy price"]));
-      const exitPrice = parseNumber(getField(row, ["exit price", "exit", "avg exit", "sell price"]));
-      const commission = parseNumber(getField(row, ["commission", "commissions"])) ?? 0;
-      const fees = parseNumber(getField(row, ["fees", "exchange fee"])) ?? 0;
-      const providerTradeId = getField(row, ["trade #", "trade id", "id", "order id"]) || null;
-      const side = deriveSideFromRow(row);
-      const closeDate = parseDateTime(getField(row, ["closed at", "exit date/time", "exit time", "date/time", "date"]));
-      const openDate = parseDateTime(getField(row, ["opened at", "entry date/time", "entry time"]));
-      const timestamp = (closeDate || openDate)?.getTime();
+export function buildTradeDeduplicationKey(trade = {}) {
+  const source = toSafeString(trade.source || trade.importSource || "csv").toLowerCase();
+  const providerTradeId = toSafeString(trade.providerTradeId || "");
+  const stableId = toSafeString(trade.id || "");
+  if (source && providerTradeId) return `provider:${source}:${providerTradeId}`;
+  if (stableId) return `id:${stableId}`;
+  return `signature:${buildTradeSignature(trade)}`;
+}
 
-      if (!Number.isFinite(timestamp)) return null;
+function normalizeCsvRowToTrade(row = {}, preset, index) {
+  const mapping = buildPresetAliasMap(preset);
+  const symbol = getField(row, mapping.symbol).toUpperCase() || "MNQ";
+  const pnl = parseNumber(getField(row, mapping.pnl)) ?? 0;
+  const quantity = parseNumber(getField(row, mapping.quantity));
+  const entryPrice = parseNumber(getField(row, mapping.entryPrice));
+  const exitPrice = parseNumber(getField(row, mapping.exitPrice));
+  const commission = parseNumber(getField(row, mapping.commission)) ?? 0;
+  const fees = parseNumber(getField(row, mapping.fees)) ?? 0;
+  const providerTradeId = getField(row, mapping.providerTradeId) || null;
+  const side = deriveSideFromRaw(getField(row, mapping.side));
+  const closedAtDate = parseDateTime(getField(row, mapping.closedAt));
+  const openedAtDate = parseDateTime(getField(row, mapping.openedAt));
+  const timestamp = (closedAtDate || openedAtDate)?.getTime();
 
-      return {
-        id: `${preset.id}-${providerTradeId || index}-${timestamp}`,
-        accountId: "",
-        source: preset.source,
-        providerTradeId,
-        instrument: symbol,
-        side,
-        entryPrice: Number.isFinite(entryPrice) ? entryPrice : null,
-        exitPrice: Number.isFinite(exitPrice) ? exitPrice : null,
-        quantity: Number.isFinite(quantity) ? quantity : null,
-        openedAt: openDate ? openDate.toISOString() : null,
-        closedAt: closeDate ? closeDate.toISOString() : openDate ? openDate.toISOString() : null,
-        timestamp,
-        pnl,
-        commission,
-        fees,
-        netPnl: pnl - commission - fees,
-        tradeType: "live",
-      };
-    })
-    .filter(Boolean);
+  if (!Number.isFinite(timestamp)) return null;
 
-  return normalized;
+  return {
+    id: `${preset.id}-${providerTradeId || index}-${timestamp}`,
+    accountId: "",
+    source: preset.source || "csv",
+    importSource: preset.defaults?.importSource || "csv",
+    providerTradeId,
+    instrument: symbol,
+    symbol,
+    side,
+    entryPrice: Number.isFinite(entryPrice) ? entryPrice : null,
+    exitPrice: Number.isFinite(exitPrice) ? exitPrice : null,
+    quantity: Number.isFinite(quantity) ? quantity : null,
+    openedAt: openedAtDate ? openedAtDate.toISOString() : null,
+    closedAt: closedAtDate ? closedAtDate.toISOString() : openedAtDate ? openedAtDate.toISOString() : null,
+    timestamp,
+    pnl,
+    commission,
+    fees,
+    netPnl: pnl - commission - fees,
+    tradeType: preset.defaults?.tradeType === "paper" ? "paper" : "live",
+    ruleViolation: false,
+    ruleViolationReason: null,
+  };
+}
+
+export function normalizeCsvRowsToTrades(rows = [], { presetId = FALLBACK_PRESET_ID } = {}) {
+  const preset = resolvePresetById(presetId);
+  return rows.map((row, index) => normalizeCsvRowToTrade(row, preset, index)).filter(Boolean);
+}
+
+export function estimateDuplicateCount(existingTrades = [], incomingTrades = []) {
+  const existingKeys = new Set((existingTrades || []).map((trade) => buildTradeDeduplicationKey(trade)));
+  return (incomingTrades || []).reduce((count, trade) => {
+    const key = buildTradeDeduplicationKey(trade);
+    return count + (existingKeys.has(key) ? 1 : 0);
+  }, 0);
 }
