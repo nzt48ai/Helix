@@ -419,6 +419,89 @@ function derivePositionSetupSnapshot(positionState) {
   };
 }
 
+function resolveForecastTargetBalance(goalMode, dollarGoal, percentGoal, startBalance, minimumValidDollarGoal) {
+  if (!Number.isFinite(startBalance) || startBalance <= 0) return null;
+  if (goalMode === "%") {
+    if (!Number.isFinite(percentGoal) || percentGoal <= 0) return null;
+    const resolvedPercentTarget = startBalance * (1 + percentGoal / 100);
+    return Number.isFinite(resolvedPercentTarget) ? resolvedPercentTarget : null;
+  }
+  if (!Number.isFinite(dollarGoal) || dollarGoal < minimumValidDollarGoal) return null;
+  return dollarGoal;
+}
+
+function buildProjectionPathModel({
+  projectionTargetBalance,
+  startingBalance,
+  effectiveGrowthPercentPerPeriod,
+  hasSafeScalingInputs,
+  balancePerContractTier,
+  baseContracts,
+  hasSafeGain,
+  parsedGainPercent,
+  hasSafeWinRate,
+  parsedWinRatePercent,
+  drawdownExpectedPercent = null,
+}) {
+  if (!projectionTargetBalance || startingBalance <= 0 || effectiveGrowthPercentPerPeriod <= 0) {
+    return {
+      points: [],
+      periodsEstimate: null,
+      sizingMilestones: [],
+      confidenceSpread: 0,
+      bandUpper: null,
+      bandLower: null,
+    };
+  }
+
+  const points = [startingBalance];
+  const sizingMilestones = [];
+  let balance = startingBalance;
+  let lastContracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
+  const maxPeriods = 180;
+
+  for (let period = 1; period <= maxPeriods; period += 1) {
+    const contracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
+    const cappedContracts = Math.max(1, Math.min(contracts, baseContracts * 24));
+    const sizeMultiplier = hasSafeScalingInputs ? Math.max(1, cappedContracts / Math.max(1, baseContracts)) : 1;
+    const periodGrowthRate = Math.max(0.001, (effectiveGrowthPercentPerPeriod / 100) * sizeMultiplier);
+    const nextBalance = Math.max(0, balance * (1 + periodGrowthRate));
+    const safeNextBalance = Number.isFinite(nextBalance) ? nextBalance : balance;
+    points.push(safeNextBalance);
+    if (cappedContracts > lastContracts) {
+      sizingMilestones.push({ key: `size-${period}-${cappedContracts}`, period, value: safeNextBalance, label: `${cappedContracts} ctr` });
+      lastContracts = cappedContracts;
+    }
+    balance = safeNextBalance;
+    if (balance >= projectionTargetBalance) break;
+  }
+
+  if (points.length < 2) {
+    return { points: [], periodsEstimate: null, sizingMilestones: [], confidenceSpread: 0, bandUpper: null, bandLower: null };
+  }
+
+  const periodsEstimate = points.length - 1;
+  const baseSpread = 0.06;
+  const gainModifier = hasSafeGain ? Math.min(0.1, parsedGainPercent / 200) : 0.04;
+  const winRateModifier = hasSafeWinRate ? Math.max(0, (55 - parsedWinRatePercent) / 500) : 0.02;
+  const drawdownModifier = Number.isFinite(drawdownExpectedPercent) ? Math.min(0.08, drawdownExpectedPercent / 400) : 0.02;
+  const confidenceSpread = Math.min(0.22, Math.max(0.05, baseSpread + gainModifier + winRateModifier + drawdownModifier));
+  const bandUpper = points.map((value, index) => {
+    const progress = points.length <= 1 ? 0 : index / (points.length - 1);
+    const spread = 1 + confidenceSpread * (0.4 + progress * 0.8);
+    const upper = value * spread;
+    return Number.isFinite(upper) ? upper : value;
+  });
+  const bandLower = points.map((value, index) => {
+    const progress = points.length <= 1 ? 0 : index / (points.length - 1);
+    const spread = 1 - confidenceSpread * (0.45 + progress * 0.9);
+    const lower = Math.max(0, value * spread);
+    return Number.isFinite(lower) ? lower : value;
+  });
+
+  return { points, periodsEstimate, sizingMilestones, confidenceSpread, bandUpper, bandLower };
+}
+
 const SHARE_CARD_EXPORT_WIDTH = 420;
 const SHARE_CARD_EXPORT_HEIGHT = Math.round((SHARE_CARD_EXPORT_WIDTH * 16) / 9);
 
@@ -734,6 +817,7 @@ function SharePortraitCard({
   setupMissingMessage = "",
   identity,
   disableMotion = false,
+  setupProjectionChart = null,
 }) {
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
@@ -802,6 +886,24 @@ function SharePortraitCard({
             </div>
           ))}
         </div>
+
+        {/* Replay and Journal chart hooks intentionally deferred until their dedicated data sources are defined. */}
+        {shareType === "SETUP" && setupProjectionChart?.isReady ? (
+          <div className="mt-4">
+            <ProjectionChart
+              points={setupProjectionChart.points}
+              bandUpper={setupProjectionChart.bandUpper}
+              bandLower={setupProjectionChart.bandLower}
+              projectionMode
+              milestones={[]}
+              inspectorEnabled={false}
+              hideHeader
+              compact
+              animatePath
+              disableAnimation={shouldReduce}
+            />
+          </div>
+        ) : null}
 
         <div className="mt-5 min-w-0 text-center">
           <div
@@ -1285,9 +1387,14 @@ function ProjectionChart({
   inspectorGoalValue = null,
   inspectorTradeUnitLabel = "",
   inspectorPositionSizes = [],
+  hideHeader = false,
+  compact = false,
+  animatePath = false,
+  disableAnimation = false,
 }) {
+  const reduceMotion = useReducedMotion();
   const width = 320;
-  const height = 150;
+  const height = compact ? 118 : 150;
   const [activeIndex, setActiveIndex] = useState(null);
   const allValues = [...points, ...(bandUpper || []), ...(bandLower || [])];
   const max = Math.max(...allValues, 1);
@@ -1343,18 +1450,22 @@ function ProjectionChart({
     const index = Math.round((clampedX / width) * (points.length - 1));
     setActiveIndex(Math.max(0, Math.min(points.length - 1, index)));
   };
+  const shouldAnimatePath = animatePath && !disableAnimation && !reduceMotion;
+  const linePath = pathFor(points);
 
   return (
-    <GlassCard className="rounded-[28px] p-4 sm:rounded-[30px]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <TinyLabel>{projectionMode ? "Projection" : "Growth Chart"}</TinyLabel>
-          <div className="mt-1 text-[17px] font-semibold tracking-[-0.03em] text-slate-700 sm:text-[18px]">
-            {projectionMode ? "Projected balance path" : "Compounded growth path"}
+    <GlassCard className={cn("rounded-[28px] p-4 sm:rounded-[30px]", compact && "rounded-[24px] p-3")}>
+      {!hideHeader ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <TinyLabel>{projectionMode ? "Projection" : "Growth Chart"}</TinyLabel>
+            <div className="mt-1 text-[17px] font-semibold tracking-[-0.03em] text-slate-700 sm:text-[18px]">
+              {projectionMode ? "Projected balance path" : "Compounded growth path"}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="mt-4 overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3">
+      ) : null}
+      <div className={cn("overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.12))] p-3", hideHeader ? "mt-0" : "mt-4", compact && "rounded-[20px] p-2.5")}>
         <div
           className="relative"
           onMouseMove={inspectorEnabled ? handlePointerMove : undefined}
@@ -1370,7 +1481,17 @@ function ProjectionChart({
             {projectionMode && bandPath ? <path d={bandPath} fill="rgba(96,165,250,0.16)" /> : null}
             {projectionMode && bandLower ? <path d={pathFor(bandLower)} fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth="1.5" strokeDasharray="4 4" /> : null}
             {projectionMode && bandUpper ? <path d={pathFor(bandUpper)} fill="none" stroke="rgba(96,165,250,0.45)" strokeWidth="1.5" strokeDasharray="4 4" /> : null}
-            <path d={pathFor(points)} fill="none" stroke="rgba(59,130,246,0.96)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <motion.path
+              d={linePath}
+              fill="none"
+              stroke="rgba(59,130,246,0.96)"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.75 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 1 } : { pathLength: 1, opacity: 1 }}
+              transition={shouldAnimatePath ? { duration: 1.15, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+            />
             {activePoint ? (
               <g>
                 <line x1={activePoint.x} x2={activePoint.x} y1="0" y2={height} stroke="rgba(59,130,246,0.25)" strokeWidth="1.5" strokeDasharray="4 4" />
@@ -1842,17 +1963,6 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
   const hasSafeGain = parsedGainPercent > 0;
   const hasSafeWinRate = parsedWinRatePercent > 0;
 
-  const resolveForecastTargetBalance = (goalMode, dollarGoal, percentGoal, startBalance, minimumValidDollarGoal) => {
-    if (!Number.isFinite(startBalance) || startBalance <= 0) return null;
-    if (goalMode === "%") {
-      if (!Number.isFinite(percentGoal) || percentGoal <= 0) return null;
-      const resolvedPercentTarget = startBalance * (1 + percentGoal / 100);
-      return Number.isFinite(resolvedPercentTarget) ? resolvedPercentTarget : null;
-    }
-    if (!Number.isFinite(dollarGoal) || dollarGoal < minimumValidDollarGoal) return null;
-    return dollarGoal;
-  };
-
   const effectiveGrowthPercentPerPeriod = hasSafeGain
     ? Math.max(0.1, parsedGainPercent * (hasSafeWinRate ? 0.5 + parsedWinRatePercent / 200 : 1) * safeTradeFrequencyValue)
     : 0;
@@ -1870,39 +1980,37 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
   const hasSafeScalingInputs = startingBalance > 0 && baseContracts > 0 && !!selectedInstrument;
   const balancePerContractTier = hasSafeScalingInputs ? Math.max(1, startingBalance / baseContracts) : null;
 
-  const scaledProjectionData = useMemo(() => {
-    if (!projectionTargetBalance || startingBalance <= 0 || effectiveGrowthPercentPerPeriod <= 0) {
-      return { points: [], periodsEstimate: null, sizingMilestones: [] };
-    }
-    const points = [startingBalance];
-    const sizingMilestones = [];
-    let balance = startingBalance;
-    let lastContracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
-    const maxPeriods = 180;
+  const projectionPathModel = useMemo(
+    () =>
+      buildProjectionPathModel({
+        projectionTargetBalance,
+        startingBalance,
+        effectiveGrowthPercentPerPeriod,
+        hasSafeScalingInputs,
+        balancePerContractTier,
+        baseContracts,
+        hasSafeGain,
+        parsedGainPercent,
+        hasSafeWinRate,
+        parsedWinRatePercent,
+      }),
+    [
+      projectionTargetBalance,
+      startingBalance,
+      effectiveGrowthPercentPerPeriod,
+      hasSafeScalingInputs,
+      balancePerContractTier,
+      baseContracts,
+      hasSafeGain,
+      parsedGainPercent,
+      hasSafeWinRate,
+      parsedWinRatePercent,
+    ]
+  );
 
-    for (let period = 1; period <= maxPeriods; period += 1) {
-      const contracts = hasSafeScalingInputs && balancePerContractTier ? Math.max(1, Math.floor(balance / balancePerContractTier)) : baseContracts;
-      const cappedContracts = Math.max(1, Math.min(contracts, baseContracts * 24));
-      const sizeMultiplier = hasSafeScalingInputs ? Math.max(1, cappedContracts / Math.max(1, baseContracts)) : 1;
-      const periodGrowthRate = Math.max(0.001, (effectiveGrowthPercentPerPeriod / 100) * sizeMultiplier);
-      const nextBalance = Math.max(0, balance * (1 + periodGrowthRate));
-      const safeNextBalance = Number.isFinite(nextBalance) ? nextBalance : balance;
-      points.push(safeNextBalance);
-      if (cappedContracts > lastContracts) {
-        sizingMilestones.push({ key: `size-${period}-${cappedContracts}`, period, value: safeNextBalance, label: `${cappedContracts} ctr` });
-        lastContracts = cappedContracts;
-      }
-      balance = safeNextBalance;
-      if (balance >= projectionTargetBalance) {
-        return { points, periodsEstimate: period, sizingMilestones };
-      }
-    }
-    return { points, periodsEstimate: null, sizingMilestones };
-  }, [projectionTargetBalance, startingBalance, effectiveGrowthPercentPerPeriod, hasSafeScalingInputs, balancePerContractTier, baseContracts]);
-
-  const projectionChartPoints = scaledProjectionData.points.length >= 2 ? scaledProjectionData.points : [];
+  const projectionChartPoints = projectionPathModel.points.length >= 2 ? projectionPathModel.points : [];
   const projectionChartReady = projectionChartPoints.length >= 2;
-  const projectionPeriodsEstimate = scaledProjectionData.periodsEstimate;
+  const projectionPeriodsEstimate = projectionPathModel.periodsEstimate;
   const projectionTradeUnitLabel = tradeFrequency === "Per Day" ? "Day" : tradeFrequency === "Per Week" ? "Week" : "Month";
   const projectionUnitLabel = tradeFrequency === "Per Day"
     ? projectionPeriodsEstimate === 1
@@ -1940,34 +2048,8 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
     };
   }, [parsedGainPercent, parsedWinRatePercent, hasSafeWinRate, projectionPeriodsEstimate, safeTradeFrequencyValue, projectionGoalHasValue, projectionFrequencyHasValue, projectionTargetBalance]);
 
-  const projectionConfidenceSpread = useMemo(() => {
-    if (!projectionChartReady) return 0;
-    const baseSpread = 0.06;
-    const gainModifier = hasSafeGain ? Math.min(0.1, parsedGainPercent / 200) : 0.04;
-    const winRateModifier = hasSafeWinRate ? Math.max(0, (55 - parsedWinRatePercent) / 500) : 0.02;
-    const drawdownModifier = projectionDrawdownMetrics.expected !== fallbackValue ? Math.min(0.08, parseNumberString(projectionDrawdownMetrics.expected) / 400) : 0.02;
-    return Math.min(0.22, Math.max(0.05, baseSpread + gainModifier + winRateModifier + drawdownModifier));
-  }, [projectionChartReady, hasSafeGain, parsedGainPercent, hasSafeWinRate, parsedWinRatePercent, projectionDrawdownMetrics.expected]);
-
-  const projectionBandUpper = useMemo(() => {
-    if (!projectionChartReady) return null;
-    return projectionChartPoints.map((value, index) => {
-      const progress = projectionChartPoints.length <= 1 ? 0 : index / (projectionChartPoints.length - 1);
-      const spread = 1 + projectionConfidenceSpread * (0.4 + progress * 0.8);
-      const upper = value * spread;
-      return Number.isFinite(upper) ? upper : value;
-    });
-  }, [projectionChartReady, projectionChartPoints, projectionConfidenceSpread]);
-
-  const projectionBandLower = useMemo(() => {
-    if (!projectionChartReady) return null;
-    return projectionChartPoints.map((value, index) => {
-      const progress = projectionChartPoints.length <= 1 ? 0 : index / (projectionChartPoints.length - 1);
-      const spread = 1 - projectionConfidenceSpread * (0.45 + progress * 0.9);
-      const lower = Math.max(0, value * spread);
-      return Number.isFinite(lower) ? lower : value;
-    });
-  }, [projectionChartReady, projectionChartPoints, projectionConfidenceSpread]);
+  const projectionBandUpper = projectionPathModel.bandUpper;
+  const projectionBandLower = projectionPathModel.bandLower;
 
   const projectionPositionSizeSeries = useMemo(() => {
     if (projectionChartPoints.length < 2) return [];
@@ -1981,7 +2063,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
   const projectionMilestones = useMemo(() => {
     if (!projectionChartReady || !projectionTargetBalance || startingBalance <= 0) return [];
     const safeTarget = Math.max(startingBalance, projectionTargetBalance);
-    const sizeMilestones = scaledProjectionData.sizingMilestones.map((milestone) => ({
+    const sizeMilestones = projectionPathModel.sizingMilestones.map((milestone) => ({
       key: milestone.key,
       x: projectionChartPoints.length <= 1 ? 0 : (milestone.period / Math.max(1, projectionChartPoints.length - 1)) * 320,
       value: milestone.value,
@@ -2010,7 +2092,7 @@ function CompoundScreen({ positionState, compoundState, setCompoundState, debugE
       label: index === 0 ? "Start" : index === 4 ? "Goal" : compactCurrency.format(startingBalance + span * ratio),
       isGoal: index === 4,
     }));
-  }, [projectionChartReady, projectionTargetBalance, startingBalance, scaledProjectionData.sizingMilestones, projectionChartPoints.length]);
+  }, [projectionChartReady, projectionTargetBalance, startingBalance, projectionPathModel.sizingMilestones, projectionChartPoints.length]);
 
   const projectionEstimatedGoalDate = useMemo(() => {
     if (!projectionPeriodsEstimate || !Number.isFinite(projectionPeriodsEstimate)) return null;
@@ -3235,6 +3317,52 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
   const setupCardStop = isSetupCard && !setupIsComplete ? 0 : stop;
   const setupCardTarget = isSetupCard && !setupIsComplete ? 0 : target;
   const shareDisabled = isExporting || (isSetupCard && !setupIsComplete);
+  const setupProjectionChart = useMemo(() => {
+    if (!isSetupCard || !setupIsComplete) return { isReady: false, points: [], bandUpper: null, bandLower: null };
+    const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "50,000"));
+    const projectionGoalDisplayType = compoundState.projectionGoalDisplayType;
+    const rawDollarGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalDollarInput || "0"));
+    const rawPercentGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalPercentInput || "0"));
+    const minimumDollarGoal = startingBalance > 0 ? startingBalance + 1 : 1;
+    const parsedTradeFrequencyValue = Math.max(0, parseNumberString(compoundState.tradeFrequencyValue || "0"));
+    const safeTradeFrequencyValue = Math.max(1, parsedTradeFrequencyValue || 1);
+    const parsedGainPercent = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
+    const parsedWinRatePercent = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
+    const hasSafeGain = parsedGainPercent > 0;
+    const hasSafeWinRate = parsedWinRatePercent > 0;
+    const effectiveGrowthPercentPerPeriod = hasSafeGain
+      ? Math.max(0.1, parsedGainPercent * (hasSafeWinRate ? 0.5 + parsedWinRatePercent / 200 : 1) * safeTradeFrequencyValue)
+      : 0;
+    const projectionTargetBalance = resolveForecastTargetBalance(
+      projectionGoalDisplayType,
+      rawDollarGoalNumeric,
+      rawPercentGoalNumeric,
+      startingBalance,
+      minimumDollarGoal
+    );
+    const baseContracts = Math.max(1, parseNumberString(positionState.contracts || "1"));
+    const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
+    const hasSafeScalingInputs = startingBalance > 0 && baseContracts > 0 && !!selectedInstrument;
+    const balancePerContractTier = hasSafeScalingInputs ? Math.max(1, startingBalance / baseContracts) : null;
+    const pathModel = buildProjectionPathModel({
+      projectionTargetBalance,
+      startingBalance,
+      effectiveGrowthPercentPerPeriod,
+      hasSafeScalingInputs,
+      balancePerContractTier,
+      baseContracts,
+      hasSafeGain,
+      parsedGainPercent,
+      hasSafeWinRate,
+      parsedWinRatePercent,
+    });
+    return {
+      isReady: pathModel.points.length >= 2,
+      points: pathModel.points,
+      bandUpper: pathModel.bandUpper,
+      bandLower: pathModel.bandLower,
+    };
+  }, [compoundState, isSetupCard, positionState.accountBalance, positionState.contracts, positionState.instrument, setupIsComplete]);
 
   return (
     <div className="space-y-4 pb-4">
@@ -3263,6 +3391,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion={false}
+            setupProjectionChart={setupProjectionChart}
           />
         </div>
         <SegmentedControl
@@ -3309,6 +3438,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             setupMissingMessage={setupMissingMessage}
             identity={shareIdentity}
             disableMotion
+            setupProjectionChart={setupProjectionChart}
           />
         </div>
       </div>
