@@ -818,6 +818,7 @@ function SharePortraitCard({
   identity,
   disableMotion = false,
   setupProjectionChart = null,
+  setupEntryTimeLabel = "",
 }) {
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
@@ -897,6 +898,13 @@ function SharePortraitCard({
               bandUpper={setupProjectionChart.bandUpper}
               bandLower={setupProjectionChart.bandLower}
               projectionMode
+              referenceLevels={[
+                { key: "entry", label: "Entry", value: entryValue, stroke: "rgba(71,85,105,0.34)" },
+                { key: "stop", label: "Stop", value: stopValue, stroke: "rgba(244,63,94,0.34)" },
+                { key: "target", label: "Target", value: targetValue, stroke: "rgba(16,185,129,0.34)" },
+              ]}
+              entryTimeLabel={setupEntryTimeLabel}
+              blendBackground
               milestones={[]}
               inspectorEnabled={false}
               hideHeader
@@ -1398,6 +1406,9 @@ function ProjectionChart({
   compact = false,
   animatePath = false,
   disableAnimation = false,
+  referenceLevels = [],
+  entryTimeLabel = "",
+  blendBackground = false,
 }) {
   const reduceMotion = useReducedMotion();
   const chartVisualId = useId();
@@ -1463,6 +1474,15 @@ function ProjectionChart({
   const gradientId = `projection-line-gradient-${chartVisualId}`;
   const glowId = `projection-line-glow-${chartVisualId}`;
   const entryPoint = points.length > 0 ? { x: 0, y: yFor(points[0]) } : null;
+  const referenceLevelValues = referenceLevels.map((level) => Number(level?.value)).filter((value) => Number.isFinite(value));
+  const referenceLevelMin = referenceLevelValues.length ? Math.min(...referenceLevelValues) : null;
+  const referenceLevelMax = referenceLevelValues.length ? Math.max(...referenceLevelValues) : null;
+  const hasReferenceDomain = referenceLevelMin !== null && referenceLevelMax !== null;
+  const referenceRange = hasReferenceDomain ? Math.max(referenceLevelMax - referenceLevelMin, 1) : 1;
+  const yForReferenceLevel = (value) => {
+    if (!Number.isFinite(value) || !hasReferenceDomain) return null;
+    return height - ((value - referenceLevelMin) / referenceRange) * height;
+  };
 
   return (
     <GlassCard className={cn("rounded-[28px] p-4 sm:rounded-[30px]", compact && "rounded-[24px] p-3")}>
@@ -1480,7 +1500,8 @@ function ProjectionChart({
         className={cn(
           "overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.14))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55),inset_0_-12px_20px_rgba(148,163,184,0.05)]",
           hideHeader ? "mt-0" : "mt-4",
-          compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.2))] p-2.5 shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]"
+          compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.2))] p-2.5 shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]",
+          blendBackground && "border border-white/20 bg-transparent shadow-none"
         )}
       >
         <div
@@ -1505,6 +1526,16 @@ function ProjectionChart({
             {[0.24, 0.52, 0.8].map((ratio) => (
               <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
             ))}
+            {referenceLevels.map((level) => {
+              const y = yForReferenceLevel(Number(level?.value));
+              if (y === null) return null;
+              return (
+                <g key={level.key || level.label}>
+                  <line x1="0" x2={width} y1={y} y2={y} stroke={level.stroke || "rgba(100,116,139,0.28)"} strokeWidth="1.1" strokeDasharray="2 4" />
+                  <circle cx={width - 2.5} cy={y} r="1.8" fill={level.stroke || "rgba(100,116,139,0.4)"} />
+                </g>
+              );
+            })}
             {projectionMode && bandPath ? <path d={bandPath} fill="rgba(96,165,250,0.06)" /> : null}
             {projectionMode && bandLower ? <path d={pathFor(bandLower)} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="1" strokeDasharray="3 5" /> : null}
             {projectionMode && bandUpper ? <path d={pathFor(bandUpper)} fill="none" stroke="rgba(96,165,250,0.18)" strokeWidth="1" strokeDasharray="3 5" /> : null}
@@ -1537,6 +1568,14 @@ function ProjectionChart({
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="7" fill="rgba(59,130,246,0.25)" />
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="4.4" fill="rgba(99,102,241,0.26)" />
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="2.5" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.95)" strokeWidth="1.6" />
+                {entryTimeLabel ? (
+                  <g>
+                    <line x1={entryPoint.x + 5} x2={entryPoint.x + 5} y1={Math.max(0, entryPoint.y - 14)} y2={Math.max(0, entryPoint.y - 5)} stroke="rgba(71,85,105,0.4)" strokeWidth="1" />
+                    <text x={entryPoint.x + 8} y={Math.max(10, entryPoint.y - 16)} textAnchor="start" fontSize="7.2" fontWeight="600" fill="rgba(71,85,105,0.78)">
+                      {entryTimeLabel}
+                    </text>
+                  </g>
+                ) : null}
               </g>
             ) : null}
             {activePoint ? (
@@ -3265,6 +3304,10 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
     }
     return "Current Position tab setup";
   }, [journalPeriod, setupCardTimeMs, shareType]);
+  const setupEntryTimeLabel = useMemo(() => {
+    if (shareType !== "SETUP") return "";
+    return formatTimeInTimeZoneAmPm(setupCardTimeMs, "America/New_York");
+  }, [setupCardTimeMs, shareType]);
 
   const heroMetric = useMemo(() => {
     if (shareType === "REPLAY") {
@@ -3439,6 +3482,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             identity={shareIdentity}
             disableMotion={false}
             setupProjectionChart={setupProjectionChart}
+            setupEntryTimeLabel={setupEntryTimeLabel}
           />
         </div>
         <SegmentedControl
@@ -3486,6 +3530,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
             identity={shareIdentity}
             disableMotion
             setupProjectionChart={setupProjectionChart}
+            setupEntryTimeLabel={setupEntryTimeLabel}
           />
         </div>
       </div>
