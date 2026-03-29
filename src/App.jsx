@@ -1267,6 +1267,91 @@ function FuturesInstrumentPicker({ open, query, onQueryChange, results, onClose,
   );
 }
 
+function PropModeSelectorDialog({ open, accounts = [], selectedAccountIds = [], onToggleAccount, onClose }) {
+  const reduceMotion = useReducedMotion();
+  const selectedSet = useMemo(() => new Set(selectedAccountIds), [selectedAccountIds]);
+  const dialogInitial = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.985 };
+  const dialogAnimate = reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 };
+  const dialogExit = reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.99 };
+
+  return (
+    <AnimatePresence initial={false}>
+      {open ? (
+        <div className="fixed inset-0 z-[1260] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Prop mode account selector">
+          <motion.button
+            type="button"
+            onClick={onClose}
+            className="absolute inset-0 bg-slate-900/18 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={OVERLAY_FADE_TRANSITION}
+          />
+          <motion.div
+            className="relative w-full max-w-[460px] overflow-hidden rounded-[34px] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.95))] px-6 pb-5 pt-6 shadow-[0_24px_54px_rgba(98,115,155,0.22),0_8px_18px_rgba(128,145,184,0.12),inset_0_1px_0_rgba(255,255,255,0.92)]"
+            initial={dialogInitial}
+            animate={dialogAnimate}
+            exit={dialogExit}
+            transition={reduceMotion ? TAB_CONTENT_TRANSITION : FUTURES_PICKER_TRANSITION}
+          >
+            <div className="text-center">
+              <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-700">Prop Mode</div>
+              <div className="mt-1 text-[12px] leading-relaxed text-slate-500">Choose which prop accounts to include when sizing from Prop Mode.</div>
+            </div>
+
+            <div className="mt-5 space-y-2.5">
+              {accounts.length ? (
+                accounts.map((account) => {
+                  const isSelected = selectedSet.has(account.id);
+                  const title = getAccountRowMeta(account).title;
+                  const subtitle = getAccountRowMeta(account).subtitle;
+                  return (
+                    <button
+                      key={account.id}
+                      type="button"
+                      onClick={() => onToggleAccount(account.id, !isSelected)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-[20px] px-4 py-3 text-left transition-colors",
+                        isSelected ? "bg-[rgba(238,245,255,0.85)]" : "bg-[rgba(255,255,255,0.75)] hover:bg-[rgba(250,252,255,0.92)]"
+                      )}
+                    >
+                      <div className="min-w-0 pr-3">
+                        <div className="truncate text-[13px] font-semibold text-slate-700">{title}</div>
+                        <div className="truncate text-[11px] text-slate-500">{subtitle}</div>
+                      </div>
+                      <span
+                        className={cn(
+                          "h-5 w-5 shrink-0 rounded-full transition-all",
+                          isSelected
+                            ? "border border-blue-300/70 bg-[linear-gradient(180deg,rgba(112,149,233,0.96),rgba(98,131,215,0.94))] shadow-[0_0_0_1px_rgba(84,119,204,0.18)]"
+                            : "border border-slate-300/70 bg-white/92"
+                        )}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="rounded-[20px] bg-white/70 px-4 py-4 text-center text-[12px] text-slate-500">No prop accounts available yet.</div>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-center">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full bg-[rgba(245,248,255,0.95)] px-6 py-2 text-[12px] font-semibold tracking-[-0.01em] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] hover:bg-[rgba(250,252,255,0.98)]"
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 function BalanceHeroCard({
   label,
   value,
@@ -1574,13 +1659,14 @@ function CompoundInputShell({ children, className = "" }) {
   );
 }
 
-function PositionScreen({ positionState, setPositionState, profileState, debugEnabled = false }) {
+function PositionScreen({ positionState, setPositionState, profileState, onProfileStateChange, debugEnabled = false }) {
   const reduceMotion = useReducedMotion();
   const lastManualContractsRef = useRef("1");
   const hasMountedContractsEffectRef = useRef(false);
   const lastDefaultInstrumentRef = useRef(POSITION_INSTRUMENTS[2]?.key || "MNQ");
   const [activePriceField, setActivePriceField] = useState(null);
   const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
+  const [propModeSelectorOpen, setPropModeSelectorOpen] = useState(false);
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
@@ -1607,6 +1693,14 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     const selectedIdSet = new Set(selectedIds);
     return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop" && selectedIdSet.has(account.id));
   }, [profileState]);
+  const propAccounts = useMemo(() => {
+    const allAccounts = Array.isArray(profileState?.accounts) ? profileState.accounts : [];
+    return allAccounts.filter((account) => normalizeAccountType(account?.type) === "prop");
+  }, [profileState]);
+  const selectedPropAccountIds = useMemo(() => {
+    const selectedIds = Array.isArray(profileState?.selectedPropAccountIds) ? profileState.selectedPropAccountIds : [];
+    return selectedIds.filter((id) => propAccounts.some((account) => account.id === id));
+  }, [profileState, propAccounts]);
   const propModeBalanceOverride = useMemo(() => {
     if (!positionState.propMode || !selectedPropAccounts.length) return null;
     const combinedBalance = selectedPropAccounts.reduce((sum, account) => {
@@ -1707,6 +1801,36 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     if (didChange) triggerLightHaptic();
   };
 
+  const handleTogglePropMode = () => {
+    const nextState = !positionState.propMode;
+    setField("propMode", nextState);
+    if (nextState) {
+      triggerLightHaptic();
+      setPropModeSelectorOpen(true);
+    }
+  };
+
+  const handleTogglePropModeAccount = useCallback(
+    (accountId, checked) => {
+      if (typeof onProfileStateChange !== "function" || !accountId) return;
+      onProfileStateChange((prev) => {
+        const safePrev = sanitizeProfileState(prev);
+        const currentSelection = Array.isArray(safePrev.selectedPropAccountIds) ? safePrev.selectedPropAccountIds : [];
+        const selectionSet = new Set(currentSelection);
+        if (checked) {
+          selectionSet.add(accountId);
+        } else {
+          selectionSet.delete(accountId);
+        }
+        return sanitizeProfileState({
+          ...safePrev,
+          selectedPropAccountIds: Array.from(selectionSet),
+        });
+      });
+    },
+    [onProfileStateChange]
+  );
+
   useEffect(() => {
     if (!isDefaultInstrument) return;
     lastDefaultInstrumentRef.current = instrument;
@@ -1784,11 +1908,33 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
         }}
         toggleLabel="Prop"
         toggleState={positionState.propMode}
-        onToggle={() => setField("propMode", !positionState.propMode)}
+        onToggle={handleTogglePropMode}
       />
       {showPropModeSelectionHint ? (
-        <div className="px-1 text-center text-[12px] font-medium text-slate-500">Select prop accounts in Profile to use Prop Mode</div>
+        <button
+          type="button"
+          onClick={() => setPropModeSelectorOpen(true)}
+          className="mx-auto block px-1 text-center text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
+        >
+          Select prop accounts to use Prop Mode
+        </button>
       ) : null}
+      {positionState.propMode && !showPropModeSelectionHint ? (
+        <button
+          type="button"
+          onClick={() => setPropModeSelectorOpen(true)}
+          className="mx-auto block px-1 text-center text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-700"
+        >
+          Edit included prop accounts
+        </button>
+      ) : null}
+      <PropModeSelectorDialog
+        open={propModeSelectorOpen}
+        accounts={propAccounts}
+        selectedAccountIds={selectedPropAccountIds}
+        onToggleAccount={handleTogglePropModeAccount}
+        onClose={() => setPropModeSelectorOpen(false)}
+      />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
@@ -4525,6 +4671,7 @@ export default function App() {
         positionState={positionState}
         setPositionState={setPositionState}
         profileState={profileState}
+        onProfileStateChange={setProfileState}
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "compound" ? (
