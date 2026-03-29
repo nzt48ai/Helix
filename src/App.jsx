@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import {
   Dna,
@@ -816,6 +816,10 @@ function SharePortraitCard({
   disableMotion = false,
   replayResultValue = 0,
 }) {
+  const chartId = useId().replace(/:/g, "");
+  const chartBgGradientId = `${chartId}-share-chart-bg`;
+  const chartFocusGradientId = `${chartId}-share-chart-focus`;
+  const chartPathGradientId = `${chartId}-share-chart-path`;
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
   const premiumPillBaseClassName =
@@ -907,29 +911,29 @@ function SharePortraitCard({
           </div>
           <svg viewBox="0 0 100 100" className="h-[calc(100%-52px)] w-full rounded-[20px]">
             <defs>
-              <linearGradient id="share-chart-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+              <linearGradient id={chartBgGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
                 <stop offset="100%" stopColor="rgba(241,246,255,0.34)" />
               </linearGradient>
-              <radialGradient id="share-chart-focus" cx="50%" cy="52%" r="46%">
+              <radialGradient id={chartFocusGradientId} cx="50%" cy="52%" r="46%">
                 <stop offset="0%" stopColor="rgba(116,152,255,0.10)" />
                 <stop offset="100%" stopColor="rgba(116,152,255,0)" />
               </radialGradient>
-              <linearGradient id="share-chart-path" x1="22%" y1="16%" x2="84%" y2="82%">
+              <linearGradient id={chartPathGradientId} x1="22%" y1="16%" x2="84%" y2="82%">
                 <stop offset="0%" stopColor="#8B7CFF" />
                 <stop offset="52%" stopColor="#5B8CFF" />
                 <stop offset="100%" stopColor="#4FD9FF" />
               </linearGradient>
             </defs>
-            <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-bg)" />
-            <rect x="0" y="0" width="100" height="100" rx="20" fill="url(#share-chart-focus)" />
+            <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartBgGradientId})`} />
+            <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartFocusGradientId})`} />
             {chartModel.referenceLines.map((line) => (
               <line key={line.id} x1="10" x2="90" y1={line.y} y2={line.y} stroke={line.tone} strokeWidth="0.85" />
             ))}
             <motion.path
               d={chartModel.pathD}
               fill="none"
-              stroke="url(#share-chart-path)"
+              stroke={`url(#${chartPathGradientId})`}
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
