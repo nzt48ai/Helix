@@ -1620,6 +1620,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const effectiveAccountBalanceValue =
     propModeBalanceOverride === null ? positionState.accountBalance : formatNumberString(String(Math.trunc(propModeBalanceOverride)));
   const isAccountBalanceReadOnly = propModeBalanceOverride !== null;
+  const showPropModeSelectionHint = positionState.propMode && selectedPropAccounts.length === 0;
   const parsedAccountBalance = parseNullableNumberString(effectiveAccountBalanceValue);
   const accountBalance = parsedAccountBalance !== null ? Math.max(0, parsedAccountBalance) : 0;
   const entryPrice = positionSetupSnapshot.entry;
@@ -1784,6 +1785,9 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
         toggleState={positionState.propMode}
         onToggle={() => setField("propMode", !positionState.propMode)}
       />
+      {showPropModeSelectionHint ? (
+        <div className="px-1 text-center text-[12px] font-medium text-slate-500">Select prop accounts in Profile to use Prop Mode</div>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
         <GlassCard className="rounded-[22px] border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.10))] px-3 py-[14px] shadow-[0_6px_18px_rgba(145,160,190,0.06),inset_0_1px_0_rgba(255,255,255,0.68)]">
