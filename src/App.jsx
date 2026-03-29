@@ -947,14 +947,14 @@ function SharePortraitCard({
           <div className="mt-3 rounded-[16px] border border-slate-200/80 bg-white/45 px-4 py-2.5 text-center text-[12px] text-slate-500">{setupMissingMessage}</div>
         ) : null}
 
-          <div className="mt-auto pt-4">
-            <div className="flex items-center justify-center gap-2">
+          <div className="mt-auto pt-3.5">
+            <div className="flex items-center justify-center gap-2.5">
               {identity?.showAvatar ? <IdentityAvatar identity={identity} /> : null}
               {identity?.showUsername ? (
-                <div className="pt-[1px] text-[12px] font-semibold leading-none tracking-[0.01em] text-slate-600">{identity.username}</div>
+                <div className="text-[12px] font-semibold leading-none tracking-[0.01em] text-slate-700/95">{identity.username}</div>
               ) : null}
             </div>
-            <div className="mt-1.5 text-center text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400/85">{footerLabel}</div>
+            <div className="mt-1 text-center text-[10px] font-medium uppercase tracking-[0.17em] text-slate-400/75">{footerLabel}</div>
           </div>
         </motion.div>
       </AnimatePresence>
