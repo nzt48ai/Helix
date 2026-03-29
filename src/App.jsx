@@ -823,19 +823,19 @@ function SharePortraitCard({
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
   const premiumPillBaseClassName =
-    "relative shrink-0 inline-flex items-center justify-center overflow-hidden rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-center text-slate-800 shadow-[0_0_0_1px_rgba(255,255,255,0.22),0_8px_16px_rgba(15,23,42,0.10),0_0_16px_rgba(148,163,184,0.20),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(255,255,255,0.08)]";
-  const premiumPillSheenClassName = "before:pointer-events-none before:absolute before:inset-x-[9%] before:top-[12%] before:h-[44%] before:rounded-full before:bg-[linear-gradient(180deg,rgba(255,255,255,0.70),rgba(255,255,255,0.08))]";
+    "relative shrink-0 inline-flex items-center justify-center overflow-hidden rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-center text-slate-100 shadow-[0_0_0_1px_rgba(15,23,42,0.34),0_7px_14px_rgba(2,6,23,0.36),0_0_22px_rgba(96,165,250,0.20),inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-6px_12px_rgba(2,6,23,0.24)]";
+  const premiumPillSheenClassName = "before:pointer-events-none before:absolute before:inset-x-[9%] before:top-[10%] before:h-[40%] before:rounded-full before:bg-[linear-gradient(180deg,rgba(255,255,255,0.45),rgba(255,255,255,0.04))]";
   const premiumPillToneClassNameByKey = {
     REPLAY:
-      "border-amber-200/65 bg-[linear-gradient(180deg,rgba(254,243,199,0.76),rgba(252,211,77,0.20))] text-amber-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(217,119,6,0.18),0_0_18px_rgba(251,191,36,0.30),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(245,158,11,0.12)]",
+      "border-amber-300/55 bg-[linear-gradient(180deg,rgba(120,53,15,0.92),rgba(146,64,14,0.80))] text-amber-100 shadow-[0_0_0_1px_rgba(120,53,15,0.52),0_8px_16px_rgba(120,53,15,0.42),0_0_20px_rgba(251,191,36,0.36),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-7px_14px_rgba(245,158,11,0.22)]",
     SETUP:
-      "border-emerald-200/70 bg-[linear-gradient(180deg,rgba(209,250,229,0.76),rgba(16,185,129,0.20))] text-emerald-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(5,150,105,0.16),0_0_18px_rgba(16,185,129,0.28),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(4,120,87,0.12)]",
+      "border-emerald-300/55 bg-[linear-gradient(180deg,rgba(6,78,59,0.92),rgba(6,95,70,0.80))] text-emerald-100 shadow-[0_0_0_1px_rgba(6,78,59,0.48),0_8px_16px_rgba(4,120,87,0.38),0_0_20px_rgba(16,185,129,0.34),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-7px_14px_rgba(4,120,87,0.22)]",
     JOURNAL:
-      "border-rose-200/70 bg-[linear-gradient(180deg,rgba(254,226,226,0.80),rgba(244,63,94,0.20))] text-rose-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(190,24,93,0.16),0_0_18px_rgba(244,63,94,0.28),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(190,24,93,0.12)]",
+      "border-rose-300/55 bg-[linear-gradient(180deg,rgba(136,19,55,0.92),rgba(159,18,57,0.80))] text-rose-100 shadow-[0_0_0_1px_rgba(136,19,55,0.48),0_8px_16px_rgba(159,18,57,0.38),0_0_20px_rgba(244,63,94,0.34),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-7px_14px_rgba(190,24,93,0.22)]",
     LONG:
-      "border-emerald-200/70 bg-[linear-gradient(180deg,rgba(220,252,231,0.78),rgba(34,197,94,0.18))] text-emerald-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(5,150,105,0.14),0_0_16px_rgba(34,197,94,0.24),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(4,120,87,0.11)]",
+      "border-emerald-300/55 bg-[linear-gradient(180deg,rgba(6,78,59,0.94),rgba(6,95,70,0.82))] text-emerald-100 shadow-[0_0_0_1px_rgba(6,78,59,0.48),0_8px_16px_rgba(5,150,105,0.38),0_0_20px_rgba(34,197,94,0.34),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-7px_14px_rgba(4,120,87,0.22)]",
     SHORT:
-      "border-rose-200/70 bg-[linear-gradient(180deg,rgba(255,228,230,0.80),rgba(244,63,94,0.20))] text-rose-900 shadow-[0_0_0_1px_rgba(255,255,255,0.20),0_8px_16px_rgba(190,24,93,0.14),0_0_16px_rgba(244,63,94,0.24),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-7px_14px_rgba(190,24,93,0.11)]",
+      "border-rose-300/55 bg-[linear-gradient(180deg,rgba(136,19,55,0.94),rgba(159,18,57,0.82))] text-rose-100 shadow-[0_0_0_1px_rgba(136,19,55,0.48),0_8px_16px_rgba(159,18,57,0.38),0_0_20px_rgba(244,63,94,0.34),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-7px_14px_rgba(190,24,93,0.22)]",
   };
   const getPremiumPillClassName = (pillKey) =>
     cn(premiumPillBaseClassName, premiumPillSheenClassName, premiumPillToneClassNameByKey[pillKey]);
