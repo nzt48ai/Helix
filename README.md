@@ -52,6 +52,17 @@ Optional frontend environment variable:
 VITE_TRADOVATE_BACKEND_URL=http://localhost:8787
 ```
 
+### Supabase Auth scaffold (Profile tab gate)
+
+Profile authentication uses Supabase Auth endpoints from the frontend. Add these frontend variables in your Vite environment:
+
+```bash
+VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+```
+
+Without these variables, the app still runs in local-first mode, but Profile login is disabled and the locked state explains how to enable it.
+
 Backend route scaffold implemented:
 
 - `POST /api/tradovate/connect/start`

@@ -11,6 +11,8 @@ import {
   Sparkles,
   TrendingUp,
   X,
+  Lock,
+  LogOut,
 } from "lucide-react";
 import {
   COMPOUND_DEFAULTS,
@@ -53,6 +55,7 @@ import {
   startTradovateOAuth,
   syncTradovateTrades,
 } from "./tradovateConnection";
+import { isAuthConfigured, supabase } from "./supabaseAuth";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -702,6 +705,38 @@ function GlassCard({ children, className = "", padded = true, highlight = false 
   );
 }
 
+function HelixAvatar({ sizeClassName = "h-9 w-9", textClassName = "text-[12px]" }) {
+  return (
+    <div
+      className={cn(
+        "grid place-items-center rounded-full border border-blue-100/80 bg-[linear-gradient(180deg,rgba(230,241,255,0.96),rgba(209,230,255,0.92))] font-semibold tracking-[-0.02em] text-blue-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
+        sizeClassName,
+        textClassName
+      )}
+      aria-label="Helix logo"
+    >
+      HX
+    </div>
+  );
+}
+
+function IdentityAvatar({ identity }) {
+  const initials = (identity?.displayName || identity?.username || "HX")
+    .replace(/^@+/, "")
+    .trim()
+    .slice(0, 2)
+    .toUpperCase();
+  if (identity?.avatar && /^https?:\/\//i.test(identity.avatar)) {
+    return <img src={identity.avatar} alt="Profile avatar" className="h-8 w-8 rounded-full border border-white/75 object-cover" />;
+  }
+  if (identity?.isAnonymous) return <HelixAvatar sizeClassName="h-8 w-8" textClassName="text-[11px]" />;
+  return (
+    <div className="grid h-8 w-8 place-items-center rounded-full border border-white/75 bg-white/80 text-[11px] font-semibold text-slate-700">
+      {initials || "HX"}
+    </div>
+  );
+}
+
 function SharePortraitCard({
   shareType,
   selectedInstrumentKey,
@@ -723,6 +758,7 @@ function SharePortraitCard({
   secondaryMetrics,
   footerLabel,
   setupMissingMessage = "",
+  identity,
   disableMotion = false,
 }) {
   const reduceMotion = useReducedMotion();
@@ -966,7 +1002,13 @@ function SharePortraitCard({
           <div className="mt-3 rounded-[16px] border border-slate-200/80 bg-white/45 px-4 py-2.5 text-center text-[12px] text-slate-500">{setupMissingMessage}</div>
         ) : null}
 
-          <div className="mt-auto pt-4 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+          <div className="mt-auto pt-4">
+            <div className="flex items-center justify-center gap-2.5">
+              {identity?.showAvatar ? <IdentityAvatar identity={identity} /> : null}
+              {identity?.showUsername ? <div className="text-[12px] font-semibold text-slate-500">{identity.username}</div> : null}
+            </div>
+            <div className="mt-2 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+          </div>
         </motion.div>
       </AnimatePresence>
     </div>
@@ -3017,7 +3059,7 @@ function DashboardScreen({
   );
 }
 
-function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEnabled = false }) {
+function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIdentity, debugEnabled = false }) {
   const positionSetupSnapshot = derivePositionSetupSnapshot(positionState);
   const {
     selectedInstrument,
@@ -3235,6 +3277,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            identity={shareIdentity}
             disableMotion={false}
           />
         </div>
@@ -3285,6 +3328,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, debugEna
             secondaryMetrics={secondaryMetrics}
             footerLabel={footerLabel}
             setupMissingMessage={setupMissingMessage}
+            identity={shareIdentity}
             disableMotion
           />
         </div>
@@ -3340,12 +3384,67 @@ function getAccountRowMeta(account) {
   };
 }
 
+function ProfileLockedScreen({ authConfigured, authMode, setAuthMode, authForm, setAuthForm, authBusy, authError, onSubmit }) {
+  const isSignup = authMode === "signup";
+  return (
+    <div className="space-y-4 pb-4">
+      <ScreenHeader right={<TopIconPill icon={Lock} />} />
+      <GlassCard className="rounded-[30px] p-6">
+        <div className="mx-auto w-fit">
+          <HelixAvatar sizeClassName="h-16 w-16" textClassName="text-[20px]" />
+        </div>
+        <div className="mt-4 text-center text-[20px] font-semibold tracking-[-0.02em] text-slate-700">Unlock your Profile</div>
+        <div className="mt-2 text-center text-[13px] text-slate-500">Track multiple accounts, connect Tradovate, and sync across devices.</div>
+        <div className="mt-5 space-y-3 rounded-[22px] border border-white/65 bg-white/35 p-4">
+          <input
+            type="email"
+            value={authForm.email}
+            onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))}
+            placeholder="Email"
+            className="w-full rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
+          />
+          <input
+            type="password"
+            value={authForm.password}
+            onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
+            placeholder="Password"
+            className="w-full rounded-[14px] border border-white/70 bg-white/70 px-3 py-2 text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
+          />
+          <motion.button
+            type="button"
+            onClick={onSubmit}
+            disabled={authBusy || !authConfigured}
+            whileTap={authBusy ? undefined : { scale: 0.98, opacity: 0.9 }}
+            className={cn(
+              "w-full rounded-[16px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(233,244,255,0.45))] px-4 py-2.5 text-[14px] font-semibold text-slate-700",
+              (authBusy || !authConfigured) && "cursor-not-allowed opacity-60"
+            )}
+          >
+            {authBusy ? "Please wait..." : isSignup ? "Sign up" : "Log in"}
+          </motion.button>
+          <motion.button
+            type="button"
+            onClick={() => setAuthMode((prev) => (prev === "login" ? "signup" : "login"))}
+            whileTap={{ scale: 0.98, opacity: 0.9 }}
+            className="w-full rounded-[16px] border border-white/70 bg-white/50 px-4 py-2.5 text-[13px] font-medium text-slate-600"
+          >
+            {isSignup ? "Have an account? Log in" : "Need an account? Sign up"}
+          </motion.button>
+          {!authConfigured ? <div className="text-[12px] text-amber-700">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable login.</div> : null}
+          {authError ? <div className="text-[12px] text-rose-500">{authError}</div> : null}
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
 function JournalScreen({
   profileState,
   onProfileStateChange,
   onResetPreferences,
   onSyncTradovateAccountTrades,
   onImportCsvTrades,
+  onSignOut,
   debugEnabled = false,
 }) {
   const [accountForm, setAccountForm] = useState(createEmptyAccountForm);
@@ -3866,6 +3965,16 @@ function JournalScreen({
       <GlassCard className="rounded-[30px] p-5">
         <TinyLabel>Profile</TinyLabel>
         <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-700">Your profile</div>
+        {typeof onSignOut === "function" ? (
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="mt-3 inline-flex items-center gap-2 rounded-[14px] border border-white/75 bg-white/55 px-3 py-2 text-[12px] font-semibold text-slate-600"
+          >
+            <LogOut size={14} />
+            Sign out
+          </button>
+        ) : null}
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[20px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
             {profileInitials}
@@ -4513,6 +4622,13 @@ function BottomNav({ activeTab, onTabChange }) {
 
 export default function App() {
   const reduceMotion = useReducedMotion();
+  const authConfigured = isAuthConfigured();
+  const [authSession, setAuthSession] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [debugEnabled] = useState(() => (typeof window !== "undefined" ? isDebugModeEnabled(window.location.search, window.location.hash) : false));
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return "position";
@@ -4540,8 +4656,66 @@ export default function App() {
     [profileState.accounts, propProgressByAccountId]
   );
   const safeCompoundState = useMemo(() => sanitizeCompoundState(compoundState), [compoundState]);
+  const isAuthenticated = Boolean(authSession && authUser);
+  const anonymousShareIdentity = useMemo(
+    () => ({
+      isAnonymous: true,
+      showAvatar: true,
+      showUsername: true,
+      username: "@helixtrader",
+      displayName: "Helix",
+      avatar: "",
+    }),
+    []
+  );
+  const shareIdentity = useMemo(() => {
+    if (!isAuthenticated) return anonymousShareIdentity;
+    const normalizedUsername = String(profileState.username || "").replace(/^@+/, "").trim();
+    const fallbackUsername =
+      typeof authUser?.email === "string" && authUser.email.includes("@") ? authUser.email.split("@")[0] : "helixtrader";
+    return {
+      isAnonymous: false,
+      showAvatar: Boolean(profileState.shareSettings?.showAvatar),
+      showUsername: Boolean(profileState.shareSettings?.showUsername),
+      username: `@${normalizedUsername || fallbackUsername}`,
+      displayName: profileState.displayName || normalizedUsername || "Helix Trader",
+      avatar: profileState.avatar || "",
+    };
+  }, [anonymousShareIdentity, authUser?.email, isAuthenticated, profileState.avatar, profileState.displayName, profileState.shareSettings, profileState.username]);
   const setCompoundStateSafe = useCallback((nextValueOrUpdater) => {
     setCompoundState((previousState) => updateCompoundStateSafely(previousState, nextValueOrUpdater));
+  }, []);
+
+  const handleAuthSubmit = useCallback(async () => {
+    if (!authConfigured || !supabase) return;
+    const email = String(authForm.email || "").trim();
+    const password = String(authForm.password || "").trim();
+    if (!email || !password) {
+      setAuthError("Enter both email and password.");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      if (authMode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        setAuthError("Signup successful. If required, confirm your email then log in.");
+        setAuthMode("login");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (error) {
+      setAuthError(error?.message || "Authentication failed.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [authConfigured, authForm.email, authForm.password, authMode]);
+
+  const handleSignOut = useCallback(async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
   }, []);
 
   const resetPreferences = () => {
@@ -4828,6 +5002,26 @@ export default function App() {
     persistProfileState(profileState);
   }, [profileState]);
 
+  useEffect(() => {
+    if (!authConfigured || !supabase) return undefined;
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const nextSession = data?.session || null;
+      setAuthSession(nextSession);
+      setAuthUser(nextSession?.user || null);
+    });
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setAuthSession(session || null);
+      setAuthUser(session?.user || null);
+    });
+    return () => {
+      mounted = false;
+      data?.subscription?.unsubscribe();
+    };
+  }, [authConfigured]);
+
   const screen =
     activeTab === "position" ? (
       <PositionScreen positionState={positionState} setPositionState={setPositionState} debugEnabled={debugEnabled} />
@@ -4852,16 +5046,36 @@ export default function App() {
         debugEnabled={debugEnabled}
       />
     ) : activeTab === "journal" ? (
-      <JournalScreen
-        profileState={profileState}
-        onProfileStateChange={setProfileState}
-        onResetPreferences={resetPreferences}
-        onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
-        onImportCsvTrades={importCsvTradesForAccount}
+      isAuthenticated ? (
+        <JournalScreen
+          profileState={profileState}
+          onProfileStateChange={setProfileState}
+          onResetPreferences={resetPreferences}
+          onSyncTradovateAccountTrades={syncTradovateTradesForAccount}
+          onImportCsvTrades={importCsvTradesForAccount}
+          onSignOut={handleSignOut}
+          debugEnabled={debugEnabled}
+        />
+      ) : (
+        <ProfileLockedScreen
+          authConfigured={authConfigured}
+          authMode={authMode}
+          setAuthMode={setAuthMode}
+          authForm={authForm}
+          setAuthForm={setAuthForm}
+          authBusy={authBusy}
+          authError={authError}
+          onSubmit={handleAuthSubmit}
+        />
+      )
+    ) : (
+      <ShareScreen
+        positionState={positionState}
+        compoundState={safeCompoundState}
+        dashboardSnapshot={dashboardSnapshot}
+        shareIdentity={shareIdentity}
         debugEnabled={debugEnabled}
       />
-    ) : (
-      <ShareScreen positionState={positionState} compoundState={safeCompoundState} dashboardSnapshot={dashboardSnapshot} debugEnabled={debugEnabled} />
     );
 
   const renderedScreenName = resolveScreenComponentName(activeTab);
