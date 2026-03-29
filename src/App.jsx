@@ -866,35 +866,37 @@ function SharePortraitCard({
   const shareContentExit = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 4 };
 
   return (
-    <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(180deg,rgba(249,251,255,0.98),rgba(236,243,255,0.94))] shadow-[0_26px_65px_rgba(125,145,182,0.26),inset_0_1px_0_rgba(255,255,255,0.92)]">
+    <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(180deg,rgba(250,252,255,0.99),rgba(236,243,255,0.96))] shadow-[0_28px_68px_rgba(125,145,182,0.24),0_6px_18px_rgba(148,163,184,0.12),inset_0_1px_0_rgba(255,255,255,0.95)]">
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={`share-content-${shareType}`}
-          className="flex h-full flex-col bg-[radial-gradient(circle_at_12%_8%,rgba(68,110,255,0.20),transparent_38%),radial-gradient(circle_at_86%_60%,rgba(45,198,255,0.12),transparent_42%)] px-6 pb-6 pt-6 text-slate-700"
+          className="flex h-full flex-col bg-[radial-gradient(circle_at_14%_7%,rgba(68,110,255,0.18),transparent_36%),radial-gradient(circle_at_86%_66%,rgba(45,198,255,0.10),transparent_40%)] px-6 pb-6 pt-6 text-slate-700"
           initial={shareContentInitial}
           animate={shareContentAnimate}
           exit={shareContentExit}
           transition={shouldReduce ? TAB_CONTENT_TRANSITION : SHARE_CARD_TRANSITION}
         >
-        <div className="flex items-center justify-between gap-3">
-          <div className={getPremiumPillClassName(shareType)}>
-            <span className="relative z-10">{shareType}</span>
+        <div className="rounded-[24px] border border-white/70 bg-white/48 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_8px_24px_rgba(148,163,184,0.14)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className={getPremiumPillClassName(shareType)}>
+              <span className="relative z-10">{shareType}</span>
+            </div>
+            <div className="min-w-0 flex-1 text-center text-[24px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
+            {normalizedDirection ? <div className={directionPillClassName}><span className="relative z-10">{normalizedDirection}</span></div> : null}
           </div>
-          <div className="min-w-0 flex-1 text-center text-[22px] font-semibold tracking-[-0.03em] text-slate-700">{selectedInstrumentKey}</div>
-          {normalizedDirection ? <div className={directionPillClassName}><span className="relative z-10">{normalizedDirection}</span></div> : null}
+
+          <div className="mt-2.5 text-center text-[12px] tracking-[0.01em] text-slate-500">{contextLine}</div>
         </div>
 
-        <div className="mt-3 text-[13px] text-slate-500">{contextLine}</div>
-
-        <div className="mt-6 grid w-full grid-cols-3 gap-4">
+        <div className="mt-4 grid w-full grid-cols-3 gap-3.5">
           {[
             { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
             { label: "STOP", value: stopValue, tone: "text-rose-400" },
             { label: "TARGET", value: targetValue, tone: "text-emerald-500" },
           ].map((item) => (
-            <div key={item.label} className="min-w-0 rounded-[20px] border border-white/55 bg-white/46 p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.54)] flex flex-col items-center justify-center">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
-              <div className={cn("mt-3 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
+            <div key={item.label} className="min-w-0 rounded-[18px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(244,248,255,0.64))] p-3.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_18px_rgba(148,163,184,0.12)] flex flex-col items-center justify-center">
+              <div className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-500">{item.label}</div>
+              <div className={cn("mt-2.5 w-full overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] tabular-nums", item.tone)}>
                 {item.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
             </div>
@@ -902,21 +904,22 @@ function SharePortraitCard({
         </div>
 
         <div
-          className="mt-6 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(243,248,255,0.52))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(136,156,191,0.12)]"
+          className="mt-5 w-full min-w-0 box-border overflow-hidden rounded-[28px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(241,247,255,0.62))] p-5.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.94),0_12px_30px_rgba(136,156,191,0.16)]"
           style={{ height: `${visualPanelHeight}px` }}
         >
-          <div className="mb-4 flex items-baseline justify-between gap-3">
-            <div className="min-w-0 truncate text-[19px] font-semibold uppercase tracking-[0.12em] text-slate-600">{chartModeLabel}</div>
-            <div className="shrink-0 whitespace-nowrap text-[22px] font-semibold tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
+          <div className="mb-3.5 flex items-baseline justify-between gap-3">
+            <div className="min-w-0 truncate text-[15px] font-semibold uppercase tracking-[0.18em] text-slate-500">{chartModeLabel}</div>
+            <div className="shrink-0 whitespace-nowrap text-[24px] font-semibold tracking-[-0.02em] tabular-nums text-cyan-700">{rewardRiskRatio.toFixed(1)}R</div>
           </div>
-          <svg viewBox="0 0 100 100" className="h-[calc(100%-52px)] w-full rounded-[20px]">
+          <div className="rounded-[22px] border border-slate-100/90 bg-[linear-gradient(180deg,rgba(252,254,255,0.95),rgba(241,246,255,0.75))] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_8px_20px_rgba(148,163,184,0.12)]">
+          <svg viewBox="0 0 100 100" className="h-[calc(100%-52px)] w-full rounded-[16px]">
             <defs>
               <linearGradient id={chartBgGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
-                <stop offset="100%" stopColor="rgba(241,246,255,0.34)" />
+                <stop offset="0%" stopColor="rgba(255,255,255,0.78)" />
+                <stop offset="100%" stopColor="rgba(241,246,255,0.56)" />
               </linearGradient>
               <radialGradient id={chartFocusGradientId} cx="50%" cy="52%" r="46%">
-                <stop offset="0%" stopColor="rgba(116,152,255,0.10)" />
+                <stop offset="0%" stopColor="rgba(116,152,255,0.12)" />
                 <stop offset="100%" stopColor="rgba(116,152,255,0)" />
               </radialGradient>
               <linearGradient id={chartPathGradientId} x1="22%" y1="16%" x2="84%" y2="82%">
@@ -928,7 +931,7 @@ function SharePortraitCard({
             <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartBgGradientId})`} />
             <rect x="0" y="0" width="100" height="100" rx="20" fill={`url(#${chartFocusGradientId})`} />
             {chartModel.referenceLines.map((line) => (
-              <line key={line.id} x1="10" x2="90" y1={line.y} y2={line.y} stroke={line.tone} strokeWidth="0.85" />
+              <line key={line.id} x1="10" x2="90" y1={line.y} y2={line.y} stroke={line.tone} strokeWidth="1" />
             ))}
             <motion.path
               d={chartModel.pathD}
@@ -968,12 +971,13 @@ function SharePortraitCard({
               />
             ) : null}
           </svg>
+          </div>
         </div>
 
-        <div className="mt-6 min-w-0 text-center">
+        <div className="mt-6 min-w-0 rounded-[24px] border border-white/70 bg-white/44 px-4 py-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_8px_22px_rgba(148,163,184,0.12)]">
           <div
             className={cn(
-              "mx-auto mt-3 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(30px,10vw,52px)] tabular-nums",
+              "mx-auto mt-1 flex min-h-[82px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,10vw,56px)] tabular-nums",
               HERO_NUMBER_TEXT_CLASS
             )}
           >
@@ -983,7 +987,7 @@ function SharePortraitCard({
               heroMetric
             )}
           </div>
-          {hasDirectionalStoryLine ? <div className="mt-3 text-[12px] text-slate-500">{directionalStoryLine}</div> : null}
+          {hasDirectionalStoryLine ? <div className="mt-2.5 text-[12px] font-medium text-slate-500">{directionalStoryLine}</div> : null}
         </div>
 
         <div
@@ -993,7 +997,7 @@ function SharePortraitCard({
           )}
         >
           {secondaryMetrics.map((metric) => (
-            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[20px] border border-white/50 bg-white/42 p-4">
+            <div key={metric.label} className="min-w-0 overflow-hidden rounded-[18px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(244,248,255,0.58))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_6px_16px_rgba(148,163,184,0.10)]">
               <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-slate-500">{metric.label}</div>
               <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[18px] font-semibold tabular-nums">
                 {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
@@ -1011,11 +1015,13 @@ function SharePortraitCard({
         ) : null}
 
           <div className="mt-auto pt-4">
+            <div className="rounded-[16px] border border-white/65 bg-white/42 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
             <div className="flex items-center justify-center gap-2.5">
               {identity?.showAvatar ? <IdentityAvatar identity={identity} /> : null}
               {identity?.showUsername ? <div className="text-[12px] font-semibold text-slate-500">{identity.username}</div> : null}
             </div>
             <div className="mt-2 text-center text-[11px] uppercase tracking-[0.2em] text-slate-400">{footerLabel}</div>
+            </div>
           </div>
         </motion.div>
       </AnimatePresence>
