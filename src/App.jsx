@@ -1589,7 +1589,8 @@ function ProjectionChart({
           "overflow-hidden rounded-[24px] border border-blue-100/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.20),rgba(255,255,255,0.08))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-8px_16px_rgba(148,163,184,0.04)]",
           hideHeader ? "mt-0" : "mt-4",
           compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.14))] p-2.5 shadow-[0_8px_18px_rgba(148,163,184,0.06),inset_0_1px_0_rgba(255,255,255,0.62)]",
-          blendBackground && "border border-white/20 bg-transparent shadow-none"
+          blendBackground && "border border-slate-200/30 bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] shadow-[inset_0_1px_0_rgba(255,255,255,0.44)]",
+          blendBackground && compact && "rounded-[18px] border-slate-200/24 p-2"
         )}
       >
         <div
