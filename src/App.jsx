@@ -1531,6 +1531,10 @@ function ProjectionChart({
     setActiveIndex(Math.max(0, Math.min(points.length - 1, index)));
   };
   const shouldAnimatePath = animatePath && !disableAnimation && !reduceMotion;
+  const chartDrawEase = [0.22, 1, 0.36, 1];
+  const glowDrawTransition = shouldAnimatePath ? { duration: 1.85, ease: chartDrawEase } : { duration: 0 };
+  const lineDrawTransition = shouldAnimatePath ? { duration: 1.72, ease: chartDrawEase, delay: 0.04 } : { duration: 0 };
+  const markerRevealTransition = shouldAnimatePath ? { duration: 0.5, ease: chartDrawEase, delay: 0.2 } : { duration: 0 };
   const linePath = pathFor(points);
   const gradientId = `projection-line-gradient-${chartVisualId}`;
   const glowId = `projection-line-glow-${chartVisualId}`;
@@ -1611,7 +1615,7 @@ function ProjectionChart({
               filter={`url(#${glowId})`}
               initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.14 } : false}
               animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.3 } : { pathLength: 1, opacity: 0.3 }}
-              transition={shouldAnimatePath ? { duration: 1.45, ease: [0.16, 1, 0.3, 1] } : { duration: 0 }}
+              transition={glowDrawTransition}
             />
             <motion.path
               d={linePath}
@@ -1622,10 +1626,15 @@ function ProjectionChart({
               strokeLinejoin="round"
               initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.82 } : false}
               animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.98 } : { pathLength: 1, opacity: 0.98 }}
-              transition={shouldAnimatePath ? { duration: 1.45, ease: [0.16, 1, 0.3, 1] } : { duration: 0 }}
+              transition={lineDrawTransition}
             />
             {entryPoint ? (
-              <g>
+              <motion.g
+                initial={shouldAnimatePath ? { opacity: 0, scale: 0.96 } : false}
+                animate={shouldAnimatePath ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1 }}
+                transition={markerRevealTransition}
+                style={{ transformOrigin: `${entryPoint.x}px ${entryPoint.y}px` }}
+              >
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="6" fill="rgba(59,130,246,0.18)" />
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="3.8" fill="rgba(99,102,241,0.2)" />
                 <circle cx={entryPoint.x} cy={entryPoint.y} r="2.3" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.85)" strokeWidth="1.4" />
@@ -1637,7 +1646,7 @@ function ProjectionChart({
                     </text>
                   </g>
                 ) : null}
-              </g>
+              </motion.g>
             ) : null}
             {activePoint ? (
               <g>
