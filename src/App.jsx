@@ -3411,50 +3411,21 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
   const shareDisabled = isExporting || (isSetupCard && !setupIsComplete);
   const setupProjectionChart = useMemo(() => {
     if (!isSetupCard || !setupIsComplete) return { isReady: false, points: [], bandUpper: null, bandLower: null };
-    const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "50,000"));
-    const projectionGoalDisplayType = compoundState.projectionGoalDisplayType;
-    const rawDollarGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalDollarInput || "0"));
-    const rawPercentGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalPercentInput || "0"));
-    const minimumDollarGoal = startingBalance > 0 ? startingBalance + 1 : 1;
-    const parsedTradeFrequencyValue = Math.max(0, parseNumberString(compoundState.tradeFrequencyValue || "0"));
-    const safeTradeFrequencyValue = Math.max(1, parsedTradeFrequencyValue || 1);
-    const parsedGainPercent = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
-    const parsedWinRatePercent = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
-    const hasSafeGain = parsedGainPercent > 0;
-    const hasSafeWinRate = parsedWinRatePercent > 0;
-    const effectiveGrowthPercentPerPeriod = hasSafeGain
-      ? Math.max(0.1, parsedGainPercent * (hasSafeWinRate ? 0.5 + parsedWinRatePercent / 200 : 1) * safeTradeFrequencyValue)
-      : 0;
-    const projectionTargetBalance = resolveForecastTargetBalance(
-      projectionGoalDisplayType,
-      rawDollarGoalNumeric,
-      rawPercentGoalNumeric,
-      startingBalance,
-      minimumDollarGoal
-    );
-    const baseContracts = Math.max(1, parseNumberString(positionState.contracts || "1"));
-    const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-    const hasSafeScalingInputs = startingBalance > 0 && baseContracts > 0 && !!selectedInstrument;
-    const balancePerContractTier = hasSafeScalingInputs ? Math.max(1, startingBalance / baseContracts) : null;
-    const pathModel = buildProjectionPathModel({
-      projectionTargetBalance,
-      startingBalance,
-      effectiveGrowthPercentPerPeriod,
-      hasSafeScalingInputs,
-      balancePerContractTier,
-      baseContracts,
-      hasSafeGain,
-      parsedGainPercent,
-      hasSafeWinRate,
-      parsedWinRatePercent,
-    });
+    const riskDistance = Math.abs(entry - stop);
+    const rewardDistance = Math.abs(target - entry);
+    if (riskDistance <= 0 || rewardDistance <= 0) {
+      return { isReady: false, points: [], bandUpper: null, bandLower: null };
+    }
+
+    const setupPoints = [stop, (stop + entry) / 2, entry, (entry + target) / 2, target];
+
     return {
-      isReady: pathModel.points.length >= 2,
-      points: pathModel.points,
-      bandUpper: pathModel.bandUpper,
-      bandLower: pathModel.bandLower,
+      isReady: setupPoints.length >= 2,
+      points: setupPoints,
+      bandUpper: null,
+      bandLower: null,
     };
-  }, [compoundState, isSetupCard, positionState.accountBalance, positionState.contracts, positionState.instrument, setupIsComplete]);
+  }, [entry, isSetupCard, setupIsComplete, stop, target]);
 
   return (
     <div className="space-y-4 pb-4">
