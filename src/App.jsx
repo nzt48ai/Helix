@@ -1608,8 +1608,8 @@ function ProjectionChart({
                 <stop offset="58%" stopColor="rgba(59,130,246,0.92)" />
                 <stop offset="100%" stopColor="rgba(99,102,241,0.9)" />
               </linearGradient>
-              <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
-                <feGaussianBlur stdDeviation="1.6" />
+              <filter id={glowId} x="-12%" y="-26%" width="124%" height="152%">
+                <feGaussianBlur stdDeviation="1.2" />
               </filter>
             </defs>
             {[0.32, 0.68].map((ratio) => (
@@ -1632,13 +1632,13 @@ function ProjectionChart({
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="5.5"
+              strokeWidth="3.8"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.22"
+              opacity="0.16"
               filter={`url(#${glowId})`}
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.1 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.22 } : { pathLength: 1, opacity: 0.22 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.08 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.16 } : { pathLength: 1, opacity: 0.16 }}
               transition={glowDrawTransition}
             />
             <motion.path
