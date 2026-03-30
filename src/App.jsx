@@ -502,6 +502,65 @@ function buildProjectionPathModel({
   return { points, periodsEstimate, sizingMilestones, confidenceSpread, bandUpper, bandLower };
 }
 
+function buildSetupPayoffPathModel({
+  entry,
+  stop,
+  target,
+  direction,
+  contracts,
+  riskPoints,
+  rewardPoints,
+  projectedRisk,
+  projectedReward,
+}) {
+  const hasValidInputs =
+    Number.isFinite(entry) &&
+    Number.isFinite(stop) &&
+    Number.isFinite(target) &&
+    Number.isFinite(contracts) &&
+    Number.isFinite(riskPoints) &&
+    Number.isFinite(rewardPoints) &&
+    Number.isFinite(projectedRisk) &&
+    Number.isFinite(projectedReward) &&
+    contracts > 0 &&
+    riskPoints > 0 &&
+    rewardPoints > 0 &&
+    projectedReward > 0 &&
+    (direction === "LONG" || direction === "SHORT");
+
+  if (!hasValidInputs) return { points: [], bandUpper: null, bandLower: null };
+
+  const totalPriceTravel = Math.max(0.0001, Math.abs(target - entry));
+  const riskToReward = projectedRisk > 0 ? projectedReward / projectedRisk : rewardPoints / Math.max(0.0001, riskPoints);
+  const curveBias = Math.max(0.58, Math.min(1.28, 1.03 - (riskToReward - 1) * 0.14));
+  const sampleCount = 46;
+  const directionSign = direction === "SHORT" ? -1 : 1;
+  const volatilityEnvelope = Math.min(projectedReward * 0.045, projectedRisk * 0.12);
+  const points = Array.from({ length: sampleCount }, (_, index) => {
+    const progress = index / (sampleCount - 1);
+    const easedProgress = 1 - Math.pow(1 - progress, curveBias);
+    const priceAtStep = entry + (target - entry) * progress;
+    const normalizedTravel = Math.min(1, Math.abs(priceAtStep - entry) / totalPriceTravel);
+    const payoffAtStep = easedProgress * normalizedTravel * projectedReward;
+    const microWave = Math.sin(progress * Math.PI) * volatilityEnvelope * 0.35;
+    return directionSign * Math.max(0, payoffAtStep + microWave * (1 - progress * 0.72));
+  });
+
+  points[points.length - 1] = directionSign * projectedReward;
+
+  const confidenceBand = Math.max(projectedReward * 0.08, projectedRisk * 0.14);
+  const bandUpper = points.map((value, index) => {
+    const progress = index / (points.length - 1);
+    return value + confidenceBand * (0.12 + progress * 0.88);
+  });
+  const bandLower = points.map((value, index) => {
+    const progress = index / (points.length - 1);
+    return value - confidenceBand * (0.12 + progress * 0.88);
+  });
+
+  return { points, bandUpper, bandLower };
+}
+
 const SHARE_CARD_EXPORT_WIDTH = 420;
 const SHARE_CARD_EXPORT_HEIGHT = Math.round((SHARE_CARD_EXPORT_WIDTH * 16) / 9);
 
@@ -3411,42 +3470,16 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
   const shareDisabled = isExporting || (isSetupCard && !setupIsComplete);
   const setupProjectionChart = useMemo(() => {
     if (!isSetupCard || !setupIsComplete) return { isReady: false, points: [], bandUpper: null, bandLower: null };
-    const startingBalance = Math.max(0, parseNumberString(positionState.accountBalance || "50,000"));
-    const projectionGoalDisplayType = compoundState.projectionGoalDisplayType;
-    const rawDollarGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalDollarInput || "0"));
-    const rawPercentGoalNumeric = Math.max(0, parseNumberString(compoundState.projectionGoalPercentInput || "0"));
-    const minimumDollarGoal = startingBalance > 0 ? startingBalance + 1 : 1;
-    const parsedTradeFrequencyValue = Math.max(0, parseNumberString(compoundState.tradeFrequencyValue || "0"));
-    const safeTradeFrequencyValue = Math.max(1, parsedTradeFrequencyValue || 1);
-    const parsedGainPercent = Math.max(0, parseNumberString(compoundState.gainInput || "0"));
-    const parsedWinRatePercent = Math.max(0, Math.min(100, parseNumberString(compoundState.winRateInput || "0")));
-    const hasSafeGain = parsedGainPercent > 0;
-    const hasSafeWinRate = parsedWinRatePercent > 0;
-    const effectiveGrowthPercentPerPeriod = hasSafeGain
-      ? Math.max(0.1, parsedGainPercent * (hasSafeWinRate ? 0.5 + parsedWinRatePercent / 200 : 1) * safeTradeFrequencyValue)
-      : 0;
-    const projectionTargetBalance = resolveForecastTargetBalance(
-      projectionGoalDisplayType,
-      rawDollarGoalNumeric,
-      rawPercentGoalNumeric,
-      startingBalance,
-      minimumDollarGoal
-    );
-    const baseContracts = Math.max(1, parseNumberString(positionState.contracts || "1"));
-    const selectedInstrument = POSITION_INSTRUMENTS.find((item) => item.key === (positionState.instrument || "MNQ")) || POSITION_INSTRUMENTS[2];
-    const hasSafeScalingInputs = startingBalance > 0 && baseContracts > 0 && !!selectedInstrument;
-    const balancePerContractTier = hasSafeScalingInputs ? Math.max(1, startingBalance / baseContracts) : null;
-    const pathModel = buildProjectionPathModel({
-      projectionTargetBalance,
-      startingBalance,
-      effectiveGrowthPercentPerPeriod,
-      hasSafeScalingInputs,
-      balancePerContractTier,
-      baseContracts,
-      hasSafeGain,
-      parsedGainPercent,
-      hasSafeWinRate,
-      parsedWinRatePercent,
+    const pathModel = buildSetupPayoffPathModel({
+      entry,
+      stop,
+      target,
+      direction,
+      contracts,
+      riskPoints,
+      rewardPoints,
+      projectedRisk,
+      projectedReward,
     });
     return {
       isReady: pathModel.points.length >= 2,
@@ -3454,7 +3487,19 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
       bandUpper: pathModel.bandUpper,
       bandLower: pathModel.bandLower,
     };
-  }, [compoundState, isSetupCard, positionState.accountBalance, positionState.contracts, positionState.instrument, setupIsComplete]);
+  }, [
+    contracts,
+    direction,
+    entry,
+    isSetupCard,
+    projectedReward,
+    projectedRisk,
+    rewardPoints,
+    riskPoints,
+    setupIsComplete,
+    stop,
+    target,
+  ]);
 
   return (
     <div className="space-y-4 pb-4">
