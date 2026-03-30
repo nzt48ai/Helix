@@ -904,7 +904,6 @@ function SharePortraitCard({
     getPremiumPillClassName(normalizedDirection)
   );
   const isJournalCard = shareType === "JOURNAL";
-  const showsProjectionChart = shareType === "SETUP" && setupProjectionChart?.isReady;
   const hasDirectionalStoryLine = !isJournalCard && (normalizedDirection === "LONG" || normalizedDirection === "SHORT");
   const directionalStoryLine = hasDirectionalStoryLine
     ? `${normalizedDirection} from ${entryValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → ${targetValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -953,7 +952,7 @@ function SharePortraitCard({
         </div>
 
         {/* Replay and Journal chart hooks intentionally deferred until their dedicated data sources are defined. */}
-        {showsProjectionChart ? (
+        {shareType === "SETUP" && setupProjectionChart?.isReady ? (
           <div className="mt-5">
             <ProjectionChart
               points={setupProjectionChart.points}
@@ -977,15 +976,10 @@ function SharePortraitCard({
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            "min-w-0 text-center",
-            showsProjectionChart ? "mt-4 border-t border-slate-200/55 pt-2" : "mt-6"
-          )}
-        >
+        <div className="mt-6 min-w-0 text-center">
           <div
             className={cn(
-              "mx-auto flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,11vw,60px)] tabular-nums",
+              "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,11vw,60px)] tabular-nums",
               HERO_NUMBER_TEXT_CLASS
             )}
           >
