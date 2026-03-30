@@ -1559,9 +1559,9 @@ function ProjectionChart({
       ) : null}
       <div
         className={cn(
-          "overflow-hidden rounded-[24px] border border-blue-100/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.30),rgba(255,255,255,0.14))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55),inset_0_-12px_20px_rgba(148,163,184,0.05)]",
+          "overflow-hidden rounded-[24px] border border-blue-100/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.20),rgba(255,255,255,0.08))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-8px_16px_rgba(148,163,184,0.04)]",
           hideHeader ? "mt-0" : "mt-4",
-          compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.2))] p-2.5 shadow-[0_8px_20px_rgba(148,163,184,0.08),inset_0_1px_0_rgba(255,255,255,0.68)]",
+          compact && "rounded-[20px] border-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.14))] p-2.5 shadow-[0_8px_18px_rgba(148,163,184,0.06),inset_0_1px_0_rgba(255,255,255,0.62)]",
           blendBackground && "border border-white/20 bg-transparent shadow-none"
         )}
       >
@@ -1576,24 +1576,24 @@ function ProjectionChart({
           <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
             <defs>
               <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="rgba(56,189,248,0.96)" />
-                <stop offset="52%" stopColor="rgba(59,130,246,0.98)" />
-                <stop offset="100%" stopColor="rgba(139,92,246,0.98)" />
+                <stop offset="0%" stopColor="rgba(56,189,248,0.92)" />
+                <stop offset="52%" stopColor="rgba(59,130,246,0.95)" />
+                <stop offset="100%" stopColor="rgba(124,98,246,0.93)" />
               </linearGradient>
               <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
-                <feGaussianBlur stdDeviation="2.6" />
+                <feGaussianBlur stdDeviation="2" />
               </filter>
             </defs>
-            {[0.24, 0.52, 0.8].map((ratio) => (
-              <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+            {[0.32, 0.68].map((ratio) => (
+              <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
             ))}
             {referenceLevels.map((level) => {
               const y = yForReferenceLevel(Number(level?.value));
               if (y === null) return null;
               return (
                 <g key={level.key || level.label}>
-                  <line x1="0" x2={width} y1={y} y2={y} stroke={level.stroke || "rgba(100,116,139,0.28)"} strokeWidth="1.1" strokeDasharray="2 4" />
-                  <circle cx={width - 2.5} cy={y} r="1.8" fill={level.stroke || "rgba(100,116,139,0.4)"} />
+                  <line x1="0" x2={width} y1={y} y2={y} stroke={level.stroke || "rgba(100,116,139,0.24)"} strokeWidth="0.9" strokeDasharray="2 5" />
+                  <circle cx={width - 2.5} cy={y} r="1.6" fill={level.stroke || "rgba(100,116,139,0.34)"} />
                 </g>
               );
             })}
@@ -1607,28 +1607,28 @@ function ProjectionChart({
               strokeWidth="7"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.38"
+              opacity="0.3"
               filter={`url(#${glowId})`}
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.2 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.38 } : { pathLength: 1, opacity: 0.38 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.14 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.3 } : { pathLength: 1, opacity: 0.3 }}
               transition={shouldAnimatePath ? { duration: 1.45, ease: [0.16, 1, 0.3, 1] } : { duration: 0 }}
             />
             <motion.path
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="2.7"
+              strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.75 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 1 } : { pathLength: 1, opacity: 1 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.82 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.98 } : { pathLength: 1, opacity: 0.98 }}
               transition={shouldAnimatePath ? { duration: 1.45, ease: [0.16, 1, 0.3, 1] } : { duration: 0 }}
             />
             {entryPoint ? (
               <g>
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="7" fill="rgba(59,130,246,0.25)" />
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="4.4" fill="rgba(99,102,241,0.26)" />
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="2.5" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.95)" strokeWidth="1.6" />
+                <circle cx={entryPoint.x} cy={entryPoint.y} r="6" fill="rgba(59,130,246,0.18)" />
+                <circle cx={entryPoint.x} cy={entryPoint.y} r="3.8" fill="rgba(99,102,241,0.2)" />
+                <circle cx={entryPoint.x} cy={entryPoint.y} r="2.3" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.85)" strokeWidth="1.4" />
                 {entryTimeLabel ? (
                   <g>
                     <line x1={entryPoint.x + 5} x2={entryPoint.x + 5} y1={Math.max(0, entryPoint.y - 14)} y2={Math.max(0, entryPoint.y - 5)} stroke="rgba(71,85,105,0.4)" strokeWidth="1" />
