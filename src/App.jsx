@@ -1604,12 +1604,12 @@ function ProjectionChart({
           <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
             <defs>
               <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="rgba(56,189,248,0.88)" />
-                <stop offset="58%" stopColor="rgba(59,130,246,0.92)" />
-                <stop offset="100%" stopColor="rgba(99,102,241,0.9)" />
+                <stop offset="0%" stopColor="rgba(56,189,248,0.92)" />
+                <stop offset="52%" stopColor="rgba(59,130,246,0.95)" />
+                <stop offset="100%" stopColor="rgba(124,98,246,0.93)" />
               </linearGradient>
               <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
-                <feGaussianBlur stdDeviation="1.6" />
+                <feGaussianBlur stdDeviation="2" />
               </filter>
             </defs>
             {[0.32, 0.68].map((ratio) => (
@@ -1632,25 +1632,24 @@ function ProjectionChart({
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="5.5"
+              strokeWidth="7"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.22"
+              opacity="0.3"
               filter={`url(#${glowId})`}
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.1 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.22 } : { pathLength: 1, opacity: 0.22 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.14 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.3 } : { pathLength: 1, opacity: 0.3 }}
               transition={glowDrawTransition}
             />
             <motion.path
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="2.2"
+              strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.86 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.96 } : { pathLength: 1, opacity: 0.96 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.82 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.98 } : { pathLength: 1, opacity: 0.98 }}
               transition={lineDrawTransition}
             />
             {entryPoint ? (
