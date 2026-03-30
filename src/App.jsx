@@ -881,6 +881,7 @@ function SharePortraitCard({
   setupProjectionChart = null,
   setupEntryTimeLabel = "",
 }) {
+  const SHARE_CARD_CHART_TO_HERO_GAP_PX = 30;
   const reduceMotion = useReducedMotion();
   const normalizedDirection = typeof directionLabel === "string" ? directionLabel.trim().toUpperCase() : "";
   const premiumPillBaseClassName =
@@ -989,10 +990,10 @@ function SharePortraitCard({
           </div>
         ) : null}
 
-        <div className="mt-6 min-w-0 text-center">
+        <div className="min-w-0 text-center" style={{ marginTop: `${SHARE_CARD_CHART_TO_HERO_GAP_PX}px` }}>
           <div
             className={cn(
-              "mx-auto mt-1 flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,11vw,60px)] tabular-nums",
+              "mx-auto flex min-h-[74px] max-w-full items-center justify-center overflow-hidden px-2 text-ellipsis whitespace-nowrap text-center text-[clamp(34px,11vw,60px)] tabular-nums",
               HERO_NUMBER_TEXT_CLASS
             )}
           >
