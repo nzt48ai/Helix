@@ -1584,6 +1584,7 @@ function ProjectionChart({
     if (!Number.isFinite(value) || !hasReferenceDomain) return null;
     return height - ((value - referenceLevelMin) / referenceRange) * height;
   };
+  const isMinimalShareCardChart = compact && hideHeader && blendBackground;
 
   return (
     <GlassCard transparent={blendBackground} className={cn("rounded-[28px] p-4 sm:rounded-[30px]", compact && "rounded-[24px] p-3")}>
@@ -1625,9 +1626,11 @@ function ProjectionChart({
                 <feGaussianBlur stdDeviation="2" />
               </filter>
             </defs>
-            {[0.32, 0.68].map((ratio) => (
-              <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
-            ))}
+            {!isMinimalShareCardChart
+              ? [0.32, 0.68].map((ratio) => (
+                  <line key={ratio} x1="0" x2={width} y1={height * ratio} y2={height * ratio} stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
+                ))
+              : null}
             {referenceLevels.map((level) => {
               const y = yForReferenceLevel(Number(level?.value));
               if (y === null) return null;
@@ -1638,9 +1641,9 @@ function ProjectionChart({
                 </g>
               );
             })}
-            {projectionMode && bandPath ? <path d={bandPath} fill="rgba(96,165,250,0.06)" /> : null}
-            {projectionMode && bandLower ? <path d={pathFor(bandLower)} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="1" strokeDasharray="3 5" /> : null}
-            {projectionMode && bandUpper ? <path d={pathFor(bandUpper)} fill="none" stroke="rgba(96,165,250,0.18)" strokeWidth="1" strokeDasharray="3 5" /> : null}
+            {projectionMode && bandPath && !isMinimalShareCardChart ? <path d={bandPath} fill="rgba(96,165,250,0.06)" /> : null}
+            {projectionMode && bandLower && !isMinimalShareCardChart ? <path d={pathFor(bandLower)} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="1" strokeDasharray="3 5" /> : null}
+            {projectionMode && bandUpper && !isMinimalShareCardChart ? <path d={pathFor(bandUpper)} fill="none" stroke="rgba(96,165,250,0.18)" strokeWidth="1" strokeDasharray="3 5" /> : null}
             <motion.path
               d={linePath}
               fill="none"
