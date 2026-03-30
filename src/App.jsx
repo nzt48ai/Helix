@@ -218,6 +218,14 @@ function formatCompactCurrency(value) {
   return formatAbbreviatedNumber(safeValue, { prefix: "$", threshold: 99999 });
 }
 
+function formatBottomMetricCurrency(value) {
+  const safeValue = Number(value);
+  if (!Number.isFinite(safeValue)) return "$0";
+  const absolute = Math.abs(safeValue);
+  if (absolute < 1000) return formatCurrency(safeValue);
+  return formatAbbreviatedNumber(safeValue, { prefix: "$", threshold: 999 });
+}
+
 function formatPercent(value, maximumFractionDigits = 0) {
   const safeValue = Number.isFinite(value) ? value : 0;
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(safeValue)}%`;
@@ -1012,12 +1020,26 @@ function SharePortraitCard({
           )}
         >
           {secondaryMetrics.map((metric) => (
+            (() => {
+              const isSetupBottomMetric = metric.label === "Risk" || metric.label === "R" || metric.label === "Contracts";
+              return (
             <div
               key={metric.label}
-              className="flex min-w-0 h-full flex-col justify-between overflow-hidden rounded-[18px] border border-white/45 bg-white/42 px-[14px] py-[12px] shadow-[0_6px_16px_rgba(148,163,184,0.07),inset_0_1px_0_rgba(255,255,255,0.66)]"
+              className={cn(
+                "flex min-w-0 h-full flex-col justify-between overflow-hidden rounded-[18px] border border-white/45 bg-white/42 px-[14px] py-[12px] shadow-[0_6px_16px_rgba(148,163,184,0.07),inset_0_1px_0_rgba(255,255,255,0.66)]",
+                isSetupBottomMetric ? "items-center" : ""
+              )}
             >
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.16em] text-slate-500/80">{metric.label}</div>
-              <div className="mt-2.5 overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-semibold text-slate-700/92 tabular-nums">
+              <div
+                className={cn(
+                  "overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.16em] text-slate-500/80",
+                  isSetupBottomMetric ? "w-full text-center" : "",
+                  metric.label === "Contracts" ? "text-[8px] tracking-[0.1em]" : ""
+                )}
+              >
+                {metric.label}
+              </div>
+              <div className={cn("mt-2.5 overflow-hidden text-ellipsis whitespace-nowrap text-[17px] font-semibold text-slate-700/92 tabular-nums", isSetupBottomMetric ? "w-full text-center" : "")}>
                 {metric.animatedNumber !== undefined && typeof metric.formatter === "function" ? (
                   <AnimatedFormattedNumber value={metric.animatedNumber} formatter={metric.formatter} />
                 ) : (
@@ -1025,6 +1047,8 @@ function SharePortraitCard({
                 )}
               </div>
             </div>
+              );
+            })()
           ))}
         </div>
 
@@ -3469,7 +3493,7 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
         ];
       }
       return [
-        { label: "Risk", value: formatCompactCurrency(projectedRisk), animatedNumber: projectedRisk, formatter: (numericValue) => formatCompactCurrency(numericValue) },
+        { label: "Risk", value: formatBottomMetricCurrency(projectedRisk), animatedNumber: projectedRisk, formatter: (numericValue) => formatBottomMetricCurrency(numericValue) },
         { label: "R", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
         { label: "Contracts", value: contracts.toLocaleString("en-US"), animatedNumber: contracts, formatter: (numericValue) => Math.max(0, Math.round(numericValue)).toLocaleString("en-US") },
       ];
