@@ -925,6 +925,9 @@ function SharePortraitCard({
   const shareContentInitial = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 };
   const shareContentAnimate = shouldReduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 };
   const shareContentExit = shouldReduce ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 4 };
+  const calledAtMatch = typeof contextLine === "string" ? contextLine.match(/^Called at\s+(.+)$/) : null;
+  const isCalledAtContextLine = Boolean(calledAtMatch);
+  const calledAtValue = calledAtMatch?.[1] ?? "";
 
   return (
     <div className="relative box-border ml-auto mr-auto w-full max-w-[420px] aspect-[9/16] overflow-hidden rounded-[36px] border border-white/68 bg-[linear-gradient(180deg,rgba(251,253,255,0.985),rgba(242,247,255,0.955))] shadow-[0_18px_44px_rgba(116,137,173,0.16),0_3px_10px_rgba(116,137,173,0.08),inset_0_1px_0_rgba(255,255,255,0.94),inset_0_-1px_0_rgba(148,163,184,0.08)]">
@@ -947,9 +950,23 @@ function SharePortraitCard({
           {normalizedDirection ? <div className={cn("ml-auto", directionPillClassName)}><span className="relative z-10">{normalizedDirection}</span></div> : null}
         </div>
 
-        <div className="mt-2.5 pl-0.5 text-[12px] leading-[1.3] text-slate-500/90">{contextLine}</div>
+        <div
+          className={cn(
+            "pl-0.5 text-[12px] leading-[1.3] text-slate-500/90",
+            isCalledAtContextLine ? "mt-2 text-[11px] text-slate-500/78 tracking-[0.004em]" : "mt-2.5"
+          )}
+        >
+          {isCalledAtContextLine ? (
+            <>
+              <span className="text-slate-500/64">Called at </span>
+              <span className="font-medium tabular-nums text-slate-600/88">{calledAtValue}</span>
+            </>
+          ) : (
+            contextLine
+          )}
+        </div>
 
-        <div className="mt-6 grid w-full grid-cols-3 gap-3.5">
+        <div className={cn(isCalledAtContextLine ? "mt-6.5" : "mt-6", "grid w-full grid-cols-3 gap-3.5")}>
           {[
             { label: "ENTRY", value: entryValue, tone: "text-slate-700" },
             { label: "STOP", value: stopValue, tone: "text-rose-500/90" },
