@@ -1487,6 +1487,28 @@ function ProjectionChart({
         return `${i === 0 ? "M" : "L"}${x},${yFor(value)}`;
       })
       .join(" ");
+  const smoothPathFor = (series) => {
+    if (!series.length) return "";
+    if (series.length < 3) return pathFor(series);
+    const coordinates = series.map((value, i) => ({
+      x: series.length <= 1 ? 0 : (i / (series.length - 1)) * width,
+      y: yFor(value),
+    }));
+    let path = `M${coordinates[0].x},${coordinates[0].y}`;
+    for (let i = 0; i < coordinates.length - 1; i += 1) {
+      const prev = coordinates[Math.max(0, i - 1)];
+      const current = coordinates[i];
+      const next = coordinates[i + 1];
+      const afterNext = coordinates[Math.min(coordinates.length - 1, i + 2)];
+      const smoothness = 0.2;
+      const cp1x = current.x + ((next.x - prev.x) * smoothness) / 2;
+      const cp1y = current.y + ((next.y - prev.y) * smoothness) / 2;
+      const cp2x = next.x - ((afterNext.x - current.x) * smoothness) / 2;
+      const cp2y = next.y - ((afterNext.y - current.y) * smoothness) / 2;
+      path += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${next.x},${next.y}`;
+    }
+    return path;
+  };
 
   const bandPath =
     projectionMode && bandUpper && bandLower
@@ -1535,10 +1557,11 @@ function ProjectionChart({
   const glowDrawTransition = shouldAnimatePath ? { duration: 1.85, ease: chartDrawEase } : { duration: 0 };
   const lineDrawTransition = shouldAnimatePath ? { duration: 1.72, ease: chartDrawEase, delay: 0.04 } : { duration: 0 };
   const markerRevealTransition = shouldAnimatePath ? { duration: 0.5, ease: chartDrawEase, delay: 0.2 } : { duration: 0 };
-  const linePath = pathFor(points);
+  const linePath = smoothPathFor(points);
   const gradientId = `projection-line-gradient-${chartVisualId}`;
   const glowId = `projection-line-glow-${chartVisualId}`;
   const entryPoint = points.length > 0 ? { x: 0, y: yFor(points[0]) } : null;
+  const endPoint = points.length > 1 ? { x: width, y: yFor(points[points.length - 1]) } : null;
   const referenceLevelValues = referenceLevels.map((level) => Number(level?.value)).filter((value) => Number.isFinite(value));
   const referenceLevelMin = referenceLevelValues.length ? Math.min(...referenceLevelValues) : null;
   const referenceLevelMax = referenceLevelValues.length ? Math.max(...referenceLevelValues) : null;
@@ -1580,12 +1603,12 @@ function ProjectionChart({
           <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
             <defs>
               <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="rgba(56,189,248,0.92)" />
-                <stop offset="52%" stopColor="rgba(59,130,246,0.95)" />
-                <stop offset="100%" stopColor="rgba(124,98,246,0.93)" />
+                <stop offset="0%" stopColor="rgba(56,189,248,0.88)" />
+                <stop offset="58%" stopColor="rgba(59,130,246,0.92)" />
+                <stop offset="100%" stopColor="rgba(99,102,241,0.9)" />
               </linearGradient>
               <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
-                <feGaussianBlur stdDeviation="2" />
+                <feGaussianBlur stdDeviation="1.6" />
               </filter>
             </defs>
             {[0.32, 0.68].map((ratio) => (
@@ -1608,24 +1631,25 @@ function ProjectionChart({
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="7"
+              strokeWidth="5.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.3"
+              opacity="0.22"
               filter={`url(#${glowId})`}
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.14 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.3 } : { pathLength: 1, opacity: 0.3 }}
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.1 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.22 } : { pathLength: 1, opacity: 0.22 }}
               transition={glowDrawTransition}
             />
             <motion.path
               d={linePath}
               fill="none"
               stroke={`url(#${gradientId})`}
-              strokeWidth="2.5"
+              strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.82 } : false}
-              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.98 } : { pathLength: 1, opacity: 0.98 }}
+              vectorEffect="non-scaling-stroke"
+              initial={shouldAnimatePath ? { pathLength: 0, opacity: 0.86 } : false}
+              animate={shouldAnimatePath ? { pathLength: 1, opacity: 0.96 } : { pathLength: 1, opacity: 0.96 }}
               transition={lineDrawTransition}
             />
             {entryPoint ? (
@@ -1635,9 +1659,8 @@ function ProjectionChart({
                 transition={markerRevealTransition}
                 style={{ transformOrigin: `${entryPoint.x}px ${entryPoint.y}px` }}
               >
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="6" fill="rgba(59,130,246,0.18)" />
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="3.8" fill="rgba(99,102,241,0.2)" />
-                <circle cx={entryPoint.x} cy={entryPoint.y} r="2.3" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.85)" strokeWidth="1.4" />
+                <circle cx={entryPoint.x} cy={entryPoint.y} r="2.8" fill="rgba(56,189,248,0.26)" />
+                <circle cx={entryPoint.x} cy={entryPoint.y} r="1.65" fill="rgba(255,255,255,0.98)" stroke="rgba(56,189,248,0.62)" strokeWidth="0.9" />
                 {entryTimeLabel ? (
                   <g>
                     <line x1={entryPoint.x + 5} x2={entryPoint.x + 5} y1={Math.max(0, entryPoint.y - 14)} y2={Math.max(0, entryPoint.y - 5)} stroke="rgba(71,85,105,0.4)" strokeWidth="1" />
@@ -1646,6 +1669,17 @@ function ProjectionChart({
                     </text>
                   </g>
                 ) : null}
+              </motion.g>
+            ) : null}
+            {endPoint ? (
+              <motion.g
+                initial={shouldAnimatePath ? { opacity: 0, scale: 0.95 } : false}
+                animate={shouldAnimatePath ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1 }}
+                transition={markerRevealTransition}
+                style={{ transformOrigin: `${endPoint.x}px ${endPoint.y}px` }}
+              >
+                <circle cx={endPoint.x} cy={endPoint.y} r="3.4" fill="rgba(99,102,241,0.2)" />
+                <circle cx={endPoint.x} cy={endPoint.y} r="2" fill="rgba(255,255,255,0.98)" stroke="rgba(99,102,241,0.7)" strokeWidth="1" />
               </motion.g>
             ) : null}
             {activePoint ? (
