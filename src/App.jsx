@@ -3495,7 +3495,6 @@ function ShareScreen({ positionState, compoundState, dashboardSnapshot, shareIde
       return [
         { label: "Risk", value: formatBottomMetricCurrency(projectedRisk), animatedNumber: projectedRisk, formatter: (numericValue) => formatBottomMetricCurrency(numericValue) },
         { label: "R", value: `${rewardRiskRatio.toFixed(1)}R`, animatedNumber: rewardRiskRatio, formatter: (numericValue) => `${numericValue.toFixed(1)}R` },
-        { label: "Contracts", value: contracts.toLocaleString("en-US"), animatedNumber: contracts, formatter: (numericValue) => Math.max(0, Math.round(numericValue)).toLocaleString("en-US") },
       ];
     }
     if (shareType === "REPLAY") {
