@@ -1033,7 +1033,8 @@ function SharePortraitCard({
               <div
                 className={cn(
                   "overflow-hidden text-ellipsis whitespace-nowrap text-[9px] uppercase tracking-[0.16em] text-slate-500/80",
-                  isSetupBottomMetric ? "w-full text-center text-[8px] tracking-[0.12em]" : ""
+                  isSetupBottomMetric ? "w-full text-center" : "",
+                  metric.label === "Contracts" ? "text-[8px] tracking-[0.1em]" : ""
                 )}
               >
                 {metric.label}
