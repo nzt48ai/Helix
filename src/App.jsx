@@ -1021,7 +1021,12 @@ function SharePortraitCard({
         >
           {secondaryMetrics.map((metric) => (
             (() => {
-              const isSetupBottomMetric = metric.label === "Risk" || metric.label === "R" || metric.label === "Contracts";
+              const isSetupBottomMetric =
+                metric.label === "Risk" ||
+                metric.label === "R" ||
+                metric.label === "Contracts" ||
+                metric.label === "Risk Points" ||
+                metric.label === "Reward Points";
               return (
             <div
               key={metric.label}
