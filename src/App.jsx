@@ -12,6 +12,7 @@ import {
   Sparkles,
   TrendingUp,
   UserRound,
+  ScanLine,
 } from "lucide-react";
 import {
   COMPOUND_DEFAULTS,
@@ -47,6 +48,7 @@ import {
   normalizeCsvRowsToTrades,
   parseCsvText,
 } from "./csvImport";
+import { hasStableDetections } from "./setupScan";
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -1391,6 +1393,7 @@ function BalanceHeroCard({
   prefix = "$",
   suffix = "",
   fixedFontSize,
+  actionNode = null,
 }) {
   const reduceMotion = useReducedMotion();
   const computedFontSizeClass = fixedFontSize ? undefined : "text-[clamp(30px,10vw,52px)]";
@@ -1452,7 +1455,7 @@ function BalanceHeroCard({
           </motion.div>
         </div>
 
-        {onToggle ? (
+        {actionNode ? <div className="mt-3 flex justify-center">{actionNode}</div> : onToggle ? (
           <div className="mt-3 flex justify-center">
             <div className="inline-flex items-center gap-2 rounded-full px-3 py-[3px] text-[9px] font-medium uppercase tracking-[0.22em] text-slate-500/80">
               <motion.button
@@ -1492,6 +1495,43 @@ function BalanceHeroCard({
         ) : null}
       </div>
     </GlassCard>
+  );
+}
+
+function SetupScanPillButton({ onClick, busy = false }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+      className="group relative inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-blue-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.93),rgba(236,245,255,0.85))] text-indigo-600 shadow-[0_0_0_1px_rgba(99,102,241,0.08),0_6px_16px_rgba(99,102,241,0.18),0_0_24px_rgba(99,102,241,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] transition"
+      aria-label="Scan setup"
+      disabled={busy}
+    >
+      <span className="pointer-events-none absolute -inset-[2px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.25),rgba(59,130,246,0.05)_55%,transparent_75%)] blur-[4px]" />
+      <ScanLine size={16} className="relative" />
+    </motion.button>
+  );
+}
+
+function SetupScanOverlay({ phase = "launching" }) {
+  return (
+    <div className="fixed inset-0 z-[1300] flex items-center justify-center px-6" role="dialog" aria-modal="true" aria-label="Setup scanner">
+      <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]" />
+      {phase === "launching" ? (
+        <div className="relative h-20 w-20">
+          <span className="absolute inset-0 rounded-full border border-blue-300/50 animate-ping" />
+          <span className="absolute inset-[14px] rounded-full border border-violet-300/70 animate-ping [animation-delay:200ms]" />
+          <span className="absolute inset-[28px] rounded-full bg-[linear-gradient(180deg,rgba(59,130,246,0.95),rgba(124,58,237,0.95))] shadow-[0_0_24px_rgba(99,102,241,0.5)]" />
+        </div>
+      ) : (
+        <div className="relative flex h-[74dvh] max-h-[560px] w-full max-w-[360px] items-center justify-center rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,rgba(15,23,42,0.42),rgba(15,23,42,0.62))]">
+          <div className="pointer-events-none absolute inset-y-8 left-1/2 w-[56px] -translate-x-1/2 rounded-[28px] border border-transparent bg-[linear-gradient(rgba(15,23,42,0.45),rgba(15,23,42,0.45))_padding-box,linear-gradient(180deg,rgba(56,189,248,0.92),rgba(124,58,237,0.95))_border-box] shadow-[0_0_36px_rgba(99,102,241,0.52)]" />
+          <div className="absolute bottom-8 text-center text-[13px] font-medium tracking-[-0.01em] text-blue-50/95">Move price axis into view</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1831,6 +1871,10 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const [activePriceField, setActivePriceField] = useState(null);
   const [instrumentPickerOpen, setInstrumentPickerOpen] = useState(false);
   const [instrumentQuery, setInstrumentQuery] = useState("");
+  const [scanPhase, setScanPhase] = useState("idle");
+  const [scanToast, setScanToast] = useState(null);
+  const scanHistoryRef = useRef([]);
+  const scanRunIdRef = useRef(0);
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
     stop: sanitizePriceInputString(positionState.stop),
@@ -1936,11 +1980,6 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     if (didChange) triggerLightHaptic();
   };
 
-  const handleTogglePropMode = () => {
-    setField("propMode", !positionState.propMode);
-    triggerLightHaptic();
-  };
-
   useEffect(() => {
     if (!isDefaultInstrument) return;
     lastDefaultInstrumentRef.current = instrument;
@@ -1975,6 +2014,73 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   };
 
   const resolvePriceValue = (key, persistedValue) => (activePriceField === key ? priceDrafts[key] : persistedValue);
+  const showScanToast = useCallback((message, tone = "success") => {
+    setScanToast({ id: Date.now(), message, tone });
+  }, []);
+  useEffect(() => {
+    if (!scanToast) return undefined;
+    const timeoutId = window.setTimeout(() => setScanToast(null), 1700);
+    return () => window.clearTimeout(timeoutId);
+  }, [scanToast]);
+
+  const applyDetectedSetup = useCallback(
+    (setup) => {
+      setActivePriceField(null);
+      setPositionState((prev) => ({
+        ...prev,
+        entry: setup.entry,
+        stop: setup.stop,
+        target: setup.target,
+      }));
+      showScanToast("Setup captured", "success");
+      triggerMediumHaptic();
+    },
+    [setPositionState, showScanToast]
+  );
+
+  const startSetupScan = useCallback(async () => {
+    scanRunIdRef.current += 1;
+    const runId = scanRunIdRef.current;
+    scanHistoryRef.current = [];
+    setScanPhase("launching");
+    triggerLightHaptic();
+    await new Promise((resolve) => window.setTimeout(resolve, 420));
+    if (scanRunIdRef.current !== runId) return;
+    setScanPhase("scanning");
+    const scannerAdapter = window.__HELIX_SETUP_SCANNER__;
+    if (!scannerAdapter || typeof scannerAdapter.start !== "function") {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      if (scanRunIdRef.current !== runId) return;
+      setScanPhase("idle");
+      showScanToast("Couldn’t detect setup", "error");
+      return;
+    }
+
+    try {
+      const result = await scannerAdapter.start({
+        region: "center-strip",
+        onCandidate: (candidate) => {
+          const stability = hasStableDetections(scanHistoryRef.current, candidate, 3);
+          if (!stability) return false;
+          scanHistoryRef.current = stability.nextHistory;
+          if (stability.stable) {
+            applyDetectedSetup(stability.stable);
+            return true;
+          }
+          return false;
+        },
+      });
+
+      if (scanRunIdRef.current !== runId) return;
+      setScanPhase("idle");
+      if (!result?.applied) showScanToast("Couldn’t detect setup", "error");
+    } catch {
+      if (scanRunIdRef.current !== runId) return;
+      setScanPhase("idle");
+      showScanToast("Couldn’t detect setup", "error");
+    }
+  }, [applyDetectedSetup, showScanToast]);
+
   const pickerResults = useMemo(() => {
     const defaultShortcutSymbols = new Set(POSITION_INSTRUMENTS.map((item) => item.key));
     return searchInstruments(instrumentQuery, { limit: 120 }).filter((instrumentOption) => !defaultShortcutSymbols.has(instrumentOption.symbol) && instrumentOption.category !== "Rates");
@@ -2016,10 +2122,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
           if (isAccountBalanceReadOnly) return;
           setField("accountBalance", formatNumberString(raw));
         }}
-        toggleLabel="Prop"
-        toggleState={positionState.propMode}
-        onToggle={handleTogglePropMode}
-        toggleBadges={null}
+        actionNode={<SetupScanPillButton onClick={startSetupScan} busy={scanPhase !== "idle"} />}
       />
 
       <div className="grid grid-cols-3 gap-2.5 opacity-[0.96]">
@@ -2083,6 +2186,30 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
         </div>
         <SegmentedControl items={KELLY_OPTIONS} value={kelly} onChange={(value) => setField("kelly", value)} />
       </div>
+      <AnimatePresence>
+        {scanPhase !== "idle" ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <SetupScanOverlay phase={scanPhase} />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {scanToast ? (
+          <motion.div
+            key={scanToast.id}
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 5, scale: 0.98 }}
+            transition={TAB_CONTENT_TRANSITION}
+            className={cn(
+              "pointer-events-none fixed bottom-24 left-1/2 z-[1301] -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold tracking-[-0.01em] shadow-[0_8px_18px_rgba(15,23,42,0.22)]",
+              scanToast.tone === "success" ? "bg-slate-900/88 text-emerald-100" : "bg-slate-900/88 text-rose-100"
+            )}
+          >
+            {scanToast.message}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <GlassCard className="rounded-[30px] px-5 pb-5 pt-6 sm:px-6 sm:pt-7" highlight>
         <TinyLabel className="text-center">{isKellyManual ? "Manual Position" : "Suggested Position"}</TinyLabel>
