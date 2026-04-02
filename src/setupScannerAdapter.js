@@ -2,6 +2,8 @@ import { normalizeDetectedSetup, parseScannedPrice } from "./setupScan";
 
 const FRAME_INTERVAL_MS = 260;
 const MAX_SCAN_TIME_MS = 18000;
+const VIDEO_MOUNT_WAIT_MS = 1400;
+const VIDEO_READY_WAIT_MS = 2600;
 const CENTER_STRIP_WIDTH_RATIO = 0.2;
 const CENTER_STRIP_HEIGHT_RATIO = 0.9;
 const MIN_LABEL_PIXEL_COUNT = 140;
@@ -49,6 +51,66 @@ function createVideoElement(stream, previewVideoElement) {
   video.style.opacity = "1";
   video.srcObject = stream;
   return video;
+}
+
+function emitScannerEvent(onRuntimeEvent, stage, detail = {}) {
+  if (typeof onRuntimeEvent === "function") onRuntimeEvent(stage, detail);
+}
+
+async function waitForVideoMount(video, onRuntimeEvent) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < VIDEO_MOUNT_WAIT_MS) {
+    if (video?.isConnected) {
+      emitScannerEvent(onRuntimeEvent, "overlay video element found/mounted", { waitedMs: Date.now() - startedAt });
+      return true;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+  }
+  emitScannerEvent(onRuntimeEvent, "overlay video element found/mounted", { waitedMs: VIDEO_MOUNT_WAIT_MS, mounted: false });
+  return false;
+}
+
+async function ensureVideoReady(video, onRuntimeEvent) {
+  const readyDeadline = Date.now() + VIDEO_READY_WAIT_MS;
+  const metadataPromise = new Promise((resolve) => {
+    if (video.readyState >= 1) {
+      emitScannerEvent(onRuntimeEvent, "loadedmetadata fired", { via: "readyState" });
+      resolve(true);
+      return;
+    }
+    const onLoadedMetadata = () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      emitScannerEvent(onRuntimeEvent, "loadedmetadata fired");
+      resolve(true);
+    };
+    video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+  });
+
+  try {
+    await video.play();
+    emitScannerEvent(onRuntimeEvent, "video.play success");
+  } catch (error) {
+    emitScannerEvent(onRuntimeEvent, "video.play failure", { error: error?.message || String(error || "unknown") });
+    return { ready: false, failureReason: "video-play-failed" };
+  }
+
+  const metadataReady = await Promise.race([
+    metadataPromise,
+    new Promise((resolve) => window.setTimeout(() => resolve(false), VIDEO_READY_WAIT_MS)),
+  ]);
+  if (!metadataReady) {
+    return { ready: false, failureReason: "loadedmetadata-timeout" };
+  }
+
+  while (Date.now() < readyDeadline) {
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      emitScannerEvent(onRuntimeEvent, "videoWidth/videoHeight became non-zero", { width: video.videoWidth, height: video.videoHeight });
+      return { ready: true, failureReason: null };
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 40));
+  }
+
+  return { ready: false, failureReason: "video-dimensions-zero-timeout" };
 }
 
 function stopStream(stream) {
@@ -270,30 +332,40 @@ async function recognizeRegionsWithOcr(worker, stripCanvas, regions) {
   return output;
 }
 
-async function runBrowserStreamScan({ stream, onCandidate, previewVideoElement }) {
+async function runBrowserStreamScan({ stream, onCandidate, previewVideoElement, onRuntimeEvent, source }) {
   const video = createVideoElement(stream, previewVideoElement);
-  try {
-    await video.play();
-  } catch (error) {
-    console.warn("Setup scanner preview play() failed", error);
+  emitScannerEvent(onRuntimeEvent, "stream attached to video", { source, usingOverlay: Boolean(previewVideoElement) });
+  await waitForVideoMount(video, onRuntimeEvent);
+  const videoReady = await ensureVideoReady(video, onRuntimeEvent);
+  if (!videoReady.ready) {
+    emitScannerEvent(onRuntimeEvent, "timeout/failure reason", { source, reason: videoReady.failureReason });
+    return { applied: false, source, failureReason: videoReady.failureReason };
   }
 
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const deadline = Date.now() + MAX_SCAN_TIME_MS;
   const ocrWorker = await createOcrWorker();
+  if (ocrWorker) emitScannerEvent(onRuntimeEvent, "OCR init success");
+  else emitScannerEvent(onRuntimeEvent, "OCR init failure", { reason: "ocr-worker-unavailable" });
+  let hasLoggedFirstFrame = false;
 
   try {
     while (Date.now() < deadline) {
       const strip = extractCenterStripFrame(video, canvas, context);
       if (strip) {
         const imageData = context.getImageData(0, 0, strip.width, strip.height);
+        if (!hasLoggedFirstFrame) {
+          hasLoggedFirstFrame = true;
+          emitScannerEvent(onRuntimeEvent, "first frame successfully drawn/read", { width: strip.width, height: strip.height });
+        }
         const regions = detectLabelBands(imageData, strip.width, strip.height);
+        emitScannerEvent(onRuntimeEvent, "candidate detection count", { count: regions.length });
         if (regions.length >= 3) {
           const ocrRegions = await recognizeRegionsWithOcr(ocrWorker, canvas, regions);
           const candidate = composeCandidateFromRegions(ocrRegions);
           if (candidate && onCandidate(candidate)) {
-            return { applied: true, source: "browser" };
+            return { applied: true, source };
           }
         }
       }
@@ -305,44 +377,59 @@ async function runBrowserStreamScan({ stream, onCandidate, previewVideoElement }
     video.srcObject = null;
   }
 
-  return { applied: false, source: "browser" };
+  emitScannerEvent(onRuntimeEvent, "timeout/failure reason", { source, reason: "scan-timeout-no-stable-candidate" });
+  return { applied: false, source, failureReason: "scan-timeout-no-stable-candidate" };
 }
 
-async function tryBrowserCameraPath(options) {
+async function tryBrowserCameraPath(options, onRuntimeEvent) {
   const devices = getMediaDevices();
   if (!devices) return null;
 
-  const stream = await devices.getUserMedia({
-    video: {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    },
-    audio: false,
-  });
+  let stream;
+  try {
+    stream = await devices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    });
+    emitScannerEvent(onRuntimeEvent, "getUserMedia success", { source: "camera" });
+  } catch (error) {
+    emitScannerEvent(onRuntimeEvent, "getUserMedia failure", { source: "camera", error: error?.message || String(error || "unknown") });
+    throw error;
+  }
 
   try {
-    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement });
+    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement, onRuntimeEvent, source: "camera" });
   } finally {
     stopStream(stream);
   }
 }
 
-async function tryDisplayCapturePath(options) {
+async function tryDisplayCapturePath(options, onRuntimeEvent) {
   const devices = getMediaDevices();
   if (!devices) return null;
 
-  const stream = await devices.getDisplayMedia({
-    video: {
-      displaySurface: "browser",
-      logicalSurface: true,
-      cursor: "never",
-    },
-    audio: false,
-  });
+  let stream;
+  try {
+    stream = await devices.getDisplayMedia({
+      video: {
+        displaySurface: "browser",
+        logicalSurface: true,
+        cursor: "never",
+      },
+      audio: false,
+    });
+    emitScannerEvent(onRuntimeEvent, "getUserMedia success", { source: "display-capture" });
+  } catch (error) {
+    emitScannerEvent(onRuntimeEvent, "getUserMedia failure", { source: "display-capture", error: error?.message || String(error || "unknown") });
+    throw error;
+  }
 
   try {
-    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement });
+    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement, onRuntimeEvent, source: "display-capture" });
   } finally {
     stopStream(stream);
   }
@@ -350,7 +437,7 @@ async function tryDisplayCapturePath(options) {
 
 function createSetupScannerAdapter() {
   return {
-    async start({ onCandidate, previewVideoElement }) {
+    async start({ onCandidate, previewVideoElement, onRuntimeEvent }) {
       const bridge = hasNativeBridge();
       if (bridge) {
         const result = await bridge.start({ region: "center-strip", onCandidate });
@@ -359,23 +446,35 @@ function createSetupScannerAdapter() {
 
       if (canUseCameraScan()) {
         try {
-          const cameraResult = await tryBrowserCameraPath({ onCandidate, previewVideoElement });
+          const cameraResult = await tryBrowserCameraPath({ onCandidate, previewVideoElement }, onRuntimeEvent);
           if (cameraResult?.applied) return cameraResult;
-        } catch {
+          if (cameraResult?.failureReason) return cameraResult;
+        } catch (error) {
+          emitScannerEvent(onRuntimeEvent, "timeout/failure reason", {
+            source: "camera",
+            reason: "camera-path-failed",
+            error: error?.message || String(error || "unknown"),
+          });
           // Fall through to screen capture.
         }
       }
 
       if (canUseDisplayCapture()) {
         try {
-          const captureResult = await tryDisplayCapturePath({ onCandidate, previewVideoElement });
+          const captureResult = await tryDisplayCapturePath({ onCandidate, previewVideoElement }, onRuntimeEvent);
           if (captureResult?.applied) return captureResult;
-        } catch {
+          if (captureResult?.failureReason) return captureResult;
+        } catch (error) {
+          emitScannerEvent(onRuntimeEvent, "timeout/failure reason", {
+            source: "display-capture",
+            reason: "display-capture-path-failed",
+            error: error?.message || String(error || "unknown"),
+          });
           // Fall through to graceful failure.
         }
       }
 
-      return { applied: false, source: "none" };
+      return { applied: false, source: "none", failureReason: "no-supported-capture-path" };
     },
   };
 }
