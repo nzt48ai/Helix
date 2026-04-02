@@ -2044,6 +2044,10 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     scanRunIdRef.current += 1;
     const runId = scanRunIdRef.current;
     scanHistoryRef.current = [];
+    const logScanStage = (stage, detail = {}) => {
+      console.info(`[setup-scan][run:${runId}] ${stage}`, detail);
+    };
+    logScanStage("scanner launch start");
     setScanPhase("launching");
     triggerLightHaptic();
     await new Promise((resolve) => window.setTimeout(resolve, 420));
@@ -2053,8 +2057,11 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     if (!scanVideoRef.current?.isConnected) {
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
     }
+    if (scanVideoRef.current?.isConnected) logScanStage("overlay video element found/mounted", { mounted: true });
+    else logScanStage("overlay video element found/mounted", { mounted: false });
     const scannerAdapter = window.__HELIX_SETUP_SCANNER__;
     if (!scannerAdapter || typeof scannerAdapter.start !== "function") {
+      logScanStage("timeout/failure reason", { reason: "scanner-adapter-unavailable" });
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
       if (scanRunIdRef.current !== runId) return;
       setScanPhase("idle");
@@ -2066,6 +2073,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
       const result = await scannerAdapter.start({
         region: "center-strip",
         previewVideoElement: scanVideoRef.current,
+        onRuntimeEvent: logScanStage,
         onCandidate: (candidate) => {
           const stability = hasStableDetections(scanHistoryRef.current, candidate, 3);
           if (!stability) return false;
@@ -2080,9 +2088,13 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
 
       if (scanRunIdRef.current !== runId) return;
       setScanPhase("idle");
-      if (!result?.applied) showScanToast("Couldn’t detect setup", "error");
-    } catch {
+      if (!result?.applied) {
+        logScanStage("timeout/failure reason", { reason: result?.failureReason || "unknown" });
+        showScanToast("Couldn’t detect setup", "error");
+      }
+    } catch (error) {
       if (scanRunIdRef.current !== runId) return;
+      logScanStage("timeout/failure reason", { reason: "scanner-start-threw", error: error?.message || String(error || "unknown") });
       setScanPhase("idle");
       showScanToast("Couldn’t detect setup", "error");
     }
