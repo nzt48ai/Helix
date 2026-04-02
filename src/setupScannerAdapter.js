@@ -36,10 +36,17 @@ async function getTesseractModule() {
   return ocrModulePromise;
 }
 
-function createVideoElement(stream) {
-  const video = document.createElement("video");
-  video.setAttribute("playsinline", "true");
+function createVideoElement(stream, previewVideoElement) {
+  const video = previewVideoElement || document.createElement("video");
+  video.autoplay = true;
   video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "true");
+  video.style.width = "100%";
+  video.style.height = "100%";
+  video.style.objectFit = "cover";
+  video.style.display = "block";
+  video.style.opacity = "1";
   video.srcObject = stream;
   return video;
 }
@@ -263,9 +270,13 @@ async function recognizeRegionsWithOcr(worker, stripCanvas, regions) {
   return output;
 }
 
-async function runBrowserStreamScan({ stream, onCandidate }) {
-  const video = createVideoElement(stream);
-  await video.play();
+async function runBrowserStreamScan({ stream, onCandidate, previewVideoElement }) {
+  const video = createVideoElement(stream, previewVideoElement);
+  try {
+    await video.play();
+  } catch (error) {
+    console.warn("Setup scanner preview play() failed", error);
+  }
 
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -311,7 +322,7 @@ async function tryBrowserCameraPath(options) {
   });
 
   try {
-    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate });
+    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement });
   } finally {
     stopStream(stream);
   }
@@ -331,7 +342,7 @@ async function tryDisplayCapturePath(options) {
   });
 
   try {
-    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate });
+    return await runBrowserStreamScan({ stream, onCandidate: options.onCandidate, previewVideoElement: options.previewVideoElement });
   } finally {
     stopStream(stream);
   }
@@ -339,7 +350,7 @@ async function tryDisplayCapturePath(options) {
 
 function createSetupScannerAdapter() {
   return {
-    async start({ onCandidate }) {
+    async start({ onCandidate, previewVideoElement }) {
       const bridge = hasNativeBridge();
       if (bridge) {
         const result = await bridge.start({ region: "center-strip", onCandidate });
@@ -348,7 +359,7 @@ function createSetupScannerAdapter() {
 
       if (canUseCameraScan()) {
         try {
-          const cameraResult = await tryBrowserCameraPath({ onCandidate });
+          const cameraResult = await tryBrowserCameraPath({ onCandidate, previewVideoElement });
           if (cameraResult?.applied) return cameraResult;
         } catch {
           // Fall through to screen capture.
@@ -357,7 +368,7 @@ function createSetupScannerAdapter() {
 
       if (canUseDisplayCapture()) {
         try {
-          const captureResult = await tryDisplayCapturePath({ onCandidate });
+          const captureResult = await tryDisplayCapturePath({ onCandidate, previewVideoElement });
           if (captureResult?.applied) return captureResult;
         } catch {
           // Fall through to graceful failure.

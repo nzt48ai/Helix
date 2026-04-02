@@ -1515,7 +1515,7 @@ function SetupScanPillButton({ onClick, busy = false }) {
   );
 }
 
-function SetupScanOverlay({ phase = "launching" }) {
+function SetupScanOverlay({ phase = "launching", videoRef = null }) {
   return (
     <div className="fixed inset-0 z-[1300] flex items-center justify-center px-6" role="dialog" aria-modal="true" aria-label="Setup scanner">
       <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]" />
@@ -1526,9 +1526,10 @@ function SetupScanOverlay({ phase = "launching" }) {
           <span className="absolute inset-[28px] rounded-full bg-[linear-gradient(180deg,rgba(59,130,246,0.95),rgba(124,58,237,0.95))] shadow-[0_0_24px_rgba(99,102,241,0.5)]" />
         </div>
       ) : (
-        <div className="relative flex h-[74dvh] max-h-[560px] w-full max-w-[360px] items-center justify-center rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,rgba(15,23,42,0.42),rgba(15,23,42,0.62))]">
-          <div className="pointer-events-none absolute inset-y-8 left-1/2 w-[56px] -translate-x-1/2 rounded-[28px] border border-transparent bg-[linear-gradient(rgba(15,23,42,0.45),rgba(15,23,42,0.45))_padding-box,linear-gradient(180deg,rgba(56,189,248,0.92),rgba(124,58,237,0.95))_border-box] shadow-[0_0_36px_rgba(99,102,241,0.52)]" />
-          <div className="absolute bottom-8 text-center text-[13px] font-medium tracking-[-0.01em] text-blue-50/95">Move price axis into view</div>
+        <div className="relative flex h-[74dvh] max-h-[560px] w-full max-w-[360px] items-center justify-center overflow-hidden rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,rgba(15,23,42,0.42),rgba(15,23,42,0.62))]">
+          <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 z-0 h-full w-full object-cover" />
+          <div className="pointer-events-none absolute inset-y-8 left-1/2 z-10 w-[56px] -translate-x-1/2 rounded-[28px] border border-transparent bg-[linear-gradient(rgba(15,23,42,0.45),rgba(15,23,42,0.45))_padding-box,linear-gradient(180deg,rgba(56,189,248,0.92),rgba(124,58,237,0.95))_border-box] shadow-[0_0_36px_rgba(99,102,241,0.52)]" />
+          <div className="absolute bottom-8 z-10 text-center text-[13px] font-medium tracking-[-0.01em] text-blue-50/95">Move price axis into view</div>
         </div>
       )}
     </div>
@@ -1875,6 +1876,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
   const [scanToast, setScanToast] = useState(null);
   const scanHistoryRef = useRef([]);
   const scanRunIdRef = useRef(0);
+  const scanVideoRef = useRef(null);
   const [priceDrafts, setPriceDrafts] = useState(() => ({
     entry: sanitizePriceInputString(positionState.entry),
     stop: sanitizePriceInputString(positionState.stop),
@@ -2047,6 +2049,10 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     await new Promise((resolve) => window.setTimeout(resolve, 420));
     if (scanRunIdRef.current !== runId) return;
     setScanPhase("scanning");
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+    if (!scanVideoRef.current?.isConnected) {
+      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
     const scannerAdapter = window.__HELIX_SETUP_SCANNER__;
     if (!scannerAdapter || typeof scannerAdapter.start !== "function") {
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
@@ -2059,6 +2065,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
     try {
       const result = await scannerAdapter.start({
         region: "center-strip",
+        previewVideoElement: scanVideoRef.current,
         onCandidate: (candidate) => {
           const stability = hasStableDetections(scanHistoryRef.current, candidate, 3);
           if (!stability) return false;
@@ -2189,7 +2196,7 @@ function PositionScreen({ positionState, setPositionState, profileState, debugEn
       <AnimatePresence>
         {scanPhase !== "idle" ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <SetupScanOverlay phase={scanPhase} />
+            <SetupScanOverlay phase={scanPhase} videoRef={scanVideoRef} />
           </motion.div>
         ) : null}
       </AnimatePresence>
